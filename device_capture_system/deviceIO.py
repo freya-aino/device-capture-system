@@ -3,6 +3,7 @@ import re
 import concurrent.futures as concurrent_futures
 import subprocess
 import pydantic
+import platform
 
 # from capture_devices import devices
 from json import dump as json_dump
@@ -20,16 +21,10 @@ from .datamodel import PeripheryDevice, CameraDevice, AudioDevice
 
 # ------------------- DEVICE UTILS ------------------- #
 
-def get_all_devices_ffmpeg(os: str = "windows"):
+def _get_all_devices_ffmpeg_dshow():
     """
-        - load all devices from ffmpeg stdout
-        - remove prefixes and suffixes
-        - concat pnp and cm id's, names and types
+    Get all devices from ffmpeg stdout
     """
-    
-    if os != "windows":
-        raise NotImplementedError("Only windows (dshow) is supported for now ...")
-    
     # Get list of input devices
     raw_ffmpeg_string = subprocess.run(["ffmpeg", "-sources", "dshow"], capture_output=True, text=True).stdout
     
@@ -43,6 +38,49 @@ def get_all_devices_ffmpeg(os: str = "windows"):
         for name, device_id, device_type 
         in zip(device_names, device_ids, device_types)
     ]
+
+def _get_all_devices_ffmpeg_linux():
+    """Get all devices from ffmpeg using v4l2 and pulse"""
+    devices = []
+    
+    # Video devices (v4l2)
+    cmd = ["ffmpeg", "-f", "v4l2", "-list_devices", "true", "-i", "dummy"]
+    result = subprocess.run(cmd, capture_output=True, text=True).stderr
+    # Parse v4l2 devices (/dev/video0 etc)
+    
+    # Audio devices (pulse)
+    cmd = ["ffmpeg", "-f", "pulse", "-list_devices", "true", "-i", "dummy"]
+    result = subprocess.run(cmd, capture_output=True, text=True).stderr
+    # Parse pulse audio devices
+    
+    return devices
+
+def _get_all_devices_ffmpeg_mac():
+    """Get all devices from ffmpeg using avfoundation"""
+    
+    cmd = ["ffmpeg", "-f", "avfoundation", "-list_devices", "true", "-i", ""]
+    
+    result = subprocess.run(cmd, capture_output=True, text=True).stderr
+    # Parse avfoundation output
+
+
+    
+
+def get_all_devices_ffmpeg(os: str = None):
+    """Get all devices based on operating system"""
+    if os is None:
+        os = platform.system().lower()
+
+    if os == "windows":
+        return _get_all_devices_ffmpeg_dshow()
+    elif os == "linux":
+        return _get_all_devices_ffmpeg_linux()
+    elif os == "darwin":  # macOS
+        return _get_all_devices_ffmpeg_mac()
+    else:
+        raise NotImplementedError(f"OS {os} not supported")
+
+# ------------------- DEVICE CONFIGURATIONS ------------------- #
 
 def get_video_device_configurations(device: PeripheryDevice) -> CameraDevice:
     """Query available configurations for a video device using ffmpeg"""
@@ -74,7 +112,6 @@ def get_video_device_configurations(device: PeripheryDevice) -> CameraDevice:
             continue
 
     return configurations_out
-
 
 def get_audio_device_configurations(device: PeripheryDevice) -> AudioDevice:
     """Query available configurations for an audio device using ffmpeg"""
