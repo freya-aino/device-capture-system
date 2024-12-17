@@ -43,6 +43,9 @@ def _get_all_devices_ffmpeg_linux():
     """Get all devices from ffmpeg using v4l2 and pulse"""
     devices = []
     
+    print("os currently not supported (TODO) ...")
+    exit()
+    
     # Video devices (v4l2)
     cmd = ["ffmpeg", "-f", "v4l2", "-list_devices", "true", "-i", "dummy"]
     result = subprocess.run(cmd, capture_output=True, text=True).stderr
@@ -52,19 +55,23 @@ def _get_all_devices_ffmpeg_linux():
     cmd = ["ffmpeg", "-f", "pulse", "-list_devices", "true", "-i", "dummy"]
     result = subprocess.run(cmd, capture_output=True, text=True).stderr
     # Parse pulse audio devices
-    
+
     return devices
 
 def _get_all_devices_ffmpeg_mac():
     """Get all devices from ffmpeg using avfoundation"""
     
+
+    print("os currently not supported (TODO) ...")
+    exit()
+
+
     cmd = ["ffmpeg", "-f", "avfoundation", "-list_devices", "true", "-i", ""]
     
     result = subprocess.run(cmd, capture_output=True, text=True).stderr
     # Parse avfoundation output
 
 
-    
 
 def get_all_devices_ffmpeg(os: str = None):
     """Get all devices based on operating system"""
@@ -82,19 +89,36 @@ def get_all_devices_ffmpeg(os: str = None):
 
 # ------------------- DEVICE CONFIGURATIONS ------------------- #
 
-def get_video_device_configurations(device: PeripheryDevice) -> CameraDevice:
-    """Query available configurations for a video device using ffmpeg"""
-
-    print("INFO: only works with dshow, atm ...")
-
+def _get_video_device_configurations_dshow(device: PeripheryDevice) -> CameraDevice:
     cmd = ["ffmpeg", "-f", "dshow", "-list_options", "true", "-i", f"video={device.device_id}"]
     result = subprocess.run(cmd, capture_output=True, text=True).stderr
     
     configurations_raw = re.findall(r"pixel_format=(\w+)\s*min s=(\d+)x(\d+)\s*fps=(\d+)", result)
 
-    configurations = list(set(
+    return list(set(
         [*map(lambda cfg: tuple([cfg[0].strip(), *map(int, cfg[1:])]), configurations_raw)]
     ))
+
+def _get_audio_device_configurations_dshow(device: PeripheryDevice) -> AudioDevice:
+    cmd = ["ffmpeg", "-f", "dshow", "-list_options", "true", "-i", f"audio={device.device_id}"]
+    result = subprocess.run(cmd, capture_output=True, text=True).stderr
+    
+    configurations_raw = re.findall(r".*?ch=\s*(\w+),\s*bits=\s*(\d+),\s*rate=\s*(\d+)", result)
+
+    return list(set(
+        [*map(lambda cfg: tuple([*map(int, cfg)]), configurations_raw)]
+    ))
+
+
+def get_video_device_configurations(device: PeripheryDevice) -> CameraDevice:
+    """Query available configurations for a video device using ffmpeg"""
+
+    os = platform.system().lower()
+
+    if os == "windows":
+        configurations = _get_video_device_configurations_dshow(device)
+    else:
+        raise NotImplementedError(f"OS {os} not supported for device configurations (TODO) ...")
     
     configurations.sort(key=lambda x: -(x[1] * x[2])) # sort by resolution
     
@@ -102,13 +126,10 @@ def get_video_device_configurations(device: PeripheryDevice) -> CameraDevice:
     configurations_out = []
     for cfg in configurations:
         try:
-
             configurations_out.append(
                 CameraDevice(**device.model_dump(), **dict(zip(field_names, cfg)))
             )
-
         except pydantic.ValidationError as e:
-            print("video config was droped because of validation error: ")
             continue
 
     return configurations_out
@@ -116,15 +137,13 @@ def get_video_device_configurations(device: PeripheryDevice) -> CameraDevice:
 def get_audio_device_configurations(device: PeripheryDevice) -> AudioDevice:
     """Query available configurations for an audio device using ffmpeg"""
 
-    cmd = ["ffmpeg", "-f", "dshow", "-list_options", "true", "-i", f"audio={device.device_id}"]
-    result = subprocess.run(cmd, capture_output=True, text=True).stderr
+    os = platform.system().lower()
+
+    if os == "windows":
+        configurations = _get_audio_device_configurations_dshow(device)
+    else:
+        raise NotImplementedError(f"OS {os} not supported for device configurations (TODO) ...")
     
-    configurations_raw = re.findall(r".*?ch=\s*(\w+),\s*bits=\s*(\d+),\s*rate=\s*(\d+)", result)
-
-    configurations = list(set(
-        [*map(lambda cfg: tuple([*map(int, cfg)]), configurations_raw)]
-    ))
-
     configurations.sort(key=lambda x: -x[2]) # sort by sample rate
 
     field_names = ["channels", "sample_size", "sample_rate"]
@@ -135,7 +154,6 @@ def get_audio_device_configurations(device: PeripheryDevice) -> AudioDevice:
                 AudioDevice(**device.model_dump(), **dict(zip(field_names, cfg)))
             )
         except pydantic.ValidationError as e:
-            print("audio config was droped because of validation error: ")
             continue
 
     return configurations_out

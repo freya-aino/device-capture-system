@@ -28,14 +28,16 @@ if len(sys.argv) == 1:
 def device__config_selection(device_configurations: List[PeripheryDevice]) -> PeripheryDevice:
     # pretty print devices and ask to select one of them
     
-    print(f"Device Configurations for:")
+    print(f"\nplease select device configurations for:")
     print(f"\tname: {device.name}")
     print(f"\tdevice_id: {device.device_id}")
     print(f"\tdevice_type: {device.device_type}")
     for i, cfg in enumerate(device_configurations):
         print("".join([f"{i}. {' || '.join([f'{k}={v}' for k, v in cfg.model_dump().items() if k != 'device_id' and k != 'name' and k != 'device_type' ])}"]))
 
-
+    cfg_idx = int(input("Select configuration: "))
+    assert 0 <= cfg_idx < len(device_configurations), "invalid configuration index"
+    return device_configurations[cfg_idx]
 
 # ---------------------------------------------------------------------
 
@@ -57,27 +59,26 @@ if __name__ == "__main__":
             else:
                 print("\t", audio_device.name)
     
-    for device in devices:
-        if device.device_type == "video":
-            device_configurations = get_video_device_configurations(device)
+    if ARGS.configure:
+        for device in devices:
+            if device.device_type == "video":
+                device_configurations = get_video_device_configurations(device)
 
-            if len(device_configurations) == 0:
-                print(f"No configurations found for {device.name}")
-                continue
+                if len(device_configurations) == 0:
+                    print(f"No configurations found for {device.name}")
+                    continue
 
-            device__config_selection(device_configurations)
+                selected_device = device__config_selection(device_configurations)
 
-        elif device.device_type == "audio":
+            elif device.device_type == "audio":
 
-            device_configurations = get_audio_device_configurations(device)
+                device_configurations = get_audio_device_configurations(device)
 
-            if len(device_configurations) == 0:
-                print(f"No configurations found for {device.name}")
-                continue
+                if len(device_configurations) == 0:
+                    print(f"No configurations found for {device.name}")
+                    continue
 
-            device__config_selection(device_configurations)
-    
-
+                selected_device = device__config_selection(device_configurations)
 
     if ARGS.save_devices:
         assert ARGS.output_path is not None, "output path must be provided"
