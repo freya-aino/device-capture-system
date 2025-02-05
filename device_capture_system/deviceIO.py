@@ -32,7 +32,7 @@ def _get_all_devices_ffmpeg_dshow():
     device_names = [re.findall(r"\[.*\]", a)[0][1:-1] for a in device_info_raw]
     device_ids = [re.findall(r"\@.*\[", a)[0][:-2] for a in device_info_raw]
     device_types = [re.findall(r"video|audio", a)[0] for a in device_info_raw]
-    
+        
     return [
         PeripheryDevice(device_id=device_id, name=name, device_type=device_type) 
         for name, device_id, device_type 
@@ -72,15 +72,14 @@ def _get_all_devices_ffmpeg_mac():
     # Parse avfoundation output
 
 
-
 def get_all_devices_ffmpeg(os: str = None):
     """Get all devices based on operating system"""
     if os is None:
         os = platform.system().lower()
 
-    if os == "windows":
+    if os == "windows": # windows
         return _get_all_devices_ffmpeg_dshow()
-    elif os == "linux":
+    elif os == "linux": # linux
         return _get_all_devices_ffmpeg_linux()
     elif os == "darwin":  # macOS
         return _get_all_devices_ffmpeg_mac()
@@ -158,12 +157,20 @@ def get_audio_device_configurations(device: PeripheryDevice) -> AudioDevice:
 
     return configurations_out
 
+def parse_device_configurations(configuration: dict) -> PeripheryDevice:
+    if configuration["device_type"] == "video":
+        return CameraDevice(**configuration)
+    elif configuration["device_type"] == "audio":
+        return AudioDevice(**configuration)
+    else:
+        raise ValueError("device_type must be either 'video' or 'audio' ...")
 
-def save_periphery_devices_to_config(devices: List[PeripheryDevice], config_file: str = "./raw_devices.json"):
+
+def save_periphery_devices_to_config(devices: List[PeripheryDevice], config_file: str):
     with open(config_file, "w") as f:
         json_dump([device.model_dump() for device in devices], f)
 
-def load_all_devices_from_config(device_type: str, config_file: str = "./configs/devices.json") -> List[PeripheryDevice]:
+def load_all_devices_from_config(device_type: str, config_file: str) -> List[PeripheryDevice]:
     with open(config_file, "r") as f:
         devices = json_load(f)
     
@@ -176,7 +183,6 @@ def load_all_devices_from_config(device_type: str, config_file: str = "./configs
         return [AudioDevice(**device) for device in audio_devices]
     else:
         raise ValueError("device_type must be either 'video' or 'audio' ...")
-
 
 
 # ------------------- BASE CLASS ------------------- #

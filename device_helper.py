@@ -1,21 +1,21 @@
 import argparse
 import sys
 from typing import List
+import os
 
 from device_capture_system.deviceIO import (
     get_all_devices_ffmpeg, 
-    save_periphery_devices_to_config,
     get_video_device_configurations,
-    get_audio_device_configurations
+    get_audio_device_configurations,
+    parse_device_configurations,
+    save_periphery_devices_to_config,
 )
 from device_capture_system.datamodel import PeripheryDevice
 
 AP = argparse.ArgumentParser()
 AP.add_argument("-p", "--print_devices", action="store_true", help="print devices to console")
 AP.add_argument("-v", "--verbose", action="store_true", help="print debug messages")
-AP.add_argument("-s", "--save_devices", action="store_true", help="save devices to config")
-AP.add_argument("-c", "--configure", action="store_true", help="configure devices interactively")
-AP.add_argument("-o", "--output_path", type=str, default=None, help="output path")
+AP.add_argument("-c", "--configure", action="store_true", help="configure devices interactively and save to file")
 ARGS = AP.parse_args()
 
 
@@ -25,7 +25,7 @@ if len(sys.argv) == 1:
 
 # ---------------------------------------------------------------------
 
-def device__config_selection(device_configurations: List[PeripheryDevice]) -> PeripheryDevice:
+def device_config_selection(device_configurations: List[PeripheryDevice]) -> PeripheryDevice:
     # pretty print devices and ask to select one of them
     
     print(f"\nplease select device configurations for:")
@@ -35,9 +35,14 @@ def device__config_selection(device_configurations: List[PeripheryDevice]) -> Pe
     for i, cfg in enumerate(device_configurations):
         print("".join([f"{i}. {' || '.join([f'{k}={v}' for k, v in cfg.model_dump().items() if k != 'device_id' and k != 'name' and k != 'device_type' ])}"]))
 
-    cfg_idx = int(input("Select configuration: "))
-    assert 0 <= cfg_idx < len(device_configurations), "invalid configuration index"
-    return device_configurations[cfg_idx]
+    try:
+        cfg_idx = int(input("Select configuration: "))
+        assert 0 <= cfg_idx < len(device_configurations), "invalid configuration index"
+        return device_configurations[cfg_idx]
+    except ValueError as e:
+        print(f"invalid input: {e}")
+        raise e
+
 
 # ---------------------------------------------------------------------
 
@@ -60,27 +65,37 @@ if __name__ == "__main__":
                 print("\t", audio_device.name)
     
     if ARGS.configure:
+        
+        selected_device_configurations = []
+
         for device in devices:
             if device.device_type == "video":
                 device_configurations = get_video_device_configurations(device)
-
-                if len(device_configurations) == 0:
-                    print(f"No configurations found for {device.name}")
-                    continue
-
-                selected_device = device__config_selection(device_configurations)
-
             elif device.device_type == "audio":
-
                 device_configurations = get_audio_device_configurations(device)
+            else:
+                print(f"Unknown device type: {device.name} - {device.device_type}")
 
-                if len(device_configurations) == 0:
-                    print(f"No configurations found for {device.name}")
-                    continue
+            if len(device_configurations) == 0:
+                print(f"No configurations found for {device.name}")
+                continue
 
-                selected_device = device__config_selection(device_configurations)
+            selected_device_configurations.append(device_config_selection(device_configurations))
 
-    if ARGS.save_devices:
-        assert ARGS.output_path is not None, "output path must be provided"
-        assert ARGS.output_path.endswith(".json"), "output path must be a json file"
-        save_periphery_devices_to_config(devices, ARGS.output_path)
+        parsed_devices = []
+        for config in selected_device_configurations:
+            parsed_devices.append(config)
+
+        print("\nSelected Configurations:\n")
+        for cfg in parsed_devices:
+            print(cfg)
+            print("\n")
+
+        # option to choose output path or leave default
+        output_path = input(f"selected output path [./configs/devices.json]:")
+        if output_path == "":
+            output_path = "./configs/devices.json"
+        assert output_path.endswith(".json"), "output path must be a json file"
+        assert os.path.exists(os.path.dirname(output_path)), "output path directory does not exist"
+
+        save_periphery_devices_to_config(parsed_devices, output_path)
