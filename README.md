@@ -1,5 +1,9 @@
 # Device Capture System
 
+## Prerequisites
+- make sure to have `ffmpeg` installed on the device
+- `ffmpeg` should be available to the commandline inside the project
+
 ## Description
 
 A simple system to capture ffmpeg input devices (cameras and microphones), **currently only using dshow-capture on windows**.
@@ -19,62 +23,35 @@ poetry run python -m pytest
 ```
 
 ## Device Setup
-### 1) Pull All Devices through `ffmpeg`
-- make sure to have `ffmpeg` installed
-- `ffmpeg` should be available to the commandline inside the project
 #### Print all devices to check
 ```shell
-poetry run python ./device_helper.py -p
+python ./device_helper.py -p
 ```
-#### Save all devices in raw format to `./configs/raw_devices.json` (or any other directory)
+#### Configure all devices (set output directory with `-o`, default: `./configs/devices.json`)
 ```shell
-poetry run python ./device_helper.py -s -o ./configs/raw_devices.json
+python ./device_helper.py -c -o ./configs/raw_devices.json
 ```
-#### Example raw device list produced by `device_helper`
-```json
-[
-    {
-        "device_id": "@device_pnp_\\\\?\\usb#vid_046d&pid_0893&mi_00#6&dc72295&0&0000#{65e8773d-8f56-11d0-a3b9-00a0c9223196}\\global",
-        "name": "Logitech StreamCam",
-        "device_type": "video"
-    },
-    {
-        "device_id": "@device_cm_{33D9A762-90C8-11D0-BD43-00A0C911CE86}\\wave_{BA043884-E5A5-4D31-BA09-A26EEBB846D1}",
-        "name": "Microphone (Arctis 7+)",
-        "device_type": "audio"
-    }
-]
-```
----
-### 2) Add information to the devices depending on your hardware specification selection
-- Im storing these in `./configs/devices.json`
-- add information abuot capture `width`, `height` and capture `fps` to your camera devices
-- add `channels`, `sample rate`, `sample size` in bits and `audio buffer size` to the audio devices
-#### Example of `devices.json`
+#### Example device list produced by `device_helper`
 ```json
 [
   {
-    "device_id": "@device_pnp_\\\\?\\usb#vid_046d&pid_0893&mi_00#6&dc72295&0&0000#{65e8773d-8f56-11d0-a3b9-00a0c9223196}\\global",
-    "name": "Logitech-StreamCam.center",
+    "device_id": "@device_pnp_\\\\?\\usb#vid_5986&pid_1195&mi_00#6&1f473198&1&0000#{65e8773d-8f56-11d0-a3b9-00a0c9223196}\\global",
+    "name": "Integrated Camera",
     "device_type": "video",
-    "width": 1920,
-    "height": 1080,
-    "fps": 30
+    "width": 2560,
+    "height": 1440,
+    "fps": 30.0,
+    "pixel_format": "nv12"
   },
   {
-    "device_id": "@device_cm_{33D9A762-90C8-11D0-BD43-00A0C911CE86}\\wave_{BA043884-E5A5-4D31-BA09-A26EEBB846D1}",
-    "name": "Microphone (Arctis 7+)",
+    "device_id": "@device_cm_{33D9A762-90C8-11D0-BD43-00A0C911CE86}\\wave_{63BF8555-1DE6-47A2-83D7-788AF629CE5F}",
+    "name": "Mikrofonarray (Intel\u00c2\u00ae Smart Sound Technologie f\u00c3\u00bcr digitale Mikrofone)",
     "device_type": "audio",
     "channels": 1,
-    "sample_rate": 88200,
-    "sample_size": 16,
-    "audio_buffer_size": 20
+    "sample_rate": 32000,
+    "sample_size": 16
   }
 ]
-```
-- you can find this information by running the following command: ( insert `device_id` or `name` from above into the brackets {} )
-```shell
-ffmpeg -f dshow -list_options true -i video="{device_id}"
 ```
 
 ## Usage
