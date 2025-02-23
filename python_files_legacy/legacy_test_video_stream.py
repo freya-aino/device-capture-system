@@ -1,5 +1,3 @@
-# test video stream
-
 import cv2
 import time
 import argparse
