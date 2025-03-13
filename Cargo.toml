@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.97"
+clap = { version = "4.5.32", features = ["derive"] }
 
 [dependencies.nokhwa]
 version = "0.10.7"
