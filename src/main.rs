@@ -1,13 +1,16 @@
+mod datamodel;
+
 use anyhow::{Result, Error};
+use datamodel::{Device, CameraDevice, MicrophoneDevice};
 use nokhwa::query;
 use nokhwa::native_api_backend;
-use nokhwa::utils::FrameFormat;
-use nokhwa::Camera;
-use nokhwa::utils::CameraFormat;
-use nokhwa::utils::CameraIndex;
-use nokhwa::utils::RequestedFormat;
-use nokhwa::utils::RequestedFormatType;
-use nokhwa::pixel_format::RgbFormat;
+// use nokhwa::utils::FrameFormat;
+// use nokhwa::Camera;
+// use nokhwa::utils::CameraFormat;
+// use nokhwa::utils::CameraIndex;
+// use nokhwa::utils::RequestedFormat;
+// use nokhwa::utils::RequestedFormatType;
+// use nokhwa::pixel_format::RgbFormat;
 use cpal::traits::{DeviceTrait, HostTrait};
 
 // #[derive(Parser, Debug)]
@@ -39,21 +42,26 @@ use cpal::traits::{DeviceTrait, HostTrait};
 //     Ok(())
 // }
 
-mod datamodel;
-use datamodel::CameraDevice;
+
 
 fn get_all_cameras() -> Result<Vec<CameraDevice>, Error> {
-    let mut cameras = Vec::new();
+    let mut cameras: Vec<CameraDevice> = Vec::new();
 
     let backend = native_api_backend().unwrap();
     let camera_infos = query(backend).expect("failed to query cameras");
     
     for info in camera_infos {
+
+        // let device string be misc field if it is not empty
+        let misc = match info.misc() {
+            s if s.is_empty() => None,
+            s => Some(s.to_string()),
+        };
+
         let camera = CameraDevice::new(
-            info.index().clone(),
-            info.human_name().clone(),
-            None,
-            None
+            info.index().as_index().unwrap() as u16,
+            info.human_name().to_string(),
+            misc,
         );
         
         cameras.push(camera);
@@ -61,14 +69,34 @@ fn get_all_cameras() -> Result<Vec<CameraDevice>, Error> {
     Ok(cameras)
 }
 
-// fn get_all_camera_formats() -> Result<Vec<CameraFormat>, Error> {
-//     let mut formats = Vec::new();
-//     for camera_index in CameraIndex::iter() {
-//         let camera_formats = get_camera_formats(&camera_index)?;
-//         formats.extend(camera_formats);
-//     }
-//     Ok(formats)
-// }
+fn get_all_microphones() -> Result<Vec<MicrophoneDevice>, Error> {
+    let mut microphones: Vec<MicrophoneDevice> = Vec::new();
+
+    let host = cpal::default_host();
+    let devices = host.input_devices().unwrap();
+    for (i, device) in devices.enumerate() {
+
+
+        let configs = device.supported_input_configs().unwrap();
+
+        for config in configs {
+            println!("{:?}", config);
+        }
+
+        let microphone = MicrophoneDevice::new(
+            i as u16,
+            device.name().unwrap(),
+            None,
+        );
+
+        microphones.push(microphone);
+    }
+    Ok(microphones)
+}
+
+
+
+// fn get_all_microphone_formats() -> Result<Vec<MicrophoneConfig>, Error>
 
 
 fn main() {
@@ -84,28 +112,36 @@ fn main() {
 
     // list_camera_formats_human_readable(camera_infos[0].index()).unwrap();
     
+    let cameras = get_all_cameras().unwrap();
+    let microphones = get_all_microphones().unwrap();
 
-    let host = cpal::default_host();
-    let devices = host.devices().unwrap();
-
-    for device in devices {
-        
-        let audio_input_config = device.supported_input_configs().unwrap();
-        let name = device.name().unwrap();
-        
-        for config in audio_input_config{
-            println!("I: {:?} : {:?}", name, config);
-        }
+    for camera in cameras {
+        println!("{:?}", camera);
     }
+    for microphone in microphones {
+        println!("{:?}", microphone);
+    }
+
+    // let host = cpal::default_host();
+    // let devices = host.devices().unwrap();
+
+    // for device in devices {
+        
+    //     let audio_input_config = device.supported_input_configs().unwrap();
+    //     let name = device.name().unwrap();
+        
+    //     for config in audio_input_config{
+    //         println!("I: {:?} : {:?}", name, config);
+    //     }
+    // }
     
-    let request_format = RequestedFormat::new::<RgbFormat>(RequestedFormatType::AbsoluteHighestResolution);
-    let camera_id = CameraIndex::Index(0);
-    let mut cam = Camera::new(camera_id, request_format).unwrap();
-    let mut formats = cam.compatible_camera_formats().unwrap();
-    formats.sort_by_key(|a| a.width() * a.height() * a.frame_rate());
+    // let camera_id = CameraIndex::Index(0);
+    // let mut cam = Camera::new(camera_id, request_format).unwrap();
+    // let mut formats = cam.compatible_camera_formats().unwrap();
+    // formats.sort_by_key(|a| a.width() * a.height() * a.frame_rate());
 
-    for f in formats {
-        println!("{:?}", f);
-    }
+    // for f in formats {
+    //     println!("{:?}", f);
+    // }
 
 }
