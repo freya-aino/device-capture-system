@@ -1,180 +1,260 @@
-use anyhow::Error;
+use std::ops::Deref;
+use std::time::SystemTime;
 
-use nokhwa::utils::{CameraIndex, FrameFormat, RequestedFormat, RequestedFormatType};
-use nokhwa::{native_api_backend, Camera};
+use anyhow::Error;
+use either::{Either, IntoEither};
+
+use cpal::traits::{DeviceTrait, HostTrait};
+use nokhwa::pixel_format::RgbFormat;
+use nokhwa::utils::{CameraFormat, CameraIndex, FrameFormat, RequestedFormat, RequestedFormatType};
+use nokhwa::{native_api_backend, nokhwa_check, Camera};
 use nokhwa::query;
 
 
+// ---------------- ENUMS ----------------
 
-// datamodel
-pub trait Device {
-    fn new(index: u16, name: String, device_string: Option<String>) -> Self;
-    fn open(&self) -> Result<(), Error>;
-    fn close(&self) -> Result<(), Error>;
-    fn get_all_possible_configs<T>(&self) -> Result<Vec<T>, Error>;
-    fn get_current_config<T>(&self) -> Result<Option<T>, Error>;
-    fn set_config(&self, config: DeviceConfig) -> Result<(), Error>;
+#[derive(Debug, Clone, PartialEq)]
+pub enum DeviceType {
+    Camera,
+    Microphone,
 }
 
-#[derive(Debug)]
-enum DeviceState {
-    Open,
-    Closed,
-    NoConfig,
-    Error,
+#[derive(Debug, Clone)]
+pub enum DeviceStatus {
+    Available,
+    Capturing,
+    Paused,
+    Error(String),
+    Disabled,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+pub enum DeviceConfig {
+    Camera(CameraConfig),
+    Microphone(MicrophoneConfig),
+}
+
+// ---------------- STRUCTS ----------------
+
+#[derive(Debug, Clone)]
+pub struct DeviceId(pub u32);
+
+#[derive(Debug, Clone)]
+pub struct DeviceInfo {
+    pub id: DeviceId,
+    pub name: String,
+    device_type: DeviceType,
+    state: DeviceStatus
+}
+
+#[derive(Debug, Clone)]
 pub struct CameraConfig {
-    width: u16,
-    height: u16,
-    frame_rate: u16,
+    resolution: (u32, u32),
+    fps: u32,
     pixel_format: FrameFormat,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MicrophoneConfig {
-    channels: u16,
     sample_rate: u32,
-    sample_size: u16,
+    channels: u32,
+    sample_size: u32,
 }
 
-#[derive(Debug)]
-struct DevicePrimitives {
-    index: u16,
-    name: String,
-    device_string: Option<String>,
+#[derive(Debug, Clone)]
+pub struct CaptureStats {
+    frames_captured: u64,
+    frames_droped: u64,
+    bytes_captured: u64,
+    current_fps: f32,
+    current_bitrate: f32,
+    current_latency: f32,
+    uptime_seconds: u64,
+    last_frame_time: SystemTime,
 }
 
-#[derive(Debug)]
-pub struct CameraDevice {
-    primitives: DevicePrimitives,
-    config: Option<CameraConfig>,
+#[derive(Debug, Clone)]
+pub struct Device {
+    device_info: DeviceInfo,
+    configs: Vec<DeviceConfig>,
+    selected_config: Option<DeviceConfig>,
 }
 
-#[derive(Debug)]
-pub struct MicrophoneDevice {
-    primitives: DevicePrimitives,
-    config: Option<MicrophoneConfig>,
+#[derive(Debug, Clone)]
+pub struct CaptureProcess {
+    device: Device,
+    process_id: u32,
+    port: u32,
+    start_time: SystemTime,
+    config: DeviceConfig,
+    stats: CaptureStats,
 }
 
 
+// ---------------- TRAITS ----------------
+// trait Process {
+//     fn initialize(&self) -> Result<(), Error>;
+//     fn start(&self) -> Result<(), Error>;
+//     fn stop(&self) -> Result<(), Error>;
+//     fn pause(&self) -> Result<(), Error>;
+//     fn resume(&self) -> Result<(), Error>;
+//     fn restart(&self) -> Result<(), Error>;
+//     fn get_stats(&self) -> CaptureStats;
+// }
 
-impl CameraConfig {
-    pub fn new(width: u16, height: u16, frame_rate: u16, pixel_format: FrameFormat) -> Self {
-        CameraConfig {
-            width: width,
-            height: height,
-            frame_rate: frame_rate,
-            pixel_format: pixel_format,
+
+// ---------------- IMPLS ----------------
+
+impl DeviceInfo {
+    pub fn new(id: DeviceId, name: String, device_type: DeviceType, state: DeviceStatus) -> Self {
+        DeviceInfo {
+            id: id,
+            name: name,
+            device_type: device_type,
+            state: state,
         }
     }
-}
 
+    fn get_all_camera_configs(id: u32) -> Result<Vec<CameraConfig>, Error> {
+        let mut out_configs = Vec::new();
 
-impl DevicePrimitives {
-    pub fn new(index: u16, name: String, device_string: Option<String>) -> Self {
-        DevicePrimitives { index, name, device_string }
-    }
-}
+        let cam = Camera::new(
+            CameraIndex::Index(id),
+            RequestedFormat::new::<RgbFormat>(RequestedFormatType::AbsoluteHighestFrameRate),
+        );
 
-impl Device for CameraDevice {
-    fn new(index: u16, name: String, device_string: Option<String>) -> Self {
-        CameraDevice {
-            primitives: DevicePrimitives::new(index, name, device_string),
-            config: None,
-        }
-    }
-    fn open(&self) -> Result<(), Error> {
-        Ok(()) // todo
-    }
-    fn close(&self) -> Result<(), Error> {
-        Ok(()) // todo
-    }
+        let formats = match cam.unwrap() {
+            mut cam => cam.compatible_camera_formats().unwrap(),
+            _ => Vec::new(),
+        };
 
-    fn get_all_possible_configs(&self) -> Result<Vec<CameraConfig>, Error> {
-        let index = CameraIndex::Index(self.primitives.index as u32);
-        let format = RequestedFormat::<'_>::new(RequestedFormatType::AbsoluteHighestFrameRate);
-        let camera = Camera::new(index, format).unwrap();
-        let available_formats = camera.compatible_camera_formats().unwrap();
-
-        let mut out_formats = Vec::new();
-        for f in available_formats {
-
-            out_formats.push(
-                CameraConfig::new(
-                    f.width() as u16, 
-                    f.height() as u16,
-                    f.frame_rate() as u16,
-                    f.format(),
-                )
+        for format in formats {
+            out_configs.push(
+                CameraConfig {
+                    resolution: (format.resolution().width(), format.resolution().height()),
+                    fps: format.frame_rate(),
+                    pixel_format: format.format(),
+                }.clone()
             );
         }
-        Ok(out_formats);
+
+        Ok(out_configs)
     }
 
-    fn get_current_config(&self) -> Result<Option<CameraConfig>, Error> {
-        Ok(self.config)
-    }
+    fn get_all_microphone_configs(id: u32) -> Result<Vec<MicrophoneConfig>, Error> {
+        let mut out_configs = Vec::new();
+        
+        let host = cpal::default_host();
+        let device = host.input_devices().unwrap().nth(id as usize).unwrap();
+        let supported_configs = device.supported_input_configs().unwrap();
 
-    fn set_config(&self, config: CameraConfig) -> Result<(), Error> {
-        self.config = Some(config);
-        Ok(())
+        for conf in supported_configs {
+            out_configs.push(
+                MicrophoneConfig {
+                    sample_rate: conf.max_sample_rate().0 as u32,
+                    channels: conf.channels() as u32,
+                    sample_size: conf.sample_format().sample_size() as u32,
+                }
+            );
+        }
+        Ok(out_configs)
     }
-
 }
 
-impl Device for MicrophoneDevice {
-    fn new(index: u16, name: String, device_string: Option<String>) -> Self {
-        MicrophoneDevice {
-            primitives: DevicePrimitives::new(index, name, device_string),
-            config: Vec::new(),
+impl Device {
+    pub fn new(device_info: DeviceInfo) -> Self {
+
+        let configs = match device_info.device_type {
+            DeviceType::Camera => {
+                DeviceInfo::get_all_camera_configs(device_info.id.0 as u32)
+                    .unwrap()
+                    .into_iter()
+                    .map(DeviceConfig::Camera)
+                    .collect()
+            },
+            DeviceType::Microphone => {
+                DeviceInfo::get_all_microphone_configs(device_info.id.0 as u32)
+                    .unwrap()
+                    .into_iter()
+                    .map(DeviceConfig::Microphone)
+                    .collect()
+            },
+        };
+
+        println!("Device created : {:?}", device_info.name);
+        
+        Device {
+            device_info: device_info,
+            configs: configs,
+            selected_config: None,
         }
     }
-    fn open(&self) -> Result<(), Error> {
-        Ok(()) // todo
-    }
-    fn close(&self) -> Result<(), Error> {
-        Ok(()) // todo
+    
+    pub fn get_all_cameras() -> Result<Vec<DeviceInfo>, Error> {
+        let mut out_cameras = Vec::new();
+
+        match nokhwa_check() {
+            true => println!("Nokhwa is available"),
+            false => panic!("Nokhwa is not available"),
+        }
+
+        let backend = native_api_backend()
+            .expect("failed to get native api backend");
+
+        let camera_infos = query(backend)
+            .expect("failed to query cameras");
+        
+        for device in camera_infos {
+
+            out_cameras.push(
+                DeviceInfo::new(
+                    DeviceId(device.index().as_index().unwrap() as u32),
+                    device.human_name().to_string(),
+                    DeviceType::Camera,
+                    DeviceStatus::Available
+                )
+            )
+        }
+        Ok(out_cameras)
     }
 }
 
-
-// impl MicrophoneDevice {
-//     pub fn new(index: u8, name: String, device_string: Option<String>, configs: Option<Vec<MicrophoneConfig>>) -> Self {
-//         let configs = match configs {
-//             Some(configs) => configs,
-//             None => Vec::new(),
-//         };
-//         MicrophoneDevice {
-//             index: index,
-//             name: name,
-//             device_string: device_string,
-//             config: configs,
-//         }
-//     }
+    // fn get_all_microphones() -> Result<Vec<Device>, Error> {
+    //     let mut out_microphones = Vec::new();
+    //     let host = cpal::default_host();
+    //     let devices = host.input_devices().unwrap();
+    //     for (i, device) in devices.enumerate() {
+    //         out_microphones.push(
+    //             Device::new(
+    //                 i as u16,
+    //                 device.name().unwrap(),
+    //                 None,
+    //             )
+    //         );
+    //     }
+    //     Ok(out_microphones)
+    // }
 // }
 
-// impl CameraDevice {
-//     pub fn new(index: nokhwa::utils::CameraIndex, name: String, device_string: Option<String>, configs: Option<Vec<CameraConfig>>) -> Self {
-//         let config = match configs {
-//             Some(configs) => configs,
-//             None => Vec::new(),
-//         };
-//         CameraDevice {
-//             index: index,
-//             name: name,
-//             device_string: device_string,
+
+// impl CaptureProcess {
+//     pub fn new(device_info: DeviceInfo, process_id: u32, port: u32, config: CaptureConfig) -> Self {
+//         CaptureProcess {
+//             device_info: device_info,
+//             process_id: process_id,
+//             port: port,
+//             start_time: SystemTime::now(),
 //             config: config,
+//             stats: CaptureStats {
+//                 frames_captured: 0,
+//                 frames_droped: 0,
+//                 bytes_captured: 0,
+//                 current_fps: 0.0,
+//                 current_bitrate: 0.0,
+//                 current_latency: 0.0,
+//                 uptime_seconds: 0,
+//                 last_frame_time: SystemTime::now(),
+//             },
 //         }
 //     }
-// }
-
-
-// impl Device for CameraDevice {
-
-// }
-
-// impl Device for MicrophoneDevice {
-
 // }
