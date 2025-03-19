@@ -161,15 +161,17 @@ fn main() {
 
     let backend = nokhwa::native_api_backend().unwrap();
 
-    for info in cam_infos {
+    let cam_infos = nokhwa::query(backend);
+
+    for info in cam_infos.unwrap() {
         println!("outside : {:?}", info);
 
         // let dev = Device::new(info);
 
         let cam = Camera::new(
-            CameraIndex::Index(info.id.0 as u32),
+            info.index().clone(),
             RequestedFormat::new::<RgbFormat>(RequestedFormatType::AbsoluteHighestFrameRate),
-        ).unwrap();
+        );
 
         // for format in formats {
         //     out_configs.push(
