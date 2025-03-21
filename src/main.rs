@@ -50,12 +50,6 @@
 
 //     for info in camera_infos {
 
-//         // let device string be misc field if it is not empty
-//         let misc = match info.misc() {
-//             s if s.is_empty() => None,
-//             s => Some(s.to_string()),
-//         };
-
 //         let camera = CameraDevice::new(
 //             info.index().as_index().unwrap() as u16,
 //             info.human_name().to_string(),
@@ -142,10 +136,19 @@
 
 mod datamodel;
 
+use std::ops::Index;
+
+use anyhow::Error;
 use datamodel::Device;
+<<<<<<< HEAD
 use nokhwa::Camera;
 use nokhwa::pixel_format::RgbFormat;
 use nokhwa::utils::{CameraIndex, RequestedFormat, RequestedFormatType};
+=======
+use nokhwa::pixel_format::RgbFormat;
+use nokhwa::{Camera, NokhwaError};
+use nokhwa::utils::{CameraControl, CameraIndex, RequestedFormat, RequestedFormatType};
+>>>>>>> 52cb11ae2053d766f9114b65d0b540fafd89f72c
 
 fn main() {
     let cam_infos = Device::get_all_cameras().unwrap();
@@ -154,16 +157,50 @@ fn main() {
 
     let backend = nokhwa::native_api_backend().unwrap();
 
-    for info in cam_infos {
-        println!("outside : {:?}", info);
+    let cam_infos = nokhwa::query(backend).unwrap();
 
-        // let dev = Device::new(info);
 
+<<<<<<< HEAD
         let cam = Camera::new(
             CameraIndex::Index(info.id.0 as u32),
             RequestedFormat::new::<RgbFormat>(RequestedFormatType::AbsoluteHighestFrameRate),
         )
         .unwrap();
+=======
+    let cam1 = Camera::new(
+        cam_infos
+            .clone()
+            .index(0)
+            .index()
+            .clone(),
+        RequestedFormat::new::<RgbFormat>(RequestedFormatType::AbsoluteHighestFrameRate),
+    ).unwrap();
+
+    drop(cam1);
+
+    let cam2 = Camera::new(
+        cam_infos
+            .clone()
+            .index(1)
+            .index()
+            .clone(),
+        RequestedFormat::new::<RgbFormat>(RequestedFormatType::AbsoluteHighestFrameRate),
+    ).unwrap();
+
+    drop(cam2);
+
+    // for info in cam_infos.unwrap() {
+
+
+    //     let cam = Camera::new(
+    //         info.index().clone(),
+    //         RequestedFormat::new::<RgbFormat>(RequestedFormatType::AbsoluteHighestFrameRate),
+    //     ).unwrap();
+
+    //     println!("cam check : {:?}", info.human_name());
+
+
+>>>>>>> 52cb11ae2053d766f9114b65d0b540fafd89f72c
 
         // for format in formats {
         //     out_configs.push(
@@ -176,7 +213,12 @@ fn main() {
         // }
 
         // println!("device created ---")
+<<<<<<< HEAD
     }
+=======
+
+    // }
+>>>>>>> 52cb11ae2053d766f9114b65d0b540fafd89f72c
 
     // let camera_infos = nokhwa::query(backend).expect("failed to query cameras");
 
