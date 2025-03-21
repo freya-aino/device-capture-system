@@ -6,10 +6,9 @@ use either::{Either, IntoEither};
 
 use cpal::traits::{DeviceTrait, HostTrait};
 use nokhwa::pixel_format::RgbFormat;
-use nokhwa::utils::{CameraFormat, CameraIndex, FrameFormat, RequestedFormat, RequestedFormatType};
-use nokhwa::{native_api_backend, nokhwa_check, Camera};
 use nokhwa::query;
-
+use nokhwa::utils::{CameraFormat, CameraIndex, FrameFormat, RequestedFormat, RequestedFormatType};
+use nokhwa::{Camera, native_api_backend, nokhwa_check};
 
 // ---------------- ENUMS ----------------
 
@@ -44,7 +43,7 @@ pub struct DeviceInfo {
     pub id: DeviceId,
     pub name: String,
     device_type: DeviceType,
-    state: DeviceStatus
+    state: DeviceStatus,
 }
 
 #[derive(Debug, Clone)]
@@ -90,7 +89,6 @@ pub struct CaptureProcess {
     stats: CaptureStats,
 }
 
-
 // ---------------- TRAITS ----------------
 // trait Process {
 //     fn initialize(&self) -> Result<(), Error>;
@@ -101,7 +99,6 @@ pub struct CaptureProcess {
 //     fn restart(&self) -> Result<(), Error>;
 //     fn get_stats(&self) -> CaptureStats;
 // }
-
 
 // ---------------- IMPLS ----------------
 
@@ -134,7 +131,8 @@ impl DeviceInfo {
                     resolution: (format.resolution().width(), format.resolution().height()),
                     fps: format.frame_rate(),
                     pixel_format: format.format(),
-                }.clone()
+                }
+                .clone(),
             );
         }
 
@@ -143,19 +141,17 @@ impl DeviceInfo {
 
     fn get_all_microphone_configs(id: u32) -> Result<Vec<MicrophoneConfig>, Error> {
         let mut out_configs = Vec::new();
-        
+
         let host = cpal::default_host();
         let device = host.input_devices().unwrap().nth(id as usize).unwrap();
         let supported_configs = device.supported_input_configs().unwrap();
 
         for conf in supported_configs {
-            out_configs.push(
-                MicrophoneConfig {
-                    sample_rate: conf.max_sample_rate().0 as u32,
-                    channels: conf.channels() as u32,
-                    sample_size: conf.sample_format().sample_size() as u32,
-                }
-            );
+            out_configs.push(MicrophoneConfig {
+                sample_rate: conf.max_sample_rate().0 as u32,
+                channels: conf.channels() as u32,
+                sample_size: conf.sample_format().sample_size() as u32,
+            });
         }
         Ok(out_configs)
     }
@@ -163,33 +159,30 @@ impl DeviceInfo {
 
 impl Device {
     pub fn new(device_info: DeviceInfo) -> Self {
-
         let configs = match device_info.device_type {
-            DeviceType::Camera => {
-                DeviceInfo::get_all_camera_configs(device_info.id.0 as u32)
-                    .unwrap()
-                    .into_iter()
-                    .map(DeviceConfig::Camera)
-                    .collect()
-            },
+            DeviceType::Camera => DeviceInfo::get_all_camera_configs(device_info.id.0 as u32)
+                .unwrap()
+                .into_iter()
+                .map(DeviceConfig::Camera)
+                .collect(),
             DeviceType::Microphone => {
                 DeviceInfo::get_all_microphone_configs(device_info.id.0 as u32)
                     .unwrap()
                     .into_iter()
                     .map(DeviceConfig::Microphone)
                     .collect()
-            },
+            }
         };
 
         println!("Device created : {:?}", device_info.name);
-        
+
         Device {
             device_info: device_info,
             configs: configs,
             selected_config: None,
         }
     }
-    
+
     pub fn get_all_cameras() -> Result<Vec<DeviceInfo>, Error> {
         let mut out_cameras = Vec::new();
 
@@ -198,44 +191,38 @@ impl Device {
             false => panic!("Nokhwa is not available"),
         }
 
-        let backend = native_api_backend()
-            .expect("failed to get native api backend");
+        let backend = native_api_backend().expect("failed to get native api backend");
 
-        let camera_infos = query(backend)
-            .expect("failed to query cameras");
-        
+        let camera_infos = query(backend).expect("failed to query cameras");
+
         for device in camera_infos {
-
-            out_cameras.push(
-                DeviceInfo::new(
-                    DeviceId(device.index().as_index().unwrap() as u32),
-                    device.human_name().to_string(),
-                    DeviceType::Camera,
-                    DeviceStatus::Available
-                )
-            )
+            out_cameras.push(DeviceInfo::new(
+                DeviceId(device.index().as_index().unwrap() as u32),
+                device.human_name().to_string(),
+                DeviceType::Camera,
+                DeviceStatus::Available,
+            ))
         }
         Ok(out_cameras)
     }
 }
 
-    // fn get_all_microphones() -> Result<Vec<Device>, Error> {
-    //     let mut out_microphones = Vec::new();
-    //     let host = cpal::default_host();
-    //     let devices = host.input_devices().unwrap();
-    //     for (i, device) in devices.enumerate() {
-    //         out_microphones.push(
-    //             Device::new(
-    //                 i as u16,
-    //                 device.name().unwrap(),
-    //                 None,
-    //             )
-    //         );
-    //     }
-    //     Ok(out_microphones)
-    // }
+// fn get_all_microphones() -> Result<Vec<Device>, Error> {
+//     let mut out_microphones = Vec::new();
+//     let host = cpal::default_host();
+//     let devices = host.input_devices().unwrap();
+//     for (i, device) in devices.enumerate() {
+//         out_microphones.push(
+//             Device::new(
+//                 i as u16,
+//                 device.name().unwrap(),
+//                 None,
+//             )
+//         );
+//     }
+//     Ok(out_microphones)
 // }
-
+// }
 
 // impl CaptureProcess {
 //     pub fn new(device_info: DeviceInfo, process_id: u32, port: u32, config: CaptureConfig) -> Self {

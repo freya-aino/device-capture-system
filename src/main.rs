@@ -24,9 +24,9 @@
 // // }
 
 // // fn print_cameras_human_readable(cameras: &Vec<CameraInfo>, verbose: bool) -> Result<(), Error> {
-    
+
 // //     println!("listing {} cameras\n", cameras.len());
-    
+
 // //     for camera in cameras {
 // //         let index = camera.index().to_string().parse::<u8>().expect("failed to parse camera index");
 // //         let name = camera.human_name();
@@ -42,14 +42,12 @@
 // //     Ok(())
 // // }
 
-
-
 // fn get_all_cameras() -> Result<Vec<CameraDevice>, Error> {
 //     let mut cameras: Vec<CameraDevice> = Vec::new();
 
 //     let backend = native_api_backend().unwrap();
 //     let camera_infos = query(backend).expect("failed to query cameras");
-    
+
 //     for info in camera_infos {
 
 //         // let device string be misc field if it is not empty
@@ -63,7 +61,7 @@
 //             info.human_name().to_string(),
 //             misc,
 //         );
-        
+
 //         cameras.push(camera);
 //     }
 //     Ok(cameras)
@@ -75,7 +73,6 @@
 //     let host = cpal::default_host();
 //     let devices = host.input_devices().unwrap();
 //     for (i, device) in devices.enumerate() {
-
 
 //         let configs = device.supported_input_configs().unwrap();
 
@@ -94,10 +91,7 @@
 //     Ok(microphones)
 // }
 
-
-
 // // fn get_all_microphone_formats() -> Result<Vec<MicrophoneConfig>, Error>
-
 
 // fn main() {
 
@@ -111,7 +105,7 @@
 //     // list camera configuration options for one camera
 
 //     // list_camera_formats_human_readable(camera_infos[0].index()).unwrap();
-    
+
 //     let cameras = get_all_cameras().unwrap();
 //     let microphones = get_all_microphones().unwrap();
 
@@ -126,15 +120,15 @@
 //     // let devices = host.devices().unwrap();
 
 //     // for device in devices {
-        
+
 //     //     let audio_input_config = device.supported_input_configs().unwrap();
 //     //     let name = device.name().unwrap();
-        
+
 //     //     for config in audio_input_config{
 //     //         println!("I: {:?} : {:?}", name, config);
 //     //     }
 //     // }
-    
+
 //     // let camera_id = CameraIndex::Index(0);
 //     // let mut cam = Camera::new(camera_id, request_format).unwrap();
 //     // let mut formats = cam.compatible_camera_formats().unwrap();
@@ -146,12 +140,11 @@
 
 // }
 
-
 mod datamodel;
 
 use datamodel::Device;
-use nokhwa::pixel_format::RgbFormat;
 use nokhwa::Camera;
+use nokhwa::pixel_format::RgbFormat;
 use nokhwa::utils::{CameraIndex, RequestedFormat, RequestedFormatType};
 
 fn main() {
@@ -169,7 +162,8 @@ fn main() {
         let cam = Camera::new(
             CameraIndex::Index(info.id.0 as u32),
             RequestedFormat::new::<RgbFormat>(RequestedFormatType::AbsoluteHighestFrameRate),
-        ).unwrap();
+        )
+        .unwrap();
 
         // for format in formats {
         //     out_configs.push(
@@ -182,7 +176,6 @@ fn main() {
         // }
 
         // println!("device created ---")
-
     }
 
     // let camera_infos = nokhwa::query(backend).expect("failed to query cameras");
@@ -191,18 +184,16 @@ fn main() {
     //     println!("{:?}", info.index().as_index().unwrap() as u32);
     // }
 
-
     // let format = RequestedFormat::new::<RgbFormat>(RequestedFormatType::AbsoluteHighestFrameRate);
     // let mut cam = Camera::new(
-    //     CameraIndex::Index(1), 
+    //     CameraIndex::Index(1),
     //     format
     // ).unwrap();
-    
+
     // cam.stop_stream().unwrap();
 
     // let backend = nokhwa::native_api_backend().unwrap();
     // let camera_infos = nokhwa::query(backend).expect("failed to query cameras");
-
 
     // for ci in camera_infos {
     //     println!("{:?}", ci.index().as_index().unwrap() as u32);
