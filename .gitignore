@@ -1,3 +1,7 @@
+# project files
+/dist/
+/device_capture_system/
+
 # Rust build directory
 /target/
 
