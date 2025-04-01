@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 // use anyhow::{Error, Result};
+
 // use std::thread;
 // use std::time::Duration;
 
@@ -77,10 +78,17 @@ use std::sync::Arc;
 // }
 
 
-use devices::DeviceManager;
-use devices::MicrophoneDevice;
+// use devices::DeviceManager;
+// use devices::MicrophoneDevice;
+// use devices::MicrophoneConfig;
 
-mod devices;
+use anyhow::{Error, Result};
+use cpal::traits::{DeviceTrait, HostTrait};
+use cpal::Device as Microphone;
+use nokhwa::utils::{CameraIndex, CameraInfo, RequestedFormat, RequestedFormatType};
+use nokhwa::pixel_format::RgbFormat;
+
+use clap::Parser;
 
 use anyhow::Error;
 use datamodel::Device;
