@@ -1,6 +1,7 @@
 # project files
 /dist/
 /device_capture_system/
+/.venv/
 
 # Rust build directory
 /target/
