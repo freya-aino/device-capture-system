@@ -43,9 +43,6 @@ def _get_all_devices_ffmpeg_linux():
     """Get all devices from ffmpeg using v4l2 and pulse"""
     devices = []
     
-    print("os currently not supported (TODO) ...")
-    exit()
-    
     # Video devices (v4l2)
     cmd = ["ffmpeg", "-f", "v4l2", "-list_devices", "true", "-i", "dummy"]
     result = subprocess.run(cmd, capture_output=True, text=True).stderr
@@ -58,18 +55,18 @@ def _get_all_devices_ffmpeg_linux():
 
     return devices
 
-def _get_all_devices_ffmpeg_mac():
-    """Get all devices from ffmpeg using avfoundation"""
+# def _get_all_devices_ffmpeg_mac():
+#     """Get all devices from ffmpeg using avfoundation"""
     
 
-    print("os currently not supported (TODO) ...")
-    exit()
+#     print("os currently not supported (TODO) ...")
+#     exit()
 
 
-    cmd = ["ffmpeg", "-f", "avfoundation", "-list_devices", "true", "-i", ""]
+#     cmd = ["ffmpeg", "-f", "avfoundation", "-list_devices", "true", "-i", ""]
     
-    result = subprocess.run(cmd, capture_output=True, text=True).stderr
-    # Parse avfoundation output
+#     result = subprocess.run(cmd, capture_output=True, text=True).stderr
+#     # Parse avfoundation output
 
 
 def get_all_devices_ffmpeg(os: str = None):
