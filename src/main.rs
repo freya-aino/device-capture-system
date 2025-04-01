@@ -76,11 +76,11 @@ fn main() -> Result<(), Error> {
 
         println!("\nCamera Devices Found: {}", camera_devices.len());
         for dev in camera_devices.iter() {
-            println!("{}:\tDevice: {}", dev.index(), dev.human_name());
+            println!("{}:\t: {}", dev.index(), dev.human_name());
         }
         println!("\nAudio Devices Found: {}", audio_devices.len());
         for (i, dev) in audio_devices.iter().enumerate() {
-            println!("{}:\tDevice: {}", i, dev.name()?);
+            println!("{}:\t: {}", i, dev.name()?);
         }
     } else {
         println!("No devices listed.");
