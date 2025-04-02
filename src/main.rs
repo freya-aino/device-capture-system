@@ -196,8 +196,7 @@ fn main() {
     // let backend = nokhwa::native_api_backend().unwrap();
     // let camera_infos = nokhwa::query(backend).expect("failed to query cameras");
 
-    // for ci in camera_infos {
-    //     println!("{:?}", ci.index().as_index().unwrap() as u32);
+    println!("{:?}", format);
 
-    // }
+    let device_0 = Device::new(0);
 }
