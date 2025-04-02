@@ -1,78 +1,47 @@
-use std::time::SystemTime;
+// use std::ops::Deref;
+// use std::sync::Arc;
+// use std::time::SystemTime;
+
+// use anyhow::Error;
+// use either::{Either, IntoEither};
+
+// use cpal::traits::{DeviceTrait, HostTrait};
+// use nokhwa::pixel_format::RgbFormat;
+// use nokhwa::query;
+// use nokhwa::utils::{CameraFormat, CameraIndex, FrameFormat, RequestedFormat, RequestedFormatType};
+// use nokhwa::{Camera, native_api_backend, nokhwa_check};
 
 // ---------------- ENUMS ----------------
 
-enum DeviceType {
-    Camera,
-    Microphone,
-}
 
-enum DeviceStatus {
-    Available,
-    Capturing,
-    Paused,
-    Error(String),
-    Disabled,
-}
-
-enum DeviceConfig {
-    Camera(CameraConfig),
-    Microphone(MicrophoneConfig),
-}
-
-enum PixelFormat {
-    RGB,
-}
+// #[derive(Debug)]
+// enum DeviceConfig {
+//     Camera(CameraConfig),
+//     Microphone(MicrophoneConfig),
+// }
 
 // ---------------- STRUCTS ----------------
 
-#[derive(Debug, Clone)]
-pub struct DeviceId(pub u32);
+// #[derive(Debug)]
+// pub struct CaptureStats {
+//     frames_captured: u64,
+//     frames_droped: u64,
+//     bytes_captured: u64,
+//     current_fps: f32,
+//     current_bitrate: f32,
+//     current_latency: f32,
+//     uptime_seconds: u64,
+//     last_frame_time: SystemTime,
+// }
 
-struct DeviceInfo {
-    pub id: DeviceId,
-    pub name: String,
-    device_type: DeviceType,
-    state: DeviceStatus,
-}
-
-struct CameraConfig {
-    resolution: (u32, u32),
-    fps: u32,
-    pixel_format: PixelFormat,
-}
-
-struct MicrophoneConfig {
-    sample_rate: u32,
-    channels: u32,
-    sample_size: u32,
-}
-
-struct CaptureStats {
-    frames_captured: u64,
-    frames_droped: u64,
-    bytes_captured: u64,
-    current_fps: f32,
-    current_bitrate: f32,
-    current_latency: f32,
-    start_time: SystemTime,
-    last_frame_time: SystemTime,
-}
-
-struct Device {
-    device_info: DeviceInfo,
-    configs: Vec<DeviceConfig>,
-    selected_config: Option<DeviceConfig>,
-}
-
-struct CaptureProcess {
-    device: Device,
-    process_id: u32,
-    port: u32,
-    start_time: SystemTime,
-    config: DeviceConfig,
-    stats: CaptureStats,
-}
+// #[derive(Debug)]
+// pub struct CaptureProcess {
+//     device: Device,
+//     process_id: u32,
+//     port: u32,
+//     start_time: SystemTime,
+//     stats: CaptureStats,
+// }
 
 // ---------------- TRAITS ----------------
 // trait Process {
@@ -86,3 +55,42 @@ struct CaptureProcess {
 // }
 
 // ---------------- IMPLS ----------------
+
+// // impl CaptureProcess {
+// //     pub fn new(device_info: DeviceInfo, process_id: u32, port: u32, config: CaptureConfig) -> Self {
+// //         CaptureProcess {
+// //             device_info: device_info,
+// //             process_id: process_id,
+// //             port: port,
+// //             start_time: SystemTime::now(),
+// //             config: config,
+// //             stats: CaptureStats {
+// //                 frames_captured: 0,
+// //                 frames_droped: 0,
+// //                 bytes_captured: 0,
+// //                 current_fps: 0.0,
+// //                 current_bitrate: 0.0,
+// //                 current_latency: 0.0,
+// //                 uptime_seconds: 0,
+// //                 last_frame_time: SystemTime::now(),
+// //             },
+// //         }
+// //     }
+// // }
+
+
+// impl CaptureStats {
+//     pub fn new() -> Self {
+//         CaptureStats {
+//             frames_captured: 0,
+//             frames_droped: 0,
+//             bytes_captured: 0,
+//             current_fps: 0.0,
+//             current_bitrate: 0.0,
+//             current_latency: 0.0,
+//             uptime_seconds: 0,
+//             last_frame_time: SystemTime::now(),
+//         }
+//     }
+// }
+
