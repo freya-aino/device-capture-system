@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 // use anyhow::{Error, Result};
 
 // use std::thread;
@@ -88,7 +86,9 @@ use cpal::Device as Microphone;
 use nokhwa::utils::{CameraIndex, CameraInfo, RequestedFormat, RequestedFormatType};
 use nokhwa::pixel_format::RgbFormat;
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+
+// --------- structs --------- //
 
 use anyhow::Error;
 use datamodel::Device;
