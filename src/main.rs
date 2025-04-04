@@ -1,33 +1,30 @@
-// use anyhow::{Error, Result};
+mod devices;
 
-// use std::thread;
-// use std::time::Duration;
+use devices::{CameraDevice, Device};
 
-// use nokhwa::utils::CameraIndex;
-// use nokhwa::pixel_format::{RgbAFormat, RgbFormat};
-
-
-// fn start_cam_thread(device: Device) -> Result<(), Error> {
-
-//     let cam_unwrap = cam?;
-
-//     return Ok(());
-// }
-
-
-// use devices::DeviceManager;
-// use devices::MicrophoneDevice;
-// use devices::MicrophoneConfig;
+use std::thread::sleep;
+use std::time;
 
 use anyhow::{Error, Result};
-use cpal::traits::{DeviceTrait, HostTrait};
-use cpal::Device as Microphone;
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{Device as Microphone, InputCallbackInfo};
 use nokhwa::utils::{CameraIndex, CameraInfo, RequestedFormat, RequestedFormatType};
 use nokhwa::pixel_format::RgbFormat;
 
 use clap::{Parser, ValueEnum};
 
-// --------- structs --------- //
+
+// --------- functions --------- //
+
+fn get_audio_devices() -> Result<Vec<Microphone>, Error> {
+    let host = cpal::default_host();
+    let devices = host.input_devices()
+        .unwrap()
+        .collect::<Vec<Microphone>>();
+    Ok(devices)
+}
+
+// ---------- main ---------- //
 
 #[derive(Debug, Clone, ValueEnum, PartialEq)]
 enum DeviceType {
@@ -58,104 +55,148 @@ struct Args {
     index: Option<usize>,
 }
 
-fn get_camera_devices() -> Result<Vec<CameraInfo>, Error> {
-    let nokhwa_backend = nokhwa::native_api_backend().unwrap();
-    let devices = nokhwa::query(nokhwa_backend)
-            .unwrap()
-            .into_iter()
-            .collect::<Vec<CameraInfo>>();
-    Ok(devices)
-}
-
-fn get_audio_devices() -> Result<Vec<Microphone>, Error> {
-    let host = cpal::default_host();
-    let devices = host.input_devices()
-        .unwrap()
-        .collect::<Vec<Microphone>>();
-    Ok(devices)
-}
 
 fn main() -> Result<(), Error> {
 
     let args = Args::parse();
 
-    let camera_devices = get_camera_devices()?;
-    let audio_devices = get_audio_devices()?;
-
-    // list devices
-    if args.list_devices {
-        println!("Listing devices...");
-        // list_devices()?
-
-        println!("\nCamera Devices Found: {}", camera_devices.len());
-        for dev in camera_devices.iter() {
-            println!("{}:\t: {}", dev.index(), dev.human_name());
+    // let camera_devices = get_camera_devices()?;
+    
+    let cameras = match CameraDevice::get_all_available_devices() {
+        Ok(cameras) => cameras,
+        Err(e) => {
+            println!("Failed to get camera devices: {}", e);
+            return Ok(());
         }
-        println!("\nAudio Devices Found: {}", audio_devices.len());
-        for (i, dev) in audio_devices.iter().enumerate() {
-            println!("{}:\t: {}", i, dev.name()?);
-        }
+    };
+
+    for cam in cameras.iter() {
+        println!("{:?}", cam.ID);
     }
 
-    // select device to use
-    if args.capture {
+    // let audio_devices = get_audio_devices()?;
+
+    // // list devices
+    // if args.list_devices {
+    //     println!("Listing devices...");
+    //     // list_devices()?
+
+    //     println!("\nCamera Devices Found: {}", camera_devices.len());
+    //     for dev in camera_devices.iter() {
+    //         println!("{}:\t: {}", dev.index(), dev.human_name());
+    //     }
+    //     println!("\nAudio Devices Found: {}", audio_devices.len());
+    //     for (i, dev) in audio_devices.iter().enumerate() {
+    //         println!("{}:\t: {}", i, dev.name()?);
+    //     }
+    // }
+
+    // // select device to use
+    // if args.capture {
         
-        // parse index option
-        let index = match args.index {
-            Some(index_) => index_,
-            None => {
-                println!("No device index selected, select device index to capture. device index can be found using `--list-devices`");
-                return Ok(());
-            }
-        };
+    //     // parse index option
+    //     let index = match args.index {
+    //         Some(index_) => index_,
+    //         None => {
+    //             println!("No device index selected, select device index to capture. device index can be found using `--list-devices`");
+    //             return Ok(());
+    //         }
+    //     };
 
-        match args.device_type {
-            Some(DeviceType::Camera) => {
+    //     match args.device_type {
+    //         Some(DeviceType::Camera) => {
 
-                // check camera index exists
-                if camera_devices
-                    .iter()
-                    .find(|dev| dev.index().as_index().unwrap() as usize == index)
-                    .is_none() {
-                    println!("Invalid camera index: {}", index);
-                    return Ok(());
-                }
+    //             // check camera index exists
+    //             if camera_devices
+    //                 .iter()
+    //                 .find(|dev| dev.index().as_index().unwrap() as usize == index)
+    //                 .is_none() {
+    //                     println!("Invalid camera index: {}", index);
+    //                     return Ok(());
+    //                 }
 
-                // start camera
-                println!("try start capture - camera: {}", camera_devices[index].human_name());
+    //             // start camera
+    //             println!("try start capture - camera: {}", camera_devices[index].human_name());
+    //             let mut cam = nokhwa::Camera::new(
+    //                 CameraIndex::Index(index as u32),
+    //                 RequestedFormat::new::<RgbFormat>(RequestedFormatType::AbsoluteHighestFrameRate),
+    //             )?;
+    //             match cam.open_stream() {
+    //                 Ok(_) => {
+    //                     println!("Camera stream opened successfully.");
+    //                 },
+    //                 Err(e) => {
+    //                     println!("Failed to open camera stream: {}", e);
+    //                     return Ok(());
+    //                 }
+    //             }
 
-            },
-            Some(DeviceType::Microphone) => {
+    //             for i in 0..10 {
+    //                 let frame = match cam.frame() {
+    //                     Ok(frame) => frame,
+    //                     Err(e) => {
+    //                         println!("Failed to get frame: {}", e);
+    //                         break;
+    //                     }
+    //                 };
+    //                 println!("{:?}", frame.buffer_bytes().len());
+                    
+    //                 sleep(time::Duration::from_millis(200));
+    //             }
 
-                // check microphone index exists
-                match args.index {
-                    Some(index_) => {
-                        if index_ >= audio_devices.len() {
-                            println!("Invalid microphone index: {}", index_);
-                            return Ok(());
-                        }
+    //             match cam.stop_stream() {
+    //                 Ok(_) => {
+    //                     println!("Camera stream stopped successfully.");
+    //                 },
+    //                 Err(e) => {
+    //                     println!("Failed to stop camera stream: {}", e);
+    //                     return Ok(());
+    //                 }
+    //             }
+    //         },
+    //         Some(DeviceType::Microphone) => {
 
-                        println!("Selected microphone: {}", audio_devices[index_].name()?);
-                    },
-                    None => {
-                        println!("No device index selected, please select a device index to capture.");
-                        return Ok(());
-                    }
-                };
+    //             // check microphone index exists
+    //             if index >= audio_devices.len() {
+    //                 println!("Invalid microphone index: {}", index);
+    //                 return Ok(());
+    //             };
 
-                // start capture
+    //             // start capture
 
-                // start microphone
-                println!("try start capture - microphone: {}", audio_devices[index].name()?);
-            },
-            None => {
-                println!("No device type selected, please select a device type to capture.");
-                return Ok(());
-            }
-        }
-    }
+    //             // start microphone
+    //             println!("try start capture - microphone: {}", audio_devices[index].name()?);
 
+    //             let cfg = audio_devices[index]
+    //                 .default_input_config()
+    //                 .expect("failud to get default input config")
+    //                 .config();
 
+    //             let device_cfg = audio_devices[index]
+    //                 .build_input_stream(
+    //                     &cfg,
+    //                     |data: &[f32], _: &InputCallbackInfo| {
+    //                         // process audio data here
+    //                         println!("Audio data: {:?}", data);
+    //                     },
+    //                     |err| {
+    //                         // handle error here
+    //                         eprintln!("Error: {:?}", err);
+    //                     },
+    //                     Some(time::Duration::from_secs(5)),
+    //                 )?;
+                
+    //             device_cfg.play()?;
+    //             sleep(time::Duration::from_secs(5));
+    //             device_cfg.pause()?;
+
+    //         },
+    //         None => {
+    //             println!("No device type selected, please select a device type to capture.");
+    //             return Ok(());
+    //         }
+    //     }
+    // }
 
 
     Ok(())
