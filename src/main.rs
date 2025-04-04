@@ -1,7 +1,6 @@
-// use anyhow::{Error, Result};
+mod devices;
 
-// use std::thread;
-// use std::time::Duration;
+use devices::{CameraDevice, Device};
 
 // use nokhwa::utils::CameraIndex;
 // use nokhwa::pixel_format::{RgbAFormat, RgbFormat};
@@ -81,14 +80,25 @@
 // use devices::MicrophoneConfig;
 
 use anyhow::{Error, Result};
-use cpal::traits::{DeviceTrait, HostTrait};
-use cpal::Device as Microphone;
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{Device as Microphone, InputCallbackInfo};
 use nokhwa::utils::{CameraIndex, CameraInfo, RequestedFormat, RequestedFormatType};
 use nokhwa::pixel_format::RgbFormat;
 
 use clap::{Parser, ValueEnum};
 
-// --------- structs --------- //
+
+// --------- functions --------- //
+
+fn get_audio_devices() -> Result<Vec<Microphone>, Error> {
+    let host = cpal::default_host();
+    let devices = host.input_devices()
+        .unwrap()
+        .collect::<Vec<Microphone>>();
+    Ok(devices)
+}
+
+// ---------- main ---------- //
 
 use anyhow::Error;
 use datamodel::Device;
