@@ -1,78 +1,45 @@
 mod devices;
+mod clap_commands;
 
-use devices::{CameraDevice, Device};
+use clap::Parser;
+use clap_commands::{Cli, Commands};
 
-use std::thread::sleep;
-use std::time;
+use devices::{CameraDevice, Device, DeviceManager, MicrophoneDevice};
 
 use anyhow::{Error, Result};
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{Device as Microphone, InputCallbackInfo};
-use nokhwa::utils::{CameraIndex, CameraInfo, RequestedFormat, RequestedFormatType};
-use nokhwa::pixel_format::RgbFormat;
 
-use clap::{Parser, ValueEnum};
-
-
-// --------- functions --------- //
-
-fn get_audio_devices() -> Result<Vec<Microphone>, Error> {
-    let host = cpal::default_host();
-    let devices = host.input_devices()
-        .unwrap()
-        .collect::<Vec<Microphone>>();
-    Ok(devices)
-}
-
-// ---------- main ---------- //
-
-#[derive(Debug, Clone, ValueEnum, PartialEq)]
-enum DeviceType {
-    Camera,
-    Microphone,
-}
 
 // ---------- main function --------- //
-
-#[derive(Parser)]
-#[command(author, version, about, long_about = None)]
-struct Args {
-
-    /// list devices
-    #[clap(short, long)]
-    list_devices: bool,
-
-    // start capture, device_type and index are required
-    #[clap(short, long)]
-    capture: bool,
-
-    // device type to capture
-    #[clap(short, long, value_enum)]
-    device_type: Option<DeviceType>,
-
-    // device index to capture, to find index run `--list-devices`
-    #[clap(short, long)]
-    index: Option<usize>,
-}
 
 
 fn main() -> Result<(), Error> {
 
-    let args = Args::parse();
+    let cli = Cli::parse();
 
-    // let camera_devices = get_camera_devices()?;
-    
-    let cameras = match CameraDevice::get_all_available_devices() {
-        Ok(cameras) => cameras,
-        Err(e) => {
-            println!("Failed to get camera devices: {}", e);
-            return Ok(());
-        }
-    };
 
-    for cam in cameras.iter() {
-        println!("{:?}", cam.ID);
-    }
+    // let all_devices = DeviceManager::get_all_available_devices()?;
+
+    //
+    // todo!("Wrap all devices by device manager includign process information");
+    //
+
+    // match cli.command {
+    //     Commands::List { cameras, microphones } => {
+    //         if cameras {
+    //             println!("\nCamera Devices Found: {}", camera_devices.len());
+    //             for dev in camera_devices.iter() {
+    //                 println!("{}:\t: {}", dev.get_info().id, dev.get_info().name);
+    //             }
+    //         };
+    //         if microphones {
+    //             println!("\nMicrophone Devices Found: {}", microphone_devices.len());
+    //             for dev in microphone_devices.iter() {
+    //                 println!("{}:\t: {}", dev.get_info().id, dev.get_info().name);
+    //             }
+    //         };
+    //     }
+    // }
+
 
     // let audio_devices = get_audio_devices()?;
 

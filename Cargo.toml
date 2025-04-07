@@ -15,6 +15,7 @@ path = "src/main.rs"
 anyhow = "1.0.97"
 clap = { version = "4.5.32", features = ["derive"] }
 cpal = "0.15.3"
+portpicker = "0.1.1"
 
 [dependencies.nokhwa]
 version = "0.10.7"
