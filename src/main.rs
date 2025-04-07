@@ -1,6 +1,8 @@
 mod devices;
+mod clap_commands;
 
-use devices::{CameraDevice, Device};
+use clap::Parser;
+use clap_commands::{Cli, Commands};
 
 // use nokhwa::utils::CameraIndex;
 // use nokhwa::pixel_format::{RgbAFormat, RgbFormat};
@@ -80,10 +82,6 @@ use devices::{CameraDevice, Device};
 // use devices::MicrophoneConfig;
 
 use anyhow::{Error, Result};
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{Device as Microphone, InputCallbackInfo};
-use nokhwa::utils::{CameraIndex, CameraInfo, RequestedFormat, RequestedFormatType};
-use nokhwa::pixel_format::RgbFormat;
 
 use clap::{Parser, ValueEnum};
 
