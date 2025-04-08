@@ -2,7 +2,7 @@ mod devices;
 mod clap_commands;
 
 use clap::Parser;
-use clap_commands::{Cli, Commands};
+use clap_commands::{Cli, Commands, DeviceCommand};
 
 // use nokhwa::utils::CameraIndex;
 // use nokhwa::pixel_format::{RgbAFormat, RgbFormat};

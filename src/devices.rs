@@ -8,19 +8,19 @@ use std::process::{Child, Command};
 use std::sync::mpsc::{channel, Sender, Receiver};
 
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, ValueEnum, PartialEq)]
 pub enum DeviceType {
     Camera,
     Microphone,
 }
 
 #[derive(Debug)]
-enum DeviceStatus {
+pub enum DeviceStatus {
     Initialized,
     Started,
     Paused,
+    Stopped,
     Terminated,
-    Error,
 }
 
 #[derive(Debug)]
@@ -200,26 +200,36 @@ impl Device for MicrophoneDevice {
 
 #[derive(Debug)]
 pub struct DeviceManager {
-    device_info: DeviceInformation,
-    config_id: Option<u8>,
-    status: DeviceStatus,
+    pub system_id: u8,
+    pub device_info: DeviceInformation,
+    pub config_id: Option<u8>,
+    pub status: DeviceStatus,
 }
 
 impl DeviceManager {
-    pub fn new(device_info: DeviceInformation, config_id: Option<u8>) -> Self {
+    pub fn new(device_info: DeviceInformation, system_id: u8, config_id: Option<u8>) -> Self {
         DeviceManager {
             device_info: device_info,
             config_id: config_id,
+            system_id: system_id,
             status: DeviceStatus::Initialized,
         }
     }
 
-    pub fn get_all_available_devices_managed() -> Result<Vec<DeviceInformation>, Error> {
+    pub fn get_all_available_devices_managed() -> Result<Vec<Self>, Error> {
         let mut devices = Vec::new();
         devices.extend(CameraDevice::get_all_available_devices()?);
         devices.extend(MicrophoneDevice::get_all_available_devices()?);
 
-        Ok(devices)
+        let mut managed_devices = devices
+            .iter()
+            .enumerate()
+            .map(|(i, device)| {
+                DeviceManager::new(device.clone(), i as u8, None)
+            })
+            .collect::<Vec<DeviceManager>>();
+
+        Ok(managed_devices)
     }
 }
 
