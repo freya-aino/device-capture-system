@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 
 #[derive(Parser)]
@@ -11,48 +11,41 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    List {
+    List,
+    Camera {
+        // device command
         #[clap(short, long)]
-        cameras: bool,
-        #[clap(short, long)]
-        microphones: bool,
-    },
-    // Camera {
-    //     #[clap(short, long)]
-    //     id: Option<u8>,
-    //     #[clap(short, long)]
-    //     config_id: Option<u8>,
+        index: u8,
 
-    //     #[command(subcommand)]
-    //     action: Option<ActionCommand>,
-    // },
-    // Show,
-    // Configs,
-    // Info,
-    // Start,
-    // Stop,
-    // Pause,
-    // Resume,
-    // Terminate,
+        #[command(subcommand)]
+        device_command: DeviceCommand,
+    },
+    Microphone {
+        // device command
+        #[clap(short, long)]
+        index: u8,
+
+        #[command(subcommand)]
+        device_command: DeviceCommand,
+    },
 }
 
-// #[derive(Subcommand)]
-// pub enum ActionCommands {
-//     Start,
-//     Stop,
-//     Pause,
-//     Resume,
-//     Terminate,
-// }
+#[derive(Subcommand)]
+pub enum DeviceCommand {
+    ListConfigs,
+    Info,
+    Start,
+    Stop,
+    Pause,
+    Resume,
+    Terminate,
+}
 
 
 // #[derive(Parser)]
 // #[command(author, version, about, long_about = None)]
 // struct Args {
 
-//     /// list devices
-//     #[clap(short='d', long)]
-//     list_devices: bool,
 
 //     // // start capture, device_type and index are required
 //     // #[clap(short, long)]

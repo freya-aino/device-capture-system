@@ -2,9 +2,9 @@ mod devices;
 mod clap_commands;
 
 use clap::Parser;
-use clap_commands::{Cli, Commands};
+use clap_commands::{Cli, Commands, DeviceCommand};
 
-use devices::{CameraDevice, Device, DeviceManager, MicrophoneDevice};
+use devices::{CameraDevice, Device, DeviceManager, DeviceType, MicrophoneDevice};
 
 use anyhow::{Error, Result};
 
@@ -16,29 +16,41 @@ fn main() -> Result<(), Error> {
 
     let cli = Cli::parse();
 
+    let all_devices = DeviceManager::get_all_available_devices_managed()?;
 
-    // let all_devices = DeviceManager::get_all_available_devices()?;
+    match cli.command {
+        Commands::List => {
+            println!("\nDevices Found: {}", all_devices.len());
+            for dev in all_devices.iter() {
+                let type_str = match dev.device_info.device_type {
+                    DeviceType::Camera => "Camera    ",
+                    DeviceType::Microphone => "Microphone",
+                };
+                println!("{} : {} \t: {}", dev.system_id, type_str, dev.device_info.name);
+            }
+        }
+        Commands::Camera { index, device_command } => {
+            match device_command {
+                DeviceCommand::Start => {
 
-    //
-    // todo!("Wrap all devices by device manager includign process information");
-    //
+                }
+                _ => {
+                    println!("Camera command not implemented yet.");
+                }
+            }
+        },
+        Commands::Microphone { index, device_command } => {
+            match device_command {
+                DeviceCommand::Start => {
 
-    // match cli.command {
-    //     Commands::List { cameras, microphones } => {
-    //         if cameras {
-    //             println!("\nCamera Devices Found: {}", camera_devices.len());
-    //             for dev in camera_devices.iter() {
-    //                 println!("{}:\t: {}", dev.get_info().id, dev.get_info().name);
-    //             }
-    //         };
-    //         if microphones {
-    //             println!("\nMicrophone Devices Found: {}", microphone_devices.len());
-    //             for dev in microphone_devices.iter() {
-    //                 println!("{}:\t: {}", dev.get_info().id, dev.get_info().name);
-    //             }
-    //         };
-    //     }
-    // }
+                }
+                _ => {
+                    println!("Microphone command not implemented yet.");
+                }
+            }
+        }
+    }
+
 
 
     // let audio_devices = get_audio_devices()?;
