@@ -1,6 +1,12 @@
 mod devices;
 mod clap_commands;
 
+
+use std::sync::Arc;
+use std::io::Write;
+use std::net::TcpStream;
+use std::time::Duration;
+
 use clap::Parser;
 use clap_commands::{Cli, Commands, DeviceCommand};
 
@@ -85,6 +91,8 @@ use anyhow::{Error, Result};
 
 use clap::{Parser, ValueEnum};
 
+#[tokio::main]
+async fn main() -> Result<(), Error> {
 
 // --------- functions --------- //
 
