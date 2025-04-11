@@ -1,3 +1,5 @@
-mod devices;
 
-pub use devices::{CameraDevice, MicrophoneDevice};
+pub mod modules;
+
+pub use modules::device::*;
+pub use modules::network::*;
