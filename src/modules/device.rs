@@ -1,11 +1,9 @@
 use anyhow::{Error, Result};
 use cpal::traits::DeviceTrait;
 use cpal::traits::HostTrait;
-use std::time::Instant;
 use nokhwa::utils::FrameFormat as PixelFormat;
 use clap::ValueEnum;
-use std::process::{Child, Command};
-use std::sync::mpsc::{channel, Sender, Receiver};
+
 
 
 #[derive(Debug, Clone, ValueEnum, PartialEq)]
@@ -13,32 +11,6 @@ pub enum DeviceType {
     Camera,
     Microphone,
 }
-
-#[derive(Debug)]
-pub enum DeviceStatus {
-    Initialized,
-    Started,
-    Paused,
-    Stopped,
-    Terminated,
-}
-
-#[derive(Debug)]
-enum ProcessControl {
-    Start,
-    Stop,
-    Pause,
-    Resume,
-    Terminate
-}
-
-// #[derive(Debug)]
-// pub enum DeviceData {
-//     CameraData(CameraData),
-//     MicrophoneData(MicrophoneData),
-// }
-
-// ---
 
 trait DeviceConfig {}
 
@@ -88,13 +60,6 @@ pub struct CameraDevice(DeviceInformation);
 #[derive(Debug)]
 pub struct MicrophoneDevice(DeviceInformation);
 
-#[derive(Debug)]
-pub struct FrameData {
-    frame: Vec<u8>,
-    device_type: DeviceType,
-    timestamp: Instant,
-}
-
 // ---
 
 impl DeviceConfig for CameraConfig {}
@@ -142,6 +107,7 @@ impl Device for CameraDevice {
 }
 
 impl Device for MicrophoneDevice {
+
     type Config = MicrophoneConfig;
 
     fn new(id: u8, name: String) -> Self {
@@ -196,9 +162,16 @@ impl Device for MicrophoneDevice {
     // }
 }
 
-// ---
 
 #[derive(Debug)]
+pub enum DeviceStatus {
+    Initialized,
+    Started,
+    Paused,
+    Stopped,
+    Terminated,
+}
+
 pub struct DeviceManager {
     pub system_id: u8,
     pub device_info: DeviceInformation,
@@ -221,7 +194,7 @@ impl DeviceManager {
         devices.extend(CameraDevice::get_all_available_devices()?);
         devices.extend(MicrophoneDevice::get_all_available_devices()?);
 
-        let mut managed_devices = devices
+        let managed_devices = devices
             .iter()
             .enumerate()
             .map(|(i, device)| {
@@ -233,116 +206,3 @@ impl DeviceManager {
     }
 }
 
-
-// impl Device {
-//     pub fn new(id: DeviceId, name: String, device_type: DeviceType) -> Self {
-//         Device {
-//             id: id,
-//             name: name,
-//             device_type: device_type,
-//             state: DeviceStatus::Initialized,
-//         }
-//     }
-
-//     // fn get_all_camera_configs(id: u32) -> Result<Vec<CameraConfig>, Error> {
-//     //     let mut out_configs = Vec::new();
-
-//     //     let cam = Camera::new(
-//     //         CameraIndex::Index(id),
-//     //         RequestedFormat::new::<RgbFormat>(RequestedFormatType::AbsoluteHighestFrameRate),
-//     //     );
-
-//     //     let formats = match cam.unwrap() {
-//     //         mut cam => cam.compatible_camera_formats().unwrap(),
-//     //         _ => Vec::new(),
-//     //     };
-
-//     //     for format in formats {
-//     //         out_configs.push(
-//     //             CameraConfig {
-//     //                 resolution: (format.resolution().width(), format.resolution().height()),
-//     //                 fps: format.frame_rate(),
-//     //                 pixel_format: format.format(),
-//     //             }
-//     //             .clone(),
-//     //         );
-//     //     }
-
-//     //     Ok(out_configs)
-//     // }
-
-//     // fn get_all_microphone_configs(id: u32) -> Result<Vec<MicrophoneConfig>, Error> {
-//     //     let mut out_configs = Vec::new();
-
-//     //     let host = cpal::default_host();
-//     //     let device = host.input_devices().unwrap().nth(id as usize).unwrap();
-//     //     let supported_configs = device.supported_input_configs().unwrap();
-
-//     //     for conf in supported_configs {
-//     //         out_configs.push(MicrophoneConfig {
-//     //             sample_rate: conf.max_sample_rate().0 as u32,
-//     //             channels: conf.channels() as u32,
-//     //             sample_size: conf.sample_format().sample_size() as u32,
-//     //         });
-//     //     }
-//     //     Ok(out_configs)
-//     // }
-// }
-
-// pub fn get_configs(&self) -> Result<(), Error> {
-//     let conf = match self.device_info.device_type {
-//         DeviceType::Camera => DeviceInfo::get_all_camera_configs(self.device_info.id.0 as u32)
-//             .unwrap()
-//             .into_iter()
-//             .map(DeviceConfig::Camera)
-//             .collect(),
-//         DeviceType::Microphone => {
-//             DeviceInfo::get_all_microphone_configs(self.device_info.id.0 as u32)
-//                 .unwrap()
-//                 .into_iter()
-//                 .map(DeviceConfig::Microphone)
-//                 .collect()
-//         }
-//     };
-//     return Ok(());
-// }
-
-//     pub fn get_all_cameras() -> Result<Vec<DeviceInfo>, Error> {
-//         let mut out_cameras = Vec::new();
-
-//         match nokhwa_check() {
-//             true => println!("Nokhwa is available"),
-//             false => panic!("Nokhwa is not available"),
-//         }
-
-//         let backend = native_api_backend().expect("failed to get native api backend");
-
-//         let camera_infos = query(backend).expect("failed to query cameras");
-
-//         for device in camera_infos {
-//             out_cameras.push(DeviceInfo::new(
-//                 DeviceId(device.index().as_index().unwrap() as u32),
-//                 device.human_name().to_string(),
-//                 DeviceType::Camera,
-//                 DeviceStatus::Available,
-//             ))
-//         }
-//         Ok(out_cameras)
-//     }
-// }
-
-// fn get_all_microphones() -> Result<Vec<Device>, Error> {
-//     let mut out_microphones = Vec::new();
-//     let host = cpal::default_host();
-//     let devices = host.input_devices().unwrap();
-//     for (i, device) in devices.enumerate() {
-//         out_microphones.push(
-//             Device::new(
-//                 i as u16,
-//                 device.name().unwrap(),
-//                 None,
-//             )
-//         );
-//     }
-//     Ok(out_microphones)
-// }

@@ -1,10 +1,7 @@
 mod devices;
 mod clap_commands;
+mod net;
 
-
-use std::sync::Arc;
-use std::io::Write;
-use std::net::TcpStream;
 use std::time::Duration;
 
 use clap::Parser;

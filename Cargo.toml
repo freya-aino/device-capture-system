@@ -4,12 +4,15 @@ version = "0.1.0"
 edition = "2024"
 
 [lib]
-name = "device_capture"
+name = "device_capture_system"
 path = "src/lib.rs"
 
 [[bin]]
-name = "device-capture-system"
-path = "src/main.rs"
+name = "cli"
+path = "src/bin/cli.rs"
+
+
+
 
 [dependencies]
 anyhow = "1.0.97"
