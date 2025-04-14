@@ -3,7 +3,7 @@ use cpal::traits::DeviceTrait;
 use cpal::traits::HostTrait;
 use nokhwa::utils::FrameFormat as PixelFormat;
 use clap::ValueEnum;
-
+use serde::{Serialize, Deserialize};
 
 
 #[derive(Debug, Clone, ValueEnum, PartialEq)]
@@ -32,7 +32,7 @@ pub trait Device {
 
 // ---
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceInformation {
     pub id: u8,
     pub name: String,

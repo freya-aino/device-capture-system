@@ -1,6 +1,10 @@
 use std::net::Ipv4Addr;
+use clap::{Parser, Subcommand};
 
-use clap::{Parser, Subcommand, ValueEnum};
+use device_capture_system::modules::network::Connection;
+use device_capture_system::modules::device::DeviceManager;
+
+
 
 
 #[derive(Parser)]
@@ -43,20 +47,23 @@ pub enum DeviceCommand {
     Terminate,
 }
 
-use device_capture_system::modules::network::ConnectionManager;
+fn main() {
 
-#[tokio::main]
-async fn main() {
+    let _cli = Cli::parse();
 
-    let cli = Cli::parse();
+    let _all_devices = DeviceManager::get_all_available_devices_managed().unwrap();
 
-    let net_manager = ConnectionManager::new(
+    let mut conn = Connection::new(
         Ipv4Addr::new(127, 0, 0, 1),
         10000,
-    ).await;
+        10,
+    );
 
+    let context = zmq::Context::new();
+    // conn.initialize_as_sender(&context).unwrap();
+    
+    
 
-    // let all_devices = DeviceManager::get_all_available_devices_managed()?;
 
     // match cli.command {
     //     Commands::List => {
