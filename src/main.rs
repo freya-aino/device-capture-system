@@ -1,6 +1,3 @@
-mod devices;
-mod clap_commands;
-mod net;
 
 use std::time::Duration;
 
