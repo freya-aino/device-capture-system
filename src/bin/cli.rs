@@ -1,8 +1,9 @@
 use std::net::Ipv4Addr;
+use std::time::{self, Duration};
 use clap::{Parser, Subcommand};
 
-use device_capture_system::modules::network::Connection;
 use device_capture_system::modules::device::DeviceManager;
+use device_capture_system::{FramePacket, Sender};
 
 
 
@@ -47,22 +48,60 @@ pub enum DeviceCommand {
     Terminate,
 }
 
+
+fn generate_random_image(w: u32, h: u32, c: u32) -> Vec<u8> {
+    let size = (w * h * c) as usize;
+    let arr = vec![0u8; size];
+    arr
+}
+
+
 fn main() {
 
     let _cli = Cli::parse();
 
     let _all_devices = DeviceManager::get_all_available_devices_managed().unwrap();
 
-    let mut conn = Connection::new(
+    let mut sender = Sender::new(
         Ipv4Addr::new(127, 0, 0, 1),
         10000,
         10,
     );
 
     let context = zmq::Context::new();
-    // conn.initialize_as_sender(&context).unwrap();
+    sender.initialize(&context).unwrap();
     
-    
+    let fp = FramePacket::new(
+        time::SystemTime::now(),
+        _all_devices[0].device_info.clone(),
+        vec![10, 20, 30],
+        generate_random_image(640, 480, 3).as_slice(),
+    );
+
+    let frame = generate_random_image(2550, 1550, 3);
+
+    let mut average_duration: Duration = Duration::new(0, 0);
+    // time sending frames
+    let num_tests = 10.0;
+    for i in 0..(num_tests as i32) {
+
+        let start_time = time::SystemTime::now();
+
+        let fp = FramePacket::new(
+            time::SystemTime::now(),
+            _all_devices[0].device_info.clone(),
+            vec![10, 20, 30],
+            &frame,
+        );
+        sender.send(fp).unwrap();
+
+        let end_time = time::SystemTime::now();
+
+        let duration = end_time.duration_since(start_time).unwrap();
+        average_duration += duration;
+    }
+
+    println!("Average duration: {:?} -- Average fps: {:?}", average_duration.as_secs_f32() / num_tests, 1.0 / (average_duration.as_secs_f32() / num_tests));
 
 
     // match cli.command {

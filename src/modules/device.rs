@@ -3,10 +3,10 @@ use cpal::traits::DeviceTrait;
 use cpal::traits::HostTrait;
 use nokhwa::utils::FrameFormat as PixelFormat;
 use clap::ValueEnum;
-use serde::{Serialize, Deserialize};
+use bincode::{Encode, Decode};
 
 
-#[derive(Debug, Clone, ValueEnum, PartialEq)]
+#[derive(Debug, Clone, ValueEnum, PartialEq, Encode, Decode)]
 pub enum DeviceType {
     Camera,
     Microphone,
@@ -32,7 +32,7 @@ pub trait Device {
 
 // ---
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct DeviceInformation {
     pub id: u8,
     pub name: String,

@@ -1,21 +1,20 @@
 use anyhow::{Error, Result};
+use bincode::config::Configuration;
 use portpicker::pick_unused_port;
+use serde::{Deserialize, Serialize};
+use bincode::config;
+use bincode::{Encode, Decode};
 
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::{self, Duration, SystemTime};
 
 use zmq::{Context, Socket};
 
 use crate::DeviceInformation;
 
 
-// fn generate_random_image(w: u32, h: u32, c: u32) -> Vec<u8> {
-//     let size = (w * h * c) as usize;
-//     let arr = vec![0u8; size];
-//     arr
-// }
 
 pub enum ConnectionStatus {
     Created,
@@ -25,40 +24,63 @@ pub enum ConnectionStatus {
     Closed,
 }
 
-#[derive(Debug)]
-pub struct FramePacket {
-    timestamp: u64,
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct FramePacketInformation {
+    timestamp: time::SystemTime,
     device_information: DeviceInformation,
     frame_shape: Vec<u16>,
-    frame: Vec<u8>,
 }
 
-impl FramePacket {
+impl FramePacketInformation {
     pub fn new(
-        timestamp: u64,
+        timestamp: time::SystemTime,
         device_information: DeviceInformation,
         frame_shape: Vec<u16>,
-        frame: Vec<u8>,
     ) -> Self {
-        FramePacket {
+        FramePacketInformation {
             timestamp,
             device_information,
             frame_shape,
-            frame,
         }
     }
-
+    
     pub fn serialize(&self) -> Result<Vec<u8>, Error> {
-        let mut serialized_data = Vec::new();
-        serialized_data.extend_from_slice(&self.timestamp.to_le_bytes());
-        serialized_data.extend_from_slice(&self.device_information.serialize()?);
-        serialized_data.extend_from_slice(&self.frame_shape.serialize()?);
-        serialized_data.extend_from_slice(&self.frame);
-        Ok(serialized_data)
+        let ser_info = bincode::encode_to_vec(&self, config::standard())
+            .map_err(|e| Error::msg(format!("Serialization error: {}", e)))?;
+        Ok(ser_info)
+    }
+
+    pub fn deserialize(data: &[u8]) -> Result<Self, Error> {
+        let (info, _) = bincode::decode_from_slice(data, config::standard())
+            .map_err(|e| Error::msg(format!("Deserialization error: {}", e)))?;
+        Ok(info)
     }
 }
 
 
+#[derive(Debug)]
+pub struct FramePacket<'a> {
+    frame_info: FramePacketInformation,
+    data: &'a [u8],
+}
+
+impl<'a> FramePacket<'a> {
+    pub fn new(
+        timestamp: time::SystemTime,
+        device_information: DeviceInformation,
+        frame_shape: Vec<u16>,
+        data: &'a [u8],
+    ) -> Self {
+        FramePacket {
+            frame_info: FramePacketInformation::new(
+                timestamp,
+                device_information,
+                frame_shape,
+            ),
+            data: data,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct ConnectionStats {
@@ -119,18 +141,6 @@ impl Receiver {
     pub fn initialize(&mut self, context: &Context) -> Result<(), Error> {
         self.0.initialize(context, zmq::SUB)
     }
-
-    pub fn send(&mut self, frame_packet: FramePacket) -> Result<(), Error> {
-        if let Some(socket) = &self.0.socket {
-            socket.send_multipart(vec![
-                device_info,
-                data.to_vec(),
-            ]);
-            Ok(())
-        } else {
-            Err(Error::msg("Socket is not initialized."))
-        }
-    }
 }
 
 impl Sender {
@@ -140,6 +150,22 @@ impl Sender {
 
     pub fn initialize(&mut self, context: &Context) -> Result<(), Error> {
         self.0.initialize(context, zmq::PUB)
+    }
+    
+    pub fn send<'a>(&self, frame_packet: FramePacket<'a>) -> Result<(), Error> {
+        match self.0.socket {
+            Some(ref socket) => {
+                let serialized_info = frame_packet.frame_info.serialize()?;
+                socket.send_multipart(&[
+                    serialized_info.as_slice(),
+                    frame_packet.data,
+                ], 0)?;
+            },
+            None => {
+                return Err(Error::msg("Socket is not initialized."));
+            }
+        };
+        Ok(())
     }
 }
 
@@ -193,27 +219,4 @@ impl Connection {
         Ok(())
     }
 }
-
-
-// #[derive(Debug)]
-// pub struct FramePacket {
-//     frame: Vec<u8>,
-//     device_information: DeviceInformation,
-//     timestamp: u64,
-//     frame_shape: Vec<u16>,
-// }
-
-// pub struct Connection {
-//     ip: String,
-//     port: String,
-// }
-
-// pub struct WebRTCManager {
-//     peer_connection: Arc<RTCPeerConnection>,
-//     data_channel: Option<Arc<RTCDataChannel>>,
-// }
-
-
-
-
 
