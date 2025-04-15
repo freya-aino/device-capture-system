@@ -6,6 +6,7 @@ use bincode::config;
 use bincode::{Encode, Decode};
 
 use std::collections::HashMap;
+use std::f32::consts::E;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::sync::Arc;
 use std::time::{self, Duration, SystemTime};
@@ -83,6 +84,13 @@ impl<'a> FramePacket<'a> {
 }
 
 #[derive(Debug)]
+pub struct ReceiveFrame {
+    pub frame_info: FramePacketInformation,
+    pub data: Vec<u8>,
+}
+
+
+#[derive(Debug)]
 pub struct ConnectionStats {
     frames: u64,
     bytes: u64,
@@ -105,17 +113,6 @@ impl ConnectionStats {
             last_frame_time: SystemTime::now(),
         }
     }
-}
-
-
-trait Connect {
-    fn initialize(&self) -> Result<(), Error>;
-    // fn start(&self) -> Result<(), Error>;
-    // fn stop(&self) -> Result<(), Error>;
-    // fn pause(&self) -> Result<(), Error>;
-    // fn resume(&self) -> Result<(), Error>;
-    // fn restart(&self) -> Result<(), Error>;
-    // fn get_stats(&self) -> ConnectionStats;
 }
 
 pub struct Connection {
@@ -141,6 +138,39 @@ impl Receiver {
     pub fn initialize(&mut self, context: &Context) -> Result<(), Error> {
         self.0.initialize(context, zmq::SUB)
     }
+
+    pub fn receive(&self) -> Result<Option<ReceiveFrame>, Error> {
+        match self.0.socket {
+            Some(ref socket) => {
+
+                match socket.recv_multipart(zmq::DONTWAIT) {
+                    Ok(parts) => {
+                        if parts.len() != 2 {
+                            return Err(Error::msg("Invalid packet received."));
+                        }
+
+                        let frame_information = FramePacketInformation::deserialize(&parts[0]).unwrap();
+                        let data = parts[1].to_vec();
+
+                        return Ok(Some(ReceiveFrame {
+                            frame_info: frame_information,
+                            data: data,
+                        }));
+                    }
+                    Err(e) if e == zmq::Error::EAGAIN => {
+                        // No message available, continue waiting
+                        return Ok(None);
+                    }
+                    Err(e) => {
+                        return Err(Error::msg(format!("Error receiving message: {}", e)));
+                    }
+                }
+            },
+            None => {
+                return Err(Error::msg("Socket is not initialized."));
+            }
+        };
+    }
 }
 
 impl Sender {
@@ -159,7 +189,9 @@ impl Sender {
                 socket.send_multipart(&[
                     serialized_info.as_slice(),
                     frame_packet.data,
-                ], 0)?;
+                ],
+                zmq::DONTWAIT
+            )?;
             },
             None => {
                 return Err(Error::msg("Socket is not initialized."));
