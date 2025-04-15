@@ -1,9 +1,10 @@
+use anyhow::{Error, Result};
 use std::net::Ipv4Addr;
 use std::time::{self, Duration};
 use clap::{Parser, Subcommand};
 
-use device_capture_system::modules::device::DeviceManager;
-use device_capture_system::{FramePacket, Sender};
+use device_capture_system::modules::device::{DeviceManager, DeviceInformation};
+use device_capture_system::{DeviceType, FramePacket, Receiver, Sender};
 
 
 
@@ -56,40 +57,28 @@ fn generate_random_image(w: u32, h: u32, c: u32) -> Vec<u8> {
 }
 
 
-fn main() {
-
-    let _cli = Cli::parse();
-
-    let _all_devices = DeviceManager::get_all_available_devices_managed().unwrap();
-
+fn benchmark_sender(device_info: DeviceInformation, iterations: u32) -> Result<(), Error> {
+    
     let mut sender = Sender::new(
         Ipv4Addr::new(127, 0, 0, 1),
-        10000,
+        portpicker::pick_unused_port().unwrap(),
         10,
     );
 
     let context = zmq::Context::new();
     sender.initialize(&context).unwrap();
     
-    let fp = FramePacket::new(
-        time::SystemTime::now(),
-        _all_devices[0].device_info.clone(),
-        vec![10, 20, 30],
-        generate_random_image(640, 480, 3).as_slice(),
-    );
-
     let frame = generate_random_image(2550, 1550, 3);
 
     let mut average_duration: Duration = Duration::new(0, 0);
     // time sending frames
-    let num_tests = 10.0;
-    for i in 0..(num_tests as i32) {
+    for _ in 0..iterations {
 
         let start_time = time::SystemTime::now();
 
         let fp = FramePacket::new(
             time::SystemTime::now(),
-            _all_devices[0].device_info.clone(),
+            device_info.clone(),
             vec![10, 20, 30],
             &frame,
         );
@@ -101,7 +90,61 @@ fn main() {
         average_duration += duration;
     }
 
-    println!("Average duration: {:?} -- Average fps: {:?}", average_duration.as_secs_f32() / num_tests, 1.0 / (average_duration.as_secs_f32() / num_tests));
+    println!("Average duration: {:?} -- Average fps: {:?}", average_duration.as_secs_f32() / (iterations as f32), 1.0 / (average_duration.as_secs_f32() / (iterations as f32)));
+
+    Ok(())
+}
+
+
+fn main() {
+
+    let _cli = Cli::parse();
+
+    let _all_devices = DeviceManager::get_all_available_devices_managed().unwrap();
+
+
+
+    let context = zmq::Context::new();
+
+    // benchmark_sender(DeviceInformation { id: 0, name: "test".to_string(), device_type: DeviceType::Camera }, 100).unwrap();
+    let mut sender = Sender::new(
+        Ipv4Addr::new(127, 0, 0, 1),
+        10000,
+        10,
+    );
+
+    let mut receiver = Receiver::new(
+        Ipv4Addr::new(127, 0, 0, 1),
+        10000,
+        10,
+    );
+
+    sender.initialize(&context).unwrap();
+    receiver.initialize(&context).unwrap();
+
+
+    sender.send(FramePacket::new(
+        time::SystemTime::now(),
+        _all_devices[0].device_info.clone(),
+        vec![10, 20, 30],
+        &generate_random_image(2550, 1550, 3),
+    )).unwrap();
+
+    match receiver.receive() {
+        Ok(res) => {
+            match res {
+                Some(frame) => {
+                    println!("Received data...");
+                },
+                None => {
+                    println!("No message available...");
+                }
+            }
+        },
+        Err(e) => {
+            println!("Error receiving data: {:?}", e);
+        }
+    }
 
 
     // match cli.command {
