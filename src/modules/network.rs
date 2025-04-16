@@ -1,17 +1,9 @@
 use anyhow::{Error, Result};
-use bincode::config::Configuration;
-use portpicker::pick_unused_port;
-use serde::{Deserialize, Serialize};
 use bincode::config;
 use bincode::{Encode, Decode};
 
-use std::alloc::System;
-use std::collections::HashMap;
-use std::f32::consts::E;
-use std::io::{Bytes, Write};
 use std::net::{Ipv4Addr, SocketAddrV4};
-use std::sync::Arc;
-use std::time::{self, Duration, SystemTime};
+use std::time::SystemTime;
 
 use zmq::{Context, Socket};
 
@@ -31,14 +23,14 @@ pub enum ConnectionStatus {
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct FramePacketInformation {
-    timestamp: time::SystemTime,
+    timestamp: SystemTime,
     device_information: DeviceInformation,
     frame_shape: Vec<u16>,
 }
 
 impl FramePacketInformation {
     pub fn new(
-        timestamp: time::SystemTime,
+        timestamp: SystemTime,
         device_information: DeviceInformation,
         frame_shape: Vec<u16>,
     ) -> Self {
@@ -62,31 +54,6 @@ impl FramePacketInformation {
     }
 }
 
-
-// #[derive(Debug)]
-// pub struct FramePacket<'a> {
-//     frame_info: FramePacketInformation,
-//     data: &'a [u8],
-// }
-
-// impl<'a> FramePacket<'a> {
-//     pub fn new(
-//         timestamp: time::SystemTime,
-//         device_information: DeviceInformation,
-//         frame_shape: Vec<u16>,
-//         data: &'a [u8],
-//     ) -> Self {
-//         FramePacket {
-//             frame_info: FramePacketInformation::new(
-//                 timestamp,
-//                 device_information,
-//                 frame_shape,
-//             ),
-//             data: data,
-//         }
-//     }
-// }
-
 #[derive(Debug)]
 pub struct FramePacket {
     pub frame_info: FramePacketInformation,
@@ -95,7 +62,7 @@ pub struct FramePacket {
 
 impl FramePacket {
     pub fn new(
-        timestamp: time::SystemTime,
+        timestamp: SystemTime,
         device_information: DeviceInformation,
         frame_shape: Vec<u16>,
         data: Vec<u8>,
@@ -110,14 +77,6 @@ impl FramePacket {
         }
     }
 }
-
-
-// #[derive(Debug)]
-// pub struct ReceiveFrame {
-//     pub frame_info: FramePacketInformation,
-//     pub data: Vec<u8>,
-// }
-
 
 #[derive(Debug)]
 pub struct ConnectionStats {
