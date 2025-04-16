@@ -50,15 +50,10 @@ pub enum DeviceCommand {
 }
 
 
-fn generate_random_image(w: u32, h: u32, c: u32) -> Vec<u8> {
-    let size = (w * h * c) as usize;
-    let arr = vec![0u8; size];
-    arr
-}
-
-
-fn benchmark_sender(device_info: DeviceInformation, iterations: u32) -> Result<(), Error> {
+fn benchmark_sender(device_info: DeviceInformation, iterations: u32, data_size: u32, data_chunk_size: u32) -> Result<(), Error> {
     
+    print!("Starting benchmark sender...");
+
     let mut sender = Sender::new(
         Ipv4Addr::new(127, 0, 0, 1),
         portpicker::pick_unused_port().unwrap(),
@@ -68,11 +63,11 @@ fn benchmark_sender(device_info: DeviceInformation, iterations: u32) -> Result<(
     let context = zmq::Context::new();
     sender.initialize(&context).unwrap();
     
-    let frame = generate_random_image(2550, 1550, 3);
-
     let mut average_duration: Duration = Duration::new(0, 0);
     // time sending frames
     for _ in 0..iterations {
+
+        let frame = vec![0u8; data_size as usize];
 
         let start_time = time::SystemTime::now();
 
@@ -80,9 +75,9 @@ fn benchmark_sender(device_info: DeviceInformation, iterations: u32) -> Result<(
             time::SystemTime::now(),
             device_info.clone(),
             vec![10, 20, 30],
-            &frame,
+            frame,
         );
-        sender.send(fp).unwrap();
+        sender.send(fp, zmq::DONTWAIT, data_chunk_size).unwrap();
 
         let end_time = time::SystemTime::now();
 
@@ -90,6 +85,7 @@ fn benchmark_sender(device_info: DeviceInformation, iterations: u32) -> Result<(
         average_duration += duration;
     }
 
+    println!("Benchmark completed!");
     println!("Average duration: {:?} -- Average fps: {:?}", average_duration.as_secs_f32() / (iterations as f32), 1.0 / (average_duration.as_secs_f32() / (iterations as f32)));
 
     Ok(())
@@ -98,53 +94,61 @@ fn benchmark_sender(device_info: DeviceInformation, iterations: u32) -> Result<(
 
 fn main() {
 
+    // init cli
     let _cli = Cli::parse();
 
+    // get all devices
     let _all_devices = DeviceManager::get_all_available_devices_managed().unwrap();
 
 
-
-    let context = zmq::Context::new();
-
-    // benchmark_sender(DeviceInformation { id: 0, name: "test".to_string(), device_type: DeviceType::Camera }, 100).unwrap();
-    let mut sender = Sender::new(
-        Ipv4Addr::new(127, 0, 0, 1),
-        10000,
-        10,
-    );
-
-    let mut receiver = Receiver::new(
-        Ipv4Addr::new(127, 0, 0, 1),
-        10000,
-        10,
-    );
-
-    sender.initialize(&context).unwrap();
-    receiver.initialize(&context).unwrap();
+    
+    benchmark_sender(
+        _all_devices[0].device_info.clone(), 
+        1000,
+        1000 * 1000 * 3,
+        1024,
+    ).unwrap();
 
 
-    sender.send(FramePacket::new(
-        time::SystemTime::now(),
-        _all_devices[0].device_info.clone(),
-        vec![10, 20, 30],
-        &generate_random_image(2550, 1550, 3),
-    )).unwrap();
+    // let context = zmq::Context::new();
+    
+    // let mut sender = Sender::new(
+    //     Ipv4Addr::new(127, 0, 0, 1),
+    //     10000,
+    //     10,
+    // );
 
-    match receiver.receive() {
-        Ok(res) => {
-            match res {
-                Some(frame) => {
-                    println!("Received data...");
-                },
-                None => {
-                    println!("No message available...");
-                }
-            }
-        },
-        Err(e) => {
-            println!("Error receiving data: {:?}", e);
-        }
-    }
+    // let mut receiver = Receiver::new(
+    //     Ipv4Addr::new(127, 0, 0, 1),
+    //     10000,
+    //     10,
+    // );
+
+    // sender.initialize(&context).unwrap();
+    // receiver.initialize(&context).unwrap();
+
+    // sender.send(FramePacket::new(
+    //     time::SystemTime::now(),
+    //     _all_devices[0].device_info.clone(),
+    //     vec![10, 20, 30],
+    //     generate_random_image(2550, 1550, 3),
+    // ), zmq::DONTWAIT).unwrap();
+
+    // match receiver.receive(zmq::DONTWAIT) {
+    //     Ok(res) => {
+    //         match res {
+    //             Some(frame) => {
+    //                 println!("Received data...");
+    //             },
+    //             None => {
+    //                 println!("No message available...");
+    //             }
+    //         }
+    //     },
+    //     Err(e) => {
+    //         println!("Error receiving data: {:?}", e);
+    //     }
+    // }
 
 
     // match cli.command {
@@ -161,7 +165,6 @@ fn main() {
     //     Commands::Camera { index, device_command } => {
     //         match device_command {
     //             DeviceCommand::Start => {
-
     //             }
     //             _ => {
     //                 println!("Camera command not implemented yet.");
@@ -171,7 +174,6 @@ fn main() {
     //     Commands::Microphone { index, device_command } => {
     //         match device_command {
     //             DeviceCommand::Start => {
-
     //             }
     //             _ => {
     //                 println!("Microphone command not implemented yet.");
