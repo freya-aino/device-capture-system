@@ -102,13 +102,12 @@ fn main() {
 
 
     
-    benchmark_sender(
-        _all_devices[0].device_info.clone(), 
-        1000,
-        1000 * 1000 * 3,
-        1024,
-    ).unwrap();
-
+    // benchmark_sender(
+    //     _all_devices[0].device_info.clone(), 
+    //     1000,
+    //     1000 * 1000 * 3,
+    //     1024,
+    // ).unwrap();
 
     // let context = zmq::Context::new();
     

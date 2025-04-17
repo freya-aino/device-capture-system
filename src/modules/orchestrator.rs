@@ -16,10 +16,10 @@ pub struct DeviceSender {
 }
 
 impl DeviceSender {
-    pub fn new(device_manager: DeviceManager, ip: Ipv4Addr, port: u16, queue_size: u32) -> Self {
+    pub fn new(device_manager: DeviceManager, sender: Sender) -> Self {
         DeviceSender {
             device_manager: device_manager,
-            sender: Sender::new(ip, port, queue_size),
+            sender: sender
         }
     }
 }
@@ -31,10 +31,11 @@ pub struct DeviceReceiver {
 }
 
 impl DeviceReceiver {
-    pub fn new(io_manager: IOManager, ip: Ipv4Addr, port: u16, queue_size: u32) -> Self {
+    pub fn new(io_manager: IOManager, receiver: Receiver) -> Self {
         DeviceReceiver {
             io_manager: io_manager,
-            receiver: Receiver::new(ip, port, queue_size),
+            receiver: receiver
         }
     }
 }
+
