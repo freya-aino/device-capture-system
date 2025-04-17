@@ -98,8 +98,8 @@ fn main() {
     let _cli = Cli::parse();
 
     // get all devices
-    let _all_devices = DeviceManager::get_all_available_devices_managed().unwrap();
-
+    let _all_devices = DeviceManager::get_all_available_devices().unwrap();
+    
 
     
     // benchmark_sender(
