@@ -1,3 +1,4 @@
+use anyhow::Ok;
 use anyhow::{Error, Result};
 use cpal::traits::DeviceTrait;
 use cpal::traits::HostTrait;
@@ -15,7 +16,7 @@ use nokhwa::utils::FrameFormat as PixelFormat;
 // --- Config ---
 
 
-trait DeviceConfig {}
+// trait DeviceConfig {}
 
 #[derive(Debug)]
 pub struct CameraConfig {
@@ -32,8 +33,13 @@ pub struct MicrophoneConfig {
     sample_size: u32,
 }
 
-impl DeviceConfig for CameraConfig {}
-impl DeviceConfig for MicrophoneConfig {}
+pub enum DeviceConfig {
+    Camera(CameraConfig),
+    Microphone(MicrophoneConfig),
+}
+
+// impl DeviceConfig for CameraConfig {}
+// impl DeviceConfig for MicrophoneConfig {}
 
 
 // --- device ---
@@ -45,15 +51,23 @@ pub enum DeviceType {
     Microphone,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum DeviceStatus {
+    Created,
+    Initialized,
+    Started,
+    Paused,
+    Stopped,
+    Terminated,
+}
 pub trait Device {
-    type Config: DeviceConfig;
 
     fn get_all_available_devices() -> Result<Vec<DeviceInformation>, Error>;
+    fn get_all_available_configs(&mut self) -> Result<Vec<DeviceConfig>, Error>;
 
     fn new(id: u8, name: String) -> Self;
-
-    fn get_available_configs(&self) -> Result<Vec<Self::Config>, Error>;
     
+    fn instantiate_device(&mut self) -> Result<(), Error>;
     fn start(&mut self) -> Result<(), Error>;
 }
 
@@ -66,52 +80,80 @@ pub struct DeviceInformation {
 
 pub struct CameraDevice {
     information: DeviceInformation,
-    device: Camera,
-    // config: Option<CameraFormat>,
+    device: Option<Camera>,
+    status: DeviceStatus,
 }
 
 pub struct MicrophoneDevice {
     information: DeviceInformation,
-    device: cpal::Device,
-    // config: Option<cpal::StreamConfig>,
+    device: Option<cpal::Device>,
+    status: DeviceStatus,
 }
 
 impl Device for CameraDevice {
-    type Config = CameraConfig;
 
     fn new(id: u8, name: String) -> Self {
-        
-        let index = CameraIndex::Index(id as u32);
-        let cam = Camera::new(index, RequestedFormat::new::<RgbAFormat>(RequestedFormatType::AbsoluteHighestFrameRate)).unwrap();
-
         CameraDevice {
             information: DeviceInformation {
                 id: id, 
                 name: name, 
                 device_type: DeviceType::Camera,
             },
-            device: cam,
-            // config: None,
+            device: None,
+            status: DeviceStatus::Created,
         }
     }
 
-    fn get_available_configs(&self) -> Result<Vec<Self::Config>, Error> {
+    fn get_all_available_configs(&mut self) -> Result<Vec<DeviceConfig>, Error> {
 
-        Ok(vec![])
+        assert!(self.device.is_some(), "Trying to get configs without Device initialized");
+        assert!(self.status != DeviceStatus::Created, "UNEXPECTED: Trying to get configs while state is 'created', this should always be false.");
+
+
+        let cam = self.device.as_mut().unwrap();
+
+        let formats = cam.compatible_camera_formats()?;
+
+        let mut cam_formats = formats
+            .into_iter()
+            .map(|conf| {
+                CameraConfig {
+                    width: conf.width(),
+                    height: conf.height(),
+                    fps: conf.frame_rate(),
+                    pixel_format: conf.format(),
+                }
+            })
+            .collect::<Vec<CameraConfig>>();
+
+        cam_formats.sort_by_key(|conf| (conf.width * conf.height, conf.fps));
+
+        Ok(cam_formats
+            .into_iter()
+            .map(|conf| DeviceConfig::Camera(conf))
+            .collect::<Vec<DeviceConfig>>()
+        )
+    }
+
+    // let config = CameraFormat::new_from(
+    //     conf.width,
+    //     conf.height,
+    //     conf.pixel_format,
+    //     conf.fps,
+    // );
+
+    fn instantiate_device(&mut self) -> Result<(), Error> {
+        let cam = Camera::new(
+            CameraIndex::Index(self.information.id as u32), 
+            RequestedFormat::new::<RgbAFormat>(RequestedFormatType::None),
+        ).unwrap();
+        self.device = Some(cam);
+        self.status = DeviceStatus::Initialized;
+        Ok(())
     }
 
     fn start(&mut self) -> Result<(), Error> {
         // assert!(self.device.is_some(), "Trying to start without Device initialized");
-
-        // let cam = self.device.as_ref().unwrap();
-
-        // let config = CameraFormat::new_from(
-        //     conf.width,
-        //     conf.height,
-        //     conf.pixel_format,
-        //     conf.fps,
-        // );
-        
         Ok(())
     }
     
@@ -134,52 +176,26 @@ impl Device for CameraDevice {
 
 impl Device for MicrophoneDevice {
 
-    type Config = MicrophoneConfig;
-
     fn new(id: u8, name: String) -> Self {
-                
-        let host = cpal::default_host();
-        let device = host.input_devices()
-            .unwrap()
-            .nth(id as usize)
-            .ok_or_else(|| Error::msg("Device not found"))
-            .unwrap();
-
-        
-        // let config = SupportedStreamConfig::new(
-        //     conf.channels as u16,
-        //     cpal::SampleRate(conf.sample_rate),
-        //     cpal::SupportedBufferSize::Unknown,
-        //     cpal::SampleFormat::U8,
-        // ).config();
-
-
-        MicrophoneDevice {
+        MicrophoneDevice { 
             information: DeviceInformation { 
                 id: id,
                 name: name,
                 device_type: DeviceType::Microphone,
             },
-            device: device,
+            device: None,
+            status: DeviceStatus::Created,
         }
     }
 
-    fn start(&mut self) -> Result<(), Error> {
 
-        // assert!(self.device.is_some(), "Trying to start without Device initialized");
+    fn get_all_available_configs(&mut self) -> Result<Vec<DeviceConfig>, Error> {
+        
+        assert!(self.device.is_some(), "Trying to get configs without Device initialized");
+        assert!(self.status != DeviceStatus::Created, "UNEXPECTED: Trying to get configs while state is 'created', this should always be false.");
 
-        // let device = self.device.as_ref().unwrap();
-
-
-        Ok(())
-    }
-    
-    fn get_available_configs(&self) -> Result<Vec<Self::Config>, Error> {
-        let host = cpal::default_host();
-        let supported_configs = host.input_devices()?
-            .nth(self.information.id as usize)
-            .unwrap()
-            .supported_input_configs()?;
+        let mic = self.device.as_ref().unwrap();
+        let supported_configs = mic.supported_input_configs()?;
 
         let mut out_configs = Vec::new();
         for conf in supported_configs {
@@ -189,9 +205,16 @@ impl Device for MicrophoneDevice {
                 sample_size: conf.sample_format().sample_size() as u32,
             });
         }
-        Ok(out_configs)
-    }
 
+        out_configs.sort_by_key(|conf| (conf.sample_rate, conf.sample_size, conf.channels));
+
+        Ok(out_configs
+            .into_iter()
+            .map(|conf| DeviceConfig::Microphone(conf))
+            .collect::<Vec<DeviceConfig>>()
+        )
+    }
+    
     fn get_all_available_devices() -> Result<Vec<DeviceInformation>, Error> {
         let host = cpal::default_host();
         let devices = host.input_devices()?;
@@ -205,11 +228,27 @@ impl Device for MicrophoneDevice {
         }
         Ok(out_devices)
     }
+    
+
+    fn instantiate_device(&mut self) -> Result<(), Error> {
+        let host = cpal::default_host();
+        let device = host.input_devices()
+            .unwrap()
+            .nth(self.information.id as usize)
+            .ok_or_else(|| Error::msg("Device not found"))
+            .unwrap();
+        self.device = Some(device);
+        self.status = DeviceStatus::Initialized;
+        Ok(())
+    }
+
+    fn start(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 
 // --- device manager ---
-
 
 pub enum ManagedDevice {
     Camera(CameraDevice),
@@ -218,51 +257,37 @@ pub enum ManagedDevice {
 
 impl ManagedDevice {
 
-    fn get_available_configs(&self) -> Result<Vec<Box<dyn DeviceConfig>>, Error> {
-        match self {
-            ManagedDevice::Camera(camera) => Ok(camera.get_available_configs()?.into_iter().map(|c| Box::new(c) as Box<dyn DeviceConfig>).collect()),
-            ManagedDevice::Microphone(mic) => Ok(mic.get_available_configs()?.into_iter().map(|c| Box::new(c) as Box<dyn DeviceConfig>).collect()),
+    pub fn new(device_info: DeviceInformation) -> Self {
+        match device_info.device_type {
+            DeviceType::Camera => ManagedDevice::Camera(CameraDevice::new(device_info.id, device_info.name)),
+            DeviceType::Microphone => ManagedDevice::Microphone(MicrophoneDevice::new(device_info.id, device_info.name))
         }
     }
 
-    fn start(&mut self) -> Result<(), Error> {
-        Ok(())
-    }
+    // fn get_all_available_configs(&self) -> Result<Vec<DeviceConfig>, Error> {
+    //     match self {
+    //         ManagedDevice::Camera(_) => self.get_all_available_configs(),
+    //         ManagedDevice::Microphone(_) => self.get_all_available_configs(),
+    //     }
+    // }
 }
 
-#[derive(Debug)]
-pub enum DeviceStatus {
-    Created,
-    Initialized,
-    Started,
-    Paused,
-    Stopped,
-    Terminated,
-}
 
 pub struct DeviceManager {
     pub system_id: u8,
     pub device: ManagedDevice,
-    // pub device_info: DeviceInformation,
-    // pub config_id: Option<u8>,
-    pub status: DeviceStatus,
 }
 
 impl DeviceManager {
+
     pub fn new(device_info: DeviceInformation, system_id: u8) -> Self {
         DeviceManager {
-            // device_info: device_info,
-            // config_id: None,
-            device: match device_info.device_type {
-                DeviceType::Camera => ManagedDevice::Camera(CameraDevice::new(system_id, device_info.name)),
-                DeviceType::Microphone => ManagedDevice::Microphone(MicrophoneDevice::new(system_id, device_info.name)),
-            },
+            device: ManagedDevice::new(device_info),
             system_id: system_id,
-            status: DeviceStatus::Created,
         }
     }
 
-    pub fn get_all_available_devices_managed() -> Result<Vec<Self>, Error> {
+    pub fn get_all_available_devices() -> Result<Vec<Self>, Error> {
         let mut devices = Vec::new();
         devices.extend(CameraDevice::get_all_available_devices()?);
         devices.extend(MicrophoneDevice::get_all_available_devices()?);
@@ -277,5 +302,6 @@ impl DeviceManager {
 
         Ok(managed_devices)
     }
+
 }
 
