@@ -2,6 +2,7 @@
 /dist/
 /device_capture_system/
 /.venv/
+/.zed/
 
 # Rust build directory
 /target/

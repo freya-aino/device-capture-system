@@ -1,18 +1,15 @@
 use anyhow::{Error, Result};
+use clap::{Parser, Subcommand};
+use std::borrow::{Borrow, BorrowMut};
 use std::net::Ipv4Addr;
 use std::time::{self, Duration};
-use clap::{Parser, Subcommand};
 
-use device_capture_system::modules::device::{DeviceManager, DeviceInformation};
+use device_capture_system::modules::device::{DeviceInformation, DeviceManager};
 use device_capture_system::{DeviceType, FramePacket, Receiver, Sender};
-
-
-
 
 #[derive(Parser)]
 #[command(author, version, about)]
 pub struct Cli {
-
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -49,9 +46,12 @@ pub enum DeviceCommand {
     Terminate,
 }
 
-
-fn benchmark_sender(device_info: DeviceInformation, iterations: u32, data_size: u32, data_chunk_size: u32) -> Result<(), Error> {
-    
+fn benchmark_sender(
+    device_info: DeviceInformation,
+    iterations: u32,
+    data_size: u32,
+    data_chunk_size: u32,
+) -> Result<(), Error> {
     print!("Starting benchmark sender...");
 
     let mut sender = Sender::new(
@@ -62,11 +62,10 @@ fn benchmark_sender(device_info: DeviceInformation, iterations: u32, data_size: 
 
     let context = zmq::Context::new();
     sender.initialize(&context).unwrap();
-    
+
     let mut average_duration: Duration = Duration::new(0, 0);
     // time sending frames
     for _ in 0..iterations {
-
         let frame = vec![0u8; data_size as usize];
 
         let start_time = time::SystemTime::now();
@@ -86,31 +85,74 @@ fn benchmark_sender(device_info: DeviceInformation, iterations: u32, data_size: 
     }
 
     println!("Benchmark completed!");
-    println!("Average duration: {:?} -- Average fps: {:?}", average_duration.as_secs_f32() / (iterations as f32), 1.0 / (average_duration.as_secs_f32() / (iterations as f32)));
+    println!(
+        "Average duration: {:?} -- Average fps: {:?}",
+        average_duration.as_secs_f32() / (iterations as f32),
+        1.0 / (average_duration.as_secs_f32() / (iterations as f32))
+    );
 
     Ok(())
 }
 
-
 fn main() {
-
     // init cli
     let _cli = Cli::parse();
 
-    // get all devices
-    let _all_devices = DeviceManager::get_all_available_devices().unwrap();
-    
+    let nokhwa_backend = nokhwa::native_api_backend().unwrap();
+    let cpal_host = cpal::default_host();
 
-    
+    // get all devices
+    let mut all_device_managers =
+        DeviceManager::get_all_available_devices(&nokhwa_backend, &cpal_host).unwrap();
+
+    for dm in all_device_managers.iter() {
+        let device_info = dm.device.get_device_information();
+        println!(
+            "{} - {} - {}",
+            dm.system_id, device_info.id, device_info.name
+        );
+    }
+
+    // println!("found {} devices", all_device_managers.len());
+    // for dev_man in all_device_managers.iter_mut() {
+    //     println!("{}", dev_man.device.get_device_info().name);
+    // }
+
+    // for dev_man in all_device_managers.iter_mut() {
+    //     let r = dev_man.device.instantiate_device();
+
+    //     match r {
+    //         Ok(_) => {}
+    //         Err(e) => {
+    //             println!("{}", e);
+    //             continue;
+    //         }
+    //     }
+
+    // let all_configs = match dev_man.device.get_all_available_configs() {
+    //     Ok(configs) => configs,
+    //     Err(err) => {
+    //         eprintln!("Error getting available configs: {}", err);
+    //         continue;
+    //     }
+    // };
+
+    // let all_configs = dev_man.device.get_all_available_configs().unwrap();
+
+    // for conf in all_configs.iter() {
+    //     println!("{:?} - {:?}", dev_man.device.get_device_info().name, conf)
+    // }
+    // }
+
     // benchmark_sender(
-    //     _all_devices[0].device_info.clone(), 
+    //     _all_devices[0].device_info.clone(),
     //     1000,
     //     1000 * 1000 * 3,
     //     1024,
     // ).unwrap();
 
     // let context = zmq::Context::new();
-    
+
     // let mut sender = Sender::new(
     //     Ipv4Addr::new(127, 0, 0, 1),
     //     10000,
@@ -148,7 +190,6 @@ fn main() {
     //         println!("Error receiving data: {:?}", e);
     //     }
     // }
-
 
     // match cli.command {
     //     Commands::List => {
