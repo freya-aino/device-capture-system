@@ -5,7 +5,7 @@ use std::net::Ipv4Addr;
 use std::time::{self, Duration};
 
 use device_capture_system::modules::device::{DeviceInformation, DeviceManager};
-use device_capture_system::{DeviceType, FramePacket, Receiver, Sender};
+use device_capture_system::{DeviceType, FramePacket, MicrophoneConfig, MicrophoneDevice, Receiver, Sender};
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -14,7 +14,7 @@ pub struct Cli {
     pub command: Commands,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, PartialEq)]
 pub enum Commands {
     List,
     Camera {
@@ -35,7 +35,7 @@ pub enum Commands {
     },
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, PartialEq)]
 pub enum DeviceCommand {
     ListConfigs,
     Info,
@@ -94,24 +94,56 @@ fn benchmark_sender(
     Ok(())
 }
 
-fn main() {
+
+ fn main() {
     // init cli
-    let _cli = Cli::parse();
+    let cli = Cli::parse();
 
     let nokhwa_backend = nokhwa::native_api_backend().unwrap();
     let cpal_host = cpal::default_host();
 
-    // get all devices
-    let mut all_device_managers =
-        DeviceManager::get_all_available_devices(&nokhwa_backend, &cpal_host).unwrap();
+    println!("Nokhwa Backend: {:?}", nokhwa_backend);
+    println!("Cpal Backend: {:?}", cpal_host.id());
 
-    for dm in all_device_managers.iter() {
-        let device_info = dm.device.get_device_information();
-        println!(
-            "{} - {} - {}",
-            dm.system_id, device_info.id, device_info.name
-        );
+    // get all devices
+    let all_device_managers = DeviceManager::get_all_available_devices(&nokhwa_backend, &cpal_host).unwrap();
+
+    if cli.command == Commands::List {
+        println!("\nDevices Found: {}", all_device_managers.len());
+        for dm in all_device_managers.iter() {
+            println!(
+                "{} - {:?} - {}",
+                dm.system_id, dm.device_info.device_type, dm.device_info.name
+            );
+        }
+        println!("\n");
     }
+
+
+
+
+    let mut mic = MicrophoneDevice::new(1, "test".to_string());
+
+    let (data_tx, data_rx) = flume::bounded::<FramePacket>(32);
+
+    mic.initialize(&cpal_host).unwrap();
+
+    mic.start(
+        MicrophoneConfig::new(
+            16000,
+            1,
+            4
+        ),
+        None,
+        data_tx,
+    ).unwrap();
+
+    data_rx.into_iter().for_each(|frame| {
+        println!("Received frame: {:?}", frame);
+    });
+
+
+
 
     // println!("found {} devices", all_device_managers.len());
     // for dev_man in all_device_managers.iter_mut() {
