@@ -1,6 +1,5 @@
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
-use std::time::{self, Duration, SystemTime};
+use std::collections::HashSet;
+use std::thread;
 
 use anyhow::Ok;
 use anyhow::{Error, Result};
@@ -8,52 +7,50 @@ use bincode::{Decode, Encode};
 use clap::ValueEnum;
 use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::traits::HostTrait;
-use cpal::StreamConfig;
-use nokhwa::{Camera, NokhwaError};
-use nokhwa::pixel_format::RgbAFormat;
-use nokhwa::utils::{CameraFormat, FrameFormat as PixelFormat};
+use cpal::{StreamConfig, SupportedStreamConfigRange};
+use nokhwa::{pixel_format, Camera, NokhwaError};
+use nokhwa::pixel_format::{RgbAFormat, RgbFormat};
+use nokhwa::utils::CameraFormat;
 use nokhwa::utils::RequestedFormat;
 use nokhwa::utils::RequestedFormatType;
 use nokhwa::utils::{ApiBackend, CameraIndex};
 use tokio;
-use tokio::sync::{Mutex, Notify};
-
-use crate::FramePacket;
 
 // --- Config ---
 
 // trait DeviceConfig {}
 
-#[derive(Debug)]
-pub struct CameraConfig {
-    width: u32,
-    height: u32,
-    fps: u32,
-    pixel_format: PixelFormat,
-}
+// #[derive(Debug)]
+// pub struct CameraConfig {
+//     width: u32,
+//     height: u32,
+//     fps: u32,
+//     pixel_format: PixelFormat,
+// }
 
-#[derive(Debug)]
-pub struct MicrophoneConfig {
-    sample_rate: u32,
-    channels: u8,
-    sample_size: u16,
-}
+// #[derive(Debug)]
+// pub struct MicrophoneConfig {
+//     min_sample_rate: u32,
+//     max_sample_rate: u32,
+//     channels: u8,
+//     sample_size: u16,
+// }
 
-impl MicrophoneConfig {
-    pub fn new(sample_rate: u32, channels: u8, sample_size: u16) -> Self {
-        MicrophoneConfig {
-            sample_rate,
-            channels,
-            sample_size,
-        }
-    }
-}
-
+// impl MicrophoneConfig {
+//     pub fn new(min_sample_rate: u32, max_sample_rate: u32, channels: u8, sample_size: u16) -> Self {
+//         MicrophoneConfig {
+//             min_sample_rate,
+//             max_sample_rate,
+//             channels,
+//             sample_size,
+//         }
+//     }
+// }
 
 #[derive(Debug)]
 pub enum DeviceConfig {
-    Camera(CameraConfig),
-    Microphone(MicrophoneConfig),
+    Camera(CameraFormat),
+    Microphone(cpal::SupportedStreamConfigRange),
 }
 
 pub enum DevicePrimitive {
@@ -127,7 +124,7 @@ pub struct DeviceInformation {
     // }
 // }
 
-struct CameraDevice {
+pub struct CameraDevice {
     id: u8,
     name: String,
     cam: Option<Camera>,
@@ -135,7 +132,7 @@ struct CameraDevice {
 }
 
 impl CameraDevice {
-    fn new(id: u8, name: String) -> Self {
+    pub fn new(id: u8, name: String) -> Self {
         CameraDevice {
             id: id,
             name: name,
@@ -144,22 +141,44 @@ impl CameraDevice {
         }
     }
 
-    fn initialize(&mut self, config: CameraConfig) -> Result<(), Error> {
+    pub fn get_all_available_configs(&mut self) -> Result<Vec<CameraFormat>, Error> {
+        
+        assert!(self.cam.is_some(), "Camera not initialized");
+        let camera = self.cam.as_mut().unwrap();
+
+        let formats = camera.compatible_camera_formats()?
+            .into_iter()
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<CameraFormat>>();
+
+        Ok(formats)
+    }
+
+    pub fn initialize(&mut self) -> Result<(), Error> {
         let camera = Camera::new(
             CameraIndex::Index(self.id as u32),
-            RequestedFormat::new::<RgbAFormat>(
-                RequestedFormatType::Closest(
-                    CameraFormat::new_from(
-                        config.width,
-                        config.height,
-                        PixelFormat::from(config.pixel_format),
-                        config.fps,
-                    ),
-                )
-            )
-        )?;
+            RequestedFormat::new::<RgbFormat>(RequestedFormatType::None),
+        ).unwrap();
 
         self.cam = Some(camera);
+
+        Ok(())
+    }
+
+    pub fn destroy(&mut self) -> Result<(), Error> {
+        let cam = self.cam.as_mut().unwrap();
+        cam.stop_stream()?;
+        self.cam = None;
+        self.handle = None;
+        Ok(())
+    }
+
+    pub fn start(&mut self, config: CameraFormat) -> Result<(), Error> {
+        let cam = self.cam.as_mut().unwrap();
+
+        let format = RequestedFormat::new::<RgbFormat>(RequestedFormatType::Exact(config));
+        let r = cam.set_camera_requset(format)?;
 
         Ok(())
     }
@@ -197,13 +216,6 @@ impl CameraDevice {
 
     //     Ok(())
     // }
-
-    // fn stop(&mut self) -> Result<(), Error> {
-    //     let cam = self.cam.as_mut().unwrap();
-    //     cam.stop_stream()?;
-    //     self.cam = None;
-    //     Ok(())
-    // }
 }
 
 
@@ -224,6 +236,20 @@ impl MicrophoneDevice {
         }
     }
 
+    pub fn get_all_available_configs(&mut self) -> Result<Vec<SupportedStreamConfigRange>, Error> {
+        assert!(self.mic.is_some(), "Microphone not initialized");
+        let mic = self.mic.as_mut().unwrap();
+
+        let configs = mic.supported_input_configs()
+            .unwrap()
+            .into_iter()
+            .collect::<Vec<cpal::SupportedStreamConfigRange>>();
+            // .into_iter()
+            // .collect::<HashSet<_>>()
+
+        Ok(configs)
+    }
+
     pub fn initialize(&mut self, cpal_host: &cpal::Host) -> Result<(), Error> {
         let mic = cpal_host
             .input_devices()
@@ -236,48 +262,48 @@ impl MicrophoneDevice {
         Ok(())
     }
 
-    pub fn start(&mut self, config: MicrophoneConfig, timeout: Option<Duration>, data_tx: flume::Sender<FramePacket>) -> Result<(), Error> {
+    // pub fn start(&mut self, config: MicrophoneConfig, timeout: Option<Duration>, data_tx: flume::Sender<FramePacket>) -> Result<(), Error> {
         
-        let mic = self.mic.as_ref().unwrap();
-        let mic_conf = StreamConfig {
-            channels: config.channels as u16,
-            sample_rate: cpal::SampleRate(config.sample_rate),
-            buffer_size: cpal::BufferSize::Default,
-        };
+    //     let mic = self.mic.as_ref().unwrap();
+    //     let mic_conf = StreamConfig {
+    //         channels: config.channels as u16,
+    //         sample_rate: cpal::SampleRate(config.sample_rate),
+    //         buffer_size: cpal::BufferSize::Default,
+    //     };
         
-        let device_info = DeviceInformation {
-            id: self.id,
-            name: self.name.clone(),
-            device_type: DeviceType::Microphone,
-        };
+    //     let device_info = DeviceInformation {
+    //         id: self.id,
+    //         name: self.name.clone(),
+    //         device_type: DeviceType::Microphone,
+    //     };
 
-        let stream = mic.build_input_stream(
-            &mic_conf,
-            move |data: &[u8], _: &cpal::InputCallbackInfo| {
-                let frame_packet = FramePacket::new(
-                    SystemTime::now(),
-                    device_info.clone(),
-                    vec![config.sample_rate as u16, config.channels as u16], // TODO: this is probably not correct, but we want to test the function first
-                    data.to_vec(),
-                );
+    //     let stream = mic.build_input_stream(
+    //         &mic_conf,
+    //         move |data: &[u8], _: &cpal::InputCallbackInfo| {
+    //             let frame_packet = FramePacket::new(
+    //                 SystemTime::now(),
+    //                 device_info.clone(),
+    //                 vec![config.sample_rate as u16, config.channels as u16], // TODO: this is probably not correct, but we want to test the function first
+    //                 data.to_vec(),
+    //             );
 
-                if data_tx.send(frame_packet).is_err() {
-                    println!("Error sending data to channel, stopping stream.");
-                    return;
-                }
-            },
-            move |err| {
-                eprintln!("Error: {:?}", err);
-            },
-            timeout
-        )?;
+    //             if data_tx.send(frame_packet).is_err() {
+    //                 println!("Error sending data to channel, stopping stream.");
+    //                 return;
+    //             }
+    //         },
+    //         move |err| {
+    //             eprintln!("Error: {:?}", err);
+    //         },
+    //         timeout
+    //     )?;
 
-        stream.play()?;
+    //     stream.play()?;
 
-        self.stream = Some(stream);
+    //     self.stream = Some(stream);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 }
 
 
@@ -288,11 +314,33 @@ pub struct DeviceManager {
     pub system_id: u8,
     pub device_info: DeviceInformation,
     pub status: Option<DeviceStatus>,
-    shutdown: Arc<Notify>,
 }
 
 
 impl DeviceManager {
+
+    // pub fn get_all_available_configs(&self) -> Result<Vec<DeviceConfig>, Error> {
+    //     match self.device_info.device_type {
+    //         DeviceType::Camera => {
+    //             let mut cam = CameraDevice::new(self.device_info.id, self.device_info.name.clone());
+    //             let confs = cam.get_all_available_configs()
+    //                 .unwrap()
+    //                 .iter()
+    //                 .map(|config| DeviceConfig::Camera(config.clone()))
+    //                 .collect::<Vec<DeviceConfig>>();
+    //             Ok(confs)
+    //         },
+    //         DeviceType::Microphone => {
+    //             let mut mic = MicrophoneDevice::new(self.device_info.id, self.device_info.name.clone());
+    //             let confs = mic.get_all_available_configs()
+    //                 .unwrap()
+    //                 .iter()
+    //                 .map(|config| DeviceConfig::Microphone(config.clone()))
+    //                 .collect::<Vec<DeviceConfig>>();
+    //             Ok(confs)
+    //         },
+    //     }
+    // }
 
     // pub async fn run(&mut self, data_tx: flume::Sender<FramePacket>) -> Result<(), Error> {
         
@@ -383,7 +431,6 @@ impl DeviceManager {
                     system_id: i as u8,
                     device_info: device_info.clone(),
                     status: None,
-                    shutdown: Arc::new(Notify::new()),
                 }
             })
             .collect::<Vec<Self>>();

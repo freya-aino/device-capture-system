@@ -1,11 +1,15 @@
 use anyhow::{Error, Result};
 use clap::{Parser, Subcommand};
-use std::borrow::{Borrow, BorrowMut};
+use nokhwa::camera_traits::CaptureBackendTrait;
+use nokhwa::pixel_format::{RgbAFormat, RgbFormat};
+use nokhwa::utils::{CameraIndex, RequestedFormat, RequestedFormatType};
+use nokhwa::Camera;
 use std::net::Ipv4Addr;
+use std::thread::spawn;
 use std::time::{self, Duration};
 
-use device_capture_system::modules::device::{DeviceInformation, DeviceManager};
-use device_capture_system::{DeviceType, FramePacket, MicrophoneConfig, MicrophoneDevice, Receiver, Sender};
+use device_capture_system::modules::device::{DeviceInformation, DeviceManager, MicrophoneDevice, CameraDevice};
+use device_capture_system::{DeviceType, FramePacket, Receiver, Sender};
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -16,35 +20,41 @@ pub struct Cli {
 
 #[derive(Subcommand, PartialEq)]
 pub enum Commands {
-    List,
-    Camera {
+
+    // get all devices, or a specific device by index returns the device information
+    Info {
         // device command
         #[clap(short, long)]
-        index: u8,
-
-        #[command(subcommand)]
-        device_command: DeviceCommand,
+        index: Option<u8>,
     },
-    Microphone {
-        // device command
-        #[clap(short, long)]
-        index: u8,
-
-        #[command(subcommand)]
-        device_command: DeviceCommand,
-    },
+    // Device {
+        
+    //     #[command(subcommand)]
+    //     device_command: DeviceCommand,
+    // },
 }
 
 #[derive(Subcommand, PartialEq)]
 pub enum DeviceCommand {
-    ListConfigs,
-    Info,
-    Start,
-    Stop,
-    Pause,
-    Resume,
-    Terminate,
+    Configs {
+        #[command(subcommand)]
+        config_command: ConfigCommand,
+    },
+    // Info,
+    // Start,
+    // Stop,
+    // Pause,
+    // Resume,
+    // Terminate,
 }
+
+#[derive(Subcommand, PartialEq)]
+pub enum ConfigCommand {
+    list,
+    set,
+    get,
+}
+
 
 fn benchmark_sender(
     device_info: DeviceInformation,
@@ -99,48 +109,124 @@ fn benchmark_sender(
     // init cli
     let cli = Cli::parse();
 
-    let nokhwa_backend = nokhwa::native_api_backend().unwrap();
+    // let nokhwa_backend = nokhwa::native_api_backend().unwrap();
+    let nokhwa_backend = nokhwa::utils::ApiBackend::Auto;
     let cpal_host = cpal::default_host();
+    
+    let mut cam = CameraDevice::new(0, "test".to_string());
+    cam.initialize().unwrap();
 
-    println!("Nokhwa Backend: {:?}", nokhwa_backend);
-    println!("Cpal Backend: {:?}", cpal_host.id());
 
-    // get all devices
-    let all_device_managers = DeviceManager::get_all_available_devices(&nokhwa_backend, &cpal_host).unwrap();
+    // println!("Nokhwa Backend: {:?}", nokhwa_backend);
+    // println!("Cpal Backend: {:?}", cpal_host.id());
 
-    if cli.command == Commands::List {
-        println!("\nDevices Found: {}", all_device_managers.len());
-        for dm in all_device_managers.iter() {
-            println!(
-                "{} - {:?} - {}",
-                dm.system_id, dm.device_info.device_type, dm.device_info.name
-            );
-        }
-        println!("\n");
+    // // get all devices
+    // let all_device_managers = DeviceManager::get_all_available_devices(&nokhwa_backend, &cpal_host).unwrap();
+
+    // match cli.command {
+    //     Commands::Info { index } => {
+    //         match index {
+    //             Some(index) => {
+    //                 if index as usize >= all_device_managers.len() {
+    //                     println!("Invalid index: {} only {} devices available!", index, all_device_managers.len());
+    //                     return;
+    //                 }
+
+    //                 let device_manager = all_device_managers.get(index as usize).unwrap();
+
+    //                 match device_manager.device_info.device_type {
+    //                     DeviceType::Camera => {
+    //                         let mut cam = CameraDevice::new(
+    //                             device_manager.device_info.id,
+    //                             device_manager.device_info.name.clone(),
+    //                         );
+    //                         cam.initialize().unwrap();
+
+    //                         println!("Device:      {:?}", device_manager.device_info.name);
+
+    //                         let all_configs = cam.get_all_available_configs().unwrap();
+
+    //                         println!("Configs Found: {}", all_configs.len());
+    //                         for conf in all_configs.iter() {
+    //                             println!("{:?}", conf);
+    //                         }
+    //                         println!("");
+
+    //                     }
+    //                     DeviceType::Microphone => {
+    //                         println!("Microphone device found!");
+    //                     }
+    //                 }
+    //             },
+    //             None => {
+    //                 // print all devices
+    //                 println!("\nDevices Found: {}", all_device_managers.len());
+    //                 for dm in all_device_managers.iter() {
+    //                     println!(
+    //                         "{} - {:?} - {}",
+    //                         dm.system_id, dm.device_info.device_type, dm.device_info.name
+    //                     );
+    //                 }
+    //                 println!("");
+    //             }
+    //         }
+    //     }
+    //     // Commands::Device { index, device_command} => {
+
+    //     //     let device_manager = all_device_managers.get(index as usize).unwrap();
+
+    //     //     println!("Device:      {:?}", device_manager.device_info.name);
+    //     //     println!("System ID:   {:?}", device_manager.system_id);
+    //     //     println!("Device Type: {:?}", device_manager.device_info.device_type);
+    //     //     println!("Local ID:    {:?}", device_manager.device_info.id);
+
+    //     //     process_device_command(device_command).unwrap();
+    //     // }
+    // }
+ }
+
+fn process_device_command(device_command: DeviceCommand) -> Result<(), Error> {
+    match device_command {
+        DeviceCommand::Configs { config_command } => process_config_command(config_command)?,
     }
+    Ok(())
+}
+
+fn process_config_command(config_command: ConfigCommand) -> Result<(), Error> {
+    match config_command {
+        ConfigCommand::list => {
+            println!("Listing all available configs...");
+        }
+        ConfigCommand::set => {
+            println!("Setting config...");
+        }
+        ConfigCommand::get => {
+            println!("Getting current config...");
+        }
+    }
+    Ok(())
+}
 
 
+    // let mut mic = MicrophoneDevice::new(1, "test".to_string());
 
+    // let (data_tx, data_rx) = flume::bounded::<FramePacket>(32);
 
-    let mut mic = MicrophoneDevice::new(1, "test".to_string());
+    // mic.initialize(&cpal_host).unwrap();
 
-    let (data_tx, data_rx) = flume::bounded::<FramePacket>(32);
+    // mic.start(
+    //     MicrophoneConfig::new(
+    //         16000,
+    //         1,
+    //         4
+    //     ),
+    //     None,
+    //     data_tx,
+    // ).unwrap();
 
-    mic.initialize(&cpal_host).unwrap();
-
-    mic.start(
-        MicrophoneConfig::new(
-            16000,
-            1,
-            4
-        ),
-        None,
-        data_tx,
-    ).unwrap();
-
-    data_rx.into_iter().for_each(|frame| {
-        println!("Received frame: {:?}", frame);
-    });
+    // data_rx.into_iter().for_each(|frame| {
+    //     println!("Received frame: {:?}", frame);
+    // });
 
 
 
@@ -222,35 +308,3 @@ fn benchmark_sender(
     //         println!("Error receiving data: {:?}", e);
     //     }
     // }
-
-    // match cli.command {
-    //     Commands::List => {
-    //         println!("\nDevices Found: {}", all_devices.len());
-    //         for dev in all_devices.iter() {
-    //             let type_str = match dev.device_info.device_type {
-    //                 DeviceType::Camera => "Camera    ",
-    //                 DeviceType::Microphone => "Microphone",
-    //             };
-    //             println!("{} : {} \t: {}", dev.system_id, type_str, dev.device_info.name);
-    //         }
-    //     }
-    //     Commands::Camera { index, device_command } => {
-    //         match device_command {
-    //             DeviceCommand::Start => {
-    //             }
-    //             _ => {
-    //                 println!("Camera command not implemented yet.");
-    //             }
-    //         }
-    //     },
-    //     Commands::Microphone { index, device_command } => {
-    //         match device_command {
-    //             DeviceCommand::Start => {
-    //             }
-    //             _ => {
-    //                 println!("Microphone command not implemented yet.");
-    //             }
-    //         }
-    //     }
-    // }
-}
