@@ -1,4 +1,6 @@
+use glob::glob;
 use std::collections::HashSet;
+use std::ffi::OsString;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -14,14 +16,19 @@ use tokio;
 
 use crate::FramePacket;
 
-// ---
+#[cfg(target_os = "linux")]
+use v4l::Device;
 
-// #[derive(Debug)]
-// pub struct CameraConfiguration {
-//     width: u32,
-//     height: u32,
-//     frame_rate: u32,
-// }
+#[cfg(target_os = "linux")]
+fn all_devices_paths_linux() -> Result<Vec<OsString>, Error> {
+    use std::ffi::OsString;
+
+    let device_paths = glob("/dev/video*")?
+        .filter_map(Result::ok)
+        .map(|path| path.into_os_string())
+        .collect::<Vec<OsString>>();
+    Ok(device_paths)
+}
 
 pub struct CpalMicrophoneDevice {
     id: u16,

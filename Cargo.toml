@@ -11,6 +11,9 @@ path = "src/lib.rs"
 name = "cli"
 path = "src/bin/cli.rs"
 
+[target.'cfg(target_os="linux")'.dependencies]
+v4l = "0.14.0"
+
 [dependencies]
 anyhow = "1.0.97"
 v4l = "0.14.0"

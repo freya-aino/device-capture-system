@@ -90,17 +90,6 @@ fn benchmark_sender(iterations: u32, data_size: u32, data_chunk_size: u32) -> Re
     Ok(())
 }
 
-use v4l::Device;
-use v4l::v4l2;
-
-fn all_devices_paths_linux() -> Result<Vec<OsString>, Error> {
-    let device_paths = glob("/dev/video*")?
-        .filter_map(Result::ok)
-        .map(|path| path.into_os_string())
-        .collect::<Vec<OsString>>();
-    Ok(device_paths)
-}
-
 fn main() {
     // let device_paths = all_devices_paths_linux().unwrap();
     // println!("Found {} devices!", device_paths.len());
