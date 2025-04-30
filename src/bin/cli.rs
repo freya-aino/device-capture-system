@@ -1,15 +1,13 @@
 use anyhow::{Error, Result};
 use clap::{Parser, Subcommand};
-use nokhwa::camera_traits::CaptureBackendTrait;
-use nokhwa::pixel_format::{RgbAFormat, RgbFormat};
-use nokhwa::utils::{CameraIndex, RequestedFormat, RequestedFormatType};
-use nokhwa::Camera;
+use glob::glob;
+use std::ffi::OsString;
 use std::net::Ipv4Addr;
+use std::path::Path;
 use std::thread::spawn;
 use std::time::{self, Duration};
 
-use device_capture_system::modules::device::{DeviceInformation, DeviceManager, MicrophoneDevice, CameraDevice};
-use device_capture_system::{DeviceType, FramePacket, Receiver, Sender};
+use device_capture_system::{CpalMicrophoneDevice, FramePacket, Receiver, Sender};
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -20,7 +18,6 @@ pub struct Cli {
 
 #[derive(Subcommand, PartialEq)]
 pub enum Commands {
-
     // get all devices, or a specific device by index returns the device information
     Info {
         // device command
@@ -28,7 +25,7 @@ pub enum Commands {
         index: Option<u8>,
     },
     // Device {
-        
+
     //     #[command(subcommand)]
     //     device_command: DeviceCommand,
     // },
@@ -55,13 +52,7 @@ pub enum ConfigCommand {
     get,
 }
 
-
-fn benchmark_sender(
-    device_info: DeviceInformation,
-    iterations: u32,
-    data_size: u32,
-    data_chunk_size: u32,
-) -> Result<(), Error> {
+fn benchmark_sender(iterations: u32, data_size: u32, data_chunk_size: u32) -> Result<(), Error> {
     print!("Starting benchmark sender...");
 
     let mut sender = Sender::new(
@@ -80,12 +71,7 @@ fn benchmark_sender(
 
         let start_time = time::SystemTime::now();
 
-        let fp = FramePacket::new(
-            time::SystemTime::now(),
-            device_info.clone(),
-            vec![10, 20, 30],
-            frame,
-        );
+        let fp = FramePacket::new(time::SystemTime::now(), vec![10, 20, 30], frame);
         sender.send(fp, zmq::DONTWAIT, data_chunk_size).unwrap();
 
         let end_time = time::SystemTime::now();
@@ -104,21 +90,36 @@ fn benchmark_sender(
     Ok(())
 }
 
+use v4l::Device;
+use v4l::v4l2;
 
- fn main() {
-    // init cli
-    let cli = Cli::parse();
+fn all_devices_paths_linux() -> Result<Vec<OsString>, Error> {
+    let device_paths = glob("/dev/video*")?
+        .filter_map(Result::ok)
+        .map(|path| path.into_os_string())
+        .collect::<Vec<OsString>>();
+    Ok(device_paths)
+}
 
-    // let nokhwa_backend = nokhwa::native_api_backend().unwrap();
-    let nokhwa_backend = nokhwa::utils::ApiBackend::Auto;
+fn main() {
+    // let device_paths = all_devices_paths_linux().unwrap();
+    // println!("Found {} devices!", device_paths.len());
+    // if device_paths.len() == 0 {
+    //     println!("No devices found!");
+    //     return;
+    // }
+    // let dev_path = device_paths.get(1).unwrap();
+    // let dev = Device::with_path(dev_path).unwrap();
+    // let caps = dev.query_caps().unwrap();
+    // println!("{:?}", caps);
+
     let cpal_host = cpal::default_host();
-    
-    let mut cam = CameraDevice::new(0, "test".to_string());
-    cam.initialize().unwrap();
+    let mic = CpalMicrophoneDevice::new(0, &cpal_host);
 
+    mic.print_configurations();
+    println!("mic: {:?}", mic.get_name());
 
-    // println!("Nokhwa Backend: {:?}", nokhwa_backend);
-    // println!("Cpal Backend: {:?}", cpal_host.id());
+    mic.open(0, Some(16000), None).unwrap();
 
     // // get all devices
     // let all_device_managers = DeviceManager::get_all_available_devices(&nokhwa_backend, &cpal_host).unwrap();
@@ -183,7 +184,7 @@ fn benchmark_sender(
     //     //     process_device_command(device_command).unwrap();
     //     // }
     // }
- }
+}
 
 fn process_device_command(device_command: DeviceCommand) -> Result<(), Error> {
     match device_command {
@@ -207,104 +208,100 @@ fn process_config_command(config_command: ConfigCommand) -> Result<(), Error> {
     Ok(())
 }
 
+// let mut mic = MicrophoneDevice::new(1, "test".to_string());
 
-    // let mut mic = MicrophoneDevice::new(1, "test".to_string());
+// let (data_tx, data_rx) = flume::bounded::<FramePacket>(32);
 
-    // let (data_tx, data_rx) = flume::bounded::<FramePacket>(32);
+// mic.initialize(&cpal_host).unwrap();
 
-    // mic.initialize(&cpal_host).unwrap();
+// mic.start(
+//     MicrophoneConfig::new(
+//         16000,
+//         1,
+//         4
+//     ),
+//     None,
+//     data_tx,
+// ).unwrap();
 
-    // mic.start(
-    //     MicrophoneConfig::new(
-    //         16000,
-    //         1,
-    //         4
-    //     ),
-    //     None,
-    //     data_tx,
-    // ).unwrap();
+// data_rx.into_iter().for_each(|frame| {
+//     println!("Received frame: {:?}", frame);
+// });
 
-    // data_rx.into_iter().for_each(|frame| {
-    //     println!("Received frame: {:?}", frame);
-    // });
+// println!("found {} devices", all_device_managers.len());
+// for dev_man in all_device_managers.iter_mut() {
+//     println!("{}", dev_man.device.get_device_info().name);
+// }
 
+// for dev_man in all_device_managers.iter_mut() {
+//     let r = dev_man.device.instantiate_device();
 
+//     match r {
+//         Ok(_) => {}
+//         Err(e) => {
+//             println!("{}", e);
+//             continue;
+//         }
+//     }
 
+// let all_configs = match dev_man.device.get_all_available_configs() {
+//     Ok(configs) => configs,
+//     Err(err) => {
+//         eprintln!("Error getting available configs: {}", err);
+//         continue;
+//     }
+// };
 
-    // println!("found {} devices", all_device_managers.len());
-    // for dev_man in all_device_managers.iter_mut() {
-    //     println!("{}", dev_man.device.get_device_info().name);
-    // }
+// let all_configs = dev_man.device.get_all_available_configs().unwrap();
 
-    // for dev_man in all_device_managers.iter_mut() {
-    //     let r = dev_man.device.instantiate_device();
+// for conf in all_configs.iter() {
+//     println!("{:?} - {:?}", dev_man.device.get_device_info().name, conf)
+// }
+// }
 
-    //     match r {
-    //         Ok(_) => {}
-    //         Err(e) => {
-    //             println!("{}", e);
-    //             continue;
-    //         }
-    //     }
+// benchmark_sender(
+//     _all_devices[0].device_info.clone(),
+//     1000,
+//     1000 * 1000 * 3,
+//     1024,
+// ).unwrap();
 
-    // let all_configs = match dev_man.device.get_all_available_configs() {
-    //     Ok(configs) => configs,
-    //     Err(err) => {
-    //         eprintln!("Error getting available configs: {}", err);
-    //         continue;
-    //     }
-    // };
+// let context = zmq::Context::new();
 
-    // let all_configs = dev_man.device.get_all_available_configs().unwrap();
+// let mut sender = Sender::new(
+//     Ipv4Addr::new(127, 0, 0, 1),
+//     10000,
+//     10,
+// );
 
-    // for conf in all_configs.iter() {
-    //     println!("{:?} - {:?}", dev_man.device.get_device_info().name, conf)
-    // }
-    // }
+// let mut receiver = Receiver::new(
+//     Ipv4Addr::new(127, 0, 0, 1),
+//     10000,
+//     10,
+// );
 
-    // benchmark_sender(
-    //     _all_devices[0].device_info.clone(),
-    //     1000,
-    //     1000 * 1000 * 3,
-    //     1024,
-    // ).unwrap();
+// sender.initialize(&context).unwrap();
+// receiver.initialize(&context).unwrap();
 
-    // let context = zmq::Context::new();
+// sender.send(FramePacket::new(
+//     time::SystemTime::now(),
+//     _all_devices[0].device_info.clone(),
+//     vec![10, 20, 30],
+//     generate_random_image(2550, 1550, 3),
+// ), zmq::DONTWAIT).unwrap();
 
-    // let mut sender = Sender::new(
-    //     Ipv4Addr::new(127, 0, 0, 1),
-    //     10000,
-    //     10,
-    // );
-
-    // let mut receiver = Receiver::new(
-    //     Ipv4Addr::new(127, 0, 0, 1),
-    //     10000,
-    //     10,
-    // );
-
-    // sender.initialize(&context).unwrap();
-    // receiver.initialize(&context).unwrap();
-
-    // sender.send(FramePacket::new(
-    //     time::SystemTime::now(),
-    //     _all_devices[0].device_info.clone(),
-    //     vec![10, 20, 30],
-    //     generate_random_image(2550, 1550, 3),
-    // ), zmq::DONTWAIT).unwrap();
-
-    // match receiver.receive(zmq::DONTWAIT) {
-    //     Ok(res) => {
-    //         match res {
-    //             Some(frame) => {
-    //                 println!("Received data...");
-    //             },
-    //             None => {
-    //                 println!("No message available...");
-    //             }
-    //         }
-    //     },
-    //     Err(e) => {
-    //         println!("Error receiving data: {:?}", e);
-    //     }
-    // }
+// match receiver.receive(zmq::DONTWAIT) {
+//     Ok(res) => {
+//         match res {
+//             Some(frame) => {
+//                 println!("Received data...");
+//             },
+//             None => {
+//                 println!("No message available...");
+//             }
+//         }
+//     },
+//     Err(e) => {
+//         println!("Error receiving data: {:?}", e);
+//     }
+// }

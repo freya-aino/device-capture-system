@@ -1,58 +1,44 @@
 use std::net::Ipv4Addr;
-use std::sync::mpsc;
-use std::thread;
 
 use anyhow::{Error, Result};
 
-
-use crate::DeviceManager;
+use crate::Device;
+use crate::FramePacket;
 use crate::Receiver;
 use crate::Sender;
-use crate::FramePacket;
-
 
 pub enum ThreadControlMessage {
     Start,
     Stop,
-    Pause,
-    Resume,
-    Terminate,
+    // Pause,
+    // Resume,
+    // Terminate,
 }
 
-pub struct ThreadHandle {
-    thread: std::thread::JoinHandle<()>,
-    control_tx: mpsc::Sender<ThreadControlMessage>,
-}
+// pub struct ThreadHandle {
+//     thread: std::thread::JoinHandle<()>,
+//     control_tx: flume::Sender<ThreadControlMessage>,
+//     // data_rx: flume::Receiver<FramePacket>,
+// }
 
 pub struct DeviceSender {
-    device_manager: DeviceManager,
+    // device_manager: DeviceManager,
+    device: Device,
     sender: Sender,
-    thread_handle: Option<ThreadHandle>,
 }
 
 impl DeviceSender {
-    pub fn new(device_manager: DeviceManager, sender: Sender) -> Self {
-
+    pub fn new(device: Device, ip: Ipv4Addr, port: u16, queue_size: u32) -> Self {
         DeviceSender {
-            device_manager: device_manager,
-            sender: sender,
-            thread_handle: None,
+            device: device,
+            sender: Sender::new(ip, port, queue_size),
         }
     }
 
     pub fn start(&mut self) -> Result<(), Error> {
-        
-        let (data_tx, data_rx) = flume::bounded::<FramePacket>(32);
-        let (ctrl_tx, ctrl_rx) = flume::unbounded::<ThreadControlMessage>();
-
-        
-        
         Ok(())
-
     }
-
 }
-
 
 // pub struct DeviceReceiver {
 //     io_manager: IOManager,
@@ -67,4 +53,3 @@ impl DeviceSender {
 //         }
 //     }
 // }
-

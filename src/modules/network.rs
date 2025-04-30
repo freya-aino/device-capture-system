@@ -1,15 +1,13 @@
 use anyhow::{Error, Result};
 use bincode::config;
-use bincode::{Encode, Decode};
+use bincode::{Decode, Encode};
 
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::time::SystemTime;
 
 use zmq::{Context, Socket};
 
-use crate::DeviceInformation;
-
-
+// use crate::DeviceInformation;
 
 #[derive(Debug, PartialEq)]
 pub enum ConnectionStatus {
@@ -24,23 +22,17 @@ pub enum ConnectionStatus {
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct FramePacketInformation {
     timestamp: SystemTime,
-    device_information: DeviceInformation,
     frame_shape: Vec<u16>,
 }
 
 impl FramePacketInformation {
-    pub fn new(
-        timestamp: SystemTime,
-        device_information: DeviceInformation,
-        frame_shape: Vec<u16>,
-    ) -> Self {
+    pub fn new(timestamp: SystemTime, frame_shape: Vec<u16>) -> Self {
         FramePacketInformation {
             timestamp,
-            device_information,
             frame_shape,
         }
     }
-    
+
     pub fn serialize(&self) -> Result<Vec<u8>, Error> {
         let ser_info = bincode::encode_to_vec(&self, config::standard())
             .map_err(|e| Error::msg(format!("Serialization error: {}", e)))?;
@@ -61,18 +53,9 @@ pub struct FramePacket {
 }
 
 impl FramePacket {
-    pub fn new(
-        timestamp: SystemTime,
-        device_information: DeviceInformation,
-        frame_shape: Vec<u16>,
-        data: Vec<u8>,
-    ) -> Self {
+    pub fn new(timestamp: SystemTime, frame_shape: Vec<u16>, data: Vec<u8>) -> Self {
         FramePacket {
-            frame_info: FramePacketInformation::new(
-                timestamp,
-                device_information,
-                frame_shape,
-            ),
+            frame_info: FramePacketInformation::new(timestamp, frame_shape),
             data: data.into_boxed_slice(),
         }
     }
@@ -101,12 +84,13 @@ impl ConnectionStats {
             last_frame_time: SystemTime::now(),
         }
     }
-    
+
     pub fn update(&mut self, bytes: u64) {
         self.frames += 1;
         self.bytes += bytes;
         self.current_fps = 1.0 / (self.last_frame_time.elapsed().unwrap().as_secs() as f32);
-        self.current_bitrate = (self.bytes as f32) / (self.last_frame_time.elapsed().unwrap().as_secs_f32() * 1024.0);
+        self.current_bitrate =
+            (self.bytes as f32) / (self.last_frame_time.elapsed().unwrap().as_secs_f32() * 1024.0);
         self.current_latency = self.last_frame_time.elapsed().unwrap().as_secs_f32();
         self.last_frame_time = SystemTime::now();
     }
@@ -128,7 +112,6 @@ pub struct Proxy {
     to: Connection,
 }
 
-
 impl Receiver {
     pub fn new(host_address: Ipv4Addr, port: u16, queue_size: u32) -> Self {
         Receiver(Connection::new(host_address, port, queue_size))
@@ -139,22 +122,28 @@ impl Receiver {
     }
 
     pub fn receive(&mut self, zmq_flags: i32) -> Result<Option<FramePacket>, Error> {
-
-        assert!(self.0.status != ConnectionStatus::Closed, "Trying to receive while connection is closed.");
-        assert!(self.0.status != ConnectionStatus::Created, "Trying to receive while connection is not initialized.");
-        assert!(!self.0.socket.is_none(), "Trying to receive while socket is None (Status is not correct, this might hint at a previous function having exited unexpetedly).");
+        assert!(
+            self.0.status != ConnectionStatus::Closed,
+            "Trying to receive while connection is closed."
+        );
+        assert!(
+            self.0.status != ConnectionStatus::Created,
+            "Trying to receive while connection is not initialized."
+        );
+        assert!(
+            !self.0.socket.is_none(),
+            "Trying to receive while socket is None (Status is not correct, this might hint at a previous function having exited unexpetedly)."
+        );
 
         if self.0.status == ConnectionStatus::Paused {
             println!("Calling receive while connection is paused...");
             return Ok(None);
         }
 
-
         let socket = self.0.get_socket()?;
-    
+
         match socket.recv_multipart(zmq_flags) {
             Ok(parts) => {
-
                 assert!(parts.len() >= 2, "Expected 2 or more parts in the message.");
 
                 let rcv_ts = SystemTime::now();
@@ -165,14 +154,11 @@ impl Receiver {
                 self.0.set_status(ConnectionStatus::Active);
                 self.0.update_stats(data.len() as u64);
 
-                return Ok(Some(
-                    FramePacket::new(
-                        rcv_ts,
-                        frame_information.device_information,
-                        frame_information.frame_shape,
-                        data,
-                    )
-                ));
+                return Ok(Some(FramePacket::new(
+                    rcv_ts,
+                    frame_information.frame_shape,
+                    data,
+                )));
             }
             Err(e) if e == zmq::Error::EAGAIN => {
                 // No message available, continue waiting
@@ -194,14 +180,30 @@ impl Sender {
     pub fn initialize(&mut self, context: &Context) -> Result<(), Error> {
         self.0.initialize(context, zmq::PUB)
     }
-    
-    pub fn send(&mut self, frame_packet: FramePacket, zmq_flags: i32, data_chunk_size: u32) -> Result<(), Error> {
-        
-        assert!(data_chunk_size > 0, "Data chunk size must be greater than 0.");
 
-        assert!(self.0.status != ConnectionStatus::Closed, "Trying to send while connection is closed.");
-        assert!(self.0.status != ConnectionStatus::Created, "Trying to send while connection is not initialized.");
-        assert!(!self.0.socket.is_none(), "Trying to send while socket is None (Status is not correct, this might hint at a previous function having exited unexpetedly).");
+    pub fn send(
+        &mut self,
+        frame_packet: FramePacket,
+        zmq_flags: i32,
+        data_chunk_size: u32,
+    ) -> Result<(), Error> {
+        assert!(
+            data_chunk_size > 0,
+            "Data chunk size must be greater than 0."
+        );
+
+        assert!(
+            self.0.status != ConnectionStatus::Closed,
+            "Trying to send while connection is closed."
+        );
+        assert!(
+            self.0.status != ConnectionStatus::Created,
+            "Trying to send while connection is not initialized."
+        );
+        assert!(
+            !self.0.socket.is_none(),
+            "Trying to send while socket is None (Status is not correct, this might hint at a previous function having exited unexpetedly)."
+        );
 
         if self.0.status == ConnectionStatus::Paused {
             println!("Calling send while connection is paused...");
@@ -218,12 +220,13 @@ impl Sender {
         chunked_message.push(&serialized_info);
         for chunk in data.chunks(data_chunk_size as usize) {
             chunked_message.push(chunk);
-        };
-        
+        }
+
         socket.send_multipart(&chunked_message, zmq_flags)?;
 
         self.0.set_status(ConnectionStatus::Active);
-        self.0.update_stats((serialized_info.len() + frame_packet.data.len()) as u64);
+        self.0
+            .update_stats((serialized_info.len() + frame_packet.data.len()) as u64);
         return Ok(());
     }
 }
@@ -249,7 +252,6 @@ impl Proxy {
     }
 }
 
-
 impl Connection {
     pub fn new(host_address: Ipv4Addr, port: u16, queue_size: u32) -> Self {
         Connection {
@@ -272,10 +274,13 @@ impl Connection {
         self.status = status;
     }
 
-    pub fn initialize(&mut self, context: &Context, socket_type: zmq::SocketType) -> Result<(), Error> {
-        
+    pub fn initialize(
+        &mut self,
+        context: &Context,
+        socket_type: zmq::SocketType,
+    ) -> Result<(), Error> {
         let endpoint = format!("tcp://{}:{}", self.address.ip(), self.address.port());
-        
+
         let socket = context.socket(socket_type)?;
         socket.set_linger(0)?;
         socket.set_sndhwm(self.queue_size as i32)?;
@@ -284,11 +289,11 @@ impl Connection {
         match socket_type {
             zmq::PUB | zmq::XPUB => {
                 socket.bind(&endpoint)?;
-            },
+            }
             zmq::SUB | zmq::XSUB => {
                 socket.connect(&endpoint)?;
                 socket.set_subscribe(&[])?; // subscribe to all topics
-            },
+            }
             _ => {
                 return Err(Error::msg("Unsupported socket type."));
             }
@@ -323,4 +328,3 @@ impl Connection {
         }
     }
 }
-
