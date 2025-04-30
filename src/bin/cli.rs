@@ -4,7 +4,7 @@ use glob::glob;
 use std::ffi::OsString;
 use std::net::Ipv4Addr;
 use std::path::Path;
-use std::thread::spawn;
+use std::thread::{self, spawn};
 use std::time::{self, Duration};
 
 use device_capture_system::{CpalMicrophoneDevice, FramePacket, Receiver, Sender};
@@ -103,12 +103,16 @@ fn main() {
     // println!("{:?}", caps);
 
     let cpal_host = cpal::default_host();
-    let mic = CpalMicrophoneDevice::new(0, &cpal_host);
+    let mut mic = CpalMicrophoneDevice::new(0, &cpal_host);
 
     mic.print_configurations();
     println!("mic: {:?}", mic.get_name());
 
-    mic.open(0, Some(16000), None).unwrap();
+    mic.open(None, None, None, None, None).unwrap();
+
+    thread::sleep(Duration::from_secs(1));
+
+    mic.close().unwrap();
 
     // // get all devices
     // let all_device_managers = DeviceManager::get_all_available_devices(&nokhwa_backend, &cpal_host).unwrap();
