@@ -1,23 +1,18 @@
+use bincode::Encode;
 use glob::glob;
-use std::collections::HashSet;
 use std::ffi::OsString;
-use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
 
 use anyhow::Ok;
 use anyhow::{Error, Result};
-use bincode::{config, Decode, Encode};
-use clap::ValueEnum;
 use cpal::traits::HostTrait;
 use cpal::traits::{DeviceTrait, StreamTrait};
-use cpal::{InputCallbackInfo, SampleFormat, StreamConfig, SupportedStreamConfig, SupportedStreamConfigRange};
-use tokio;
-
-use crate::FramePacket;
+use cpal::{SampleFormat, StreamConfig, SupportedStreamConfigRange};
 
 #[cfg(target_os = "linux")]
-use v4l::Device;
+use v4l::FourCC;
+use v4l::frameinterval::FrameIntervalEnum;
+use v4l::video::Capture;
 
 #[cfg(target_os = "linux")]
 fn all_devices_paths_linux() -> Result<Vec<OsString>, Error> {
@@ -74,12 +69,11 @@ impl CpalMicrophoneDevice {
     pub fn open(
         &mut self,
         timeout: Option<Duration>,
-        sample_rate: Option<u32>, 
+        sample_rate: Option<u32>,
         channels: Option<u16>,
         buffer_size: Option<u32>,
         sample_format: Option<SampleFormat>,
     ) -> Result<(), Error> {
-
         let supported_config = self.microphone.default_input_config().unwrap();
 
         let stream_config = StreamConfig {
@@ -91,14 +85,13 @@ impl CpalMicrophoneDevice {
             buffer_size: match buffer_size {
                 Some(size) => cpal::BufferSize::Fixed(size),
                 None => cpal::BufferSize::Default,
-            }
+            },
         };
 
-        let sample_format = sample_format.unwrap_or(
-            supported_config.sample_format()
-        );
+        let sample_format = sample_format.unwrap_or(supported_config.sample_format());
 
-        let stream = self.microphone
+        let stream = self
+            .microphone
             .build_input_stream_raw(
                 &stream_config,
                 sample_format,
@@ -135,75 +128,85 @@ impl CpalMicrophoneDevice {
     }
 }
 
-pub enum Device {
-    Microphone(CpalMicrophoneDevice),
+#[cfg(target_os = "linux")]
+pub struct V4lCameraDevice {
+    id: u16,
+    name: String,
+    device: v4l::Device,
+    camera_configs: Vec<CameraConfig>,
 }
 
-// impl CameraDevice {
-//     pub fn new(device_information: DeviceInformation) -> Self {
-//         CameraDevice {
-//             device_information: device_information.clone(),
-//         }
-//     }
-// }
+#[derive(Debug)]
+pub struct CameraConfig {
+    width: u32,
+    height: u32,
+    fps: f32,
+    fourcc: String,
+}
 
-// pub struct CameraDevice {
-//     id: u8,
-//     name: String,
-//     handle: Option<tokio::task::JoinHandle<()>>,
-// }
+#[cfg(target_os = "linux")]
+impl V4lCameraDevice {
+    pub fn new(id: u16) -> Self {
+        let dev = v4l::Device::new(id as usize).unwrap();
 
-// impl MicrophoneDevice {
-//     pub fn new(id: u8, name: String) -> Self {
-//         MicrophoneDevice {
-//             id: id,
-//             name: name,
-//             mic: None,
-//             stream: None,
-//         }
-//     }
+        let caps = dev.query_caps().unwrap();
 
-//     pub fn start(
-//         &mut self,
-//         config: MicrophoneConfig,
-//         timeout: Option<Duration>,
-//         data_tx: flume::Sender<FramePacket>,
-//     ) -> Result<(), Error> {
+        // let configs = Format::new(width, height, fourcc);
 
-//         let device_info = DeviceInformation {
-//             id: self.id,
-//             name: self.name.clone(),
-//             device_type: DeviceType::Microphone,
-//         };
+        let formats = dev.enum_formats().unwrap();
 
-//         let stream = mic.build_input_stream(
-//             &mic_conf,
-//             move |data: &[u8], _: &cpal::InputCallbackInfo| {
-//                 let frame_packet = FramePacket::new(
-//                     SystemTime::now(),
-//                     device_info.clone(),
-//                     vec![config.sample_rate as u16, config.channels as u16], // TODO: this is probably not correct, but we want to test the function first
-//                     data.to_vec(),
-//                 );
+        let mut out_configs = Vec::<CameraConfig>::new();
 
-//                 if data_tx.send(frame_packet).is_err() {
-//                     println!("Error sending data to channel, stopping stream.");
-//                     return;
-//                 }
-//             },
-//             move |err| {
-//                 eprintln!("Error: {:?}", err);
-//             },
-//             timeout,
-//         )?;
+        for format in formats.iter() {
+            let index = format.index;
+            let flags = format.flags;
+            // let description = format.description;
+            let fourcc = format.fourcc;
+            let fourcc_str = String::from_utf8(fourcc.repr.to_vec()).unwrap();
 
-//         stream.play()?;
+            let frame_sizes = dev.enum_framesizes(fourcc).unwrap();
+            for fs in frame_sizes {
+                let size = fs.size.to_discrete().into_iter().nth(0).unwrap();
+                let width = size.width;
+                let height = size.height;
 
-//         self.stream = Some(stream);
+                let frame_intervals = dev.enum_frameintervals(fourcc, width, height).unwrap();
+                for fi in frame_intervals {
+                    let fps = match fi.interval {
+                        FrameIntervalEnum::Discrete(frac) => {
+                            frac.denominator as f32 / frac.numerator as f32
+                        }
+                        FrameIntervalEnum::Stepwise(step) => {
+                            step.step.denominator as f32 / step.step.numerator as f32
+                        }
+                    };
 
-//         Ok(())
-//     }
-// }
+                    let cfg = CameraConfig {
+                        width: size.width,
+                        height: size.height,
+                        fps: fps,
+                        fourcc: fourcc_str.clone(),
+                    };
+                    out_configs.push(cfg);
+                }
+            }
+        }
+
+        V4lCameraDevice {
+            id: id,
+            name: caps.card,
+            device: dev,
+            camera_configs: out_configs,
+        }
+    }
+
+    pub fn print_configurations(&self) -> Result<(), Error> {
+        for cfg in &self.camera_configs {
+            println!("{:?}", cfg);
+        }
+        Ok(())
+    }
+}
 
 // #[derive(Debug)]
 // pub struct CameraConfig {
@@ -315,36 +318,34 @@ pub enum Device {
 // }
 
 // --- device manager ---
+pub enum Device {
+    Microphone(CpalMicrophoneDevice),
+    Camera(V4lCameraDevice),
+}
 
-// pub struct DeviceManager {
-//     pub system_id: u8,
-//     pub device_info: DeviceInformation,
-// }
+pub struct DeviceManager {
+    pub system_id: u8,
+    pub device_info: Device,
+}
 
-// impl DeviceManager {
-// pub fn get_all_available_configs(&self) -> Result<Vec<DeviceConfig>, Error> {
-//     match self.device_info.device_type {
-//         DeviceType::Camera => {
-//             let mut cam = CameraDevice::new(self.device_info.id, self.device_info.name.clone());
-//             let confs = cam.get_all_available_configs()
-//                 .unwrap()
-//                 .iter()
-//                 .map(|config| DeviceConfig::Camera(config.clone()))
-//                 .collect::<Vec<DeviceConfig>>();
-//             Ok(confs)
-//         },
-//         DeviceType::Microphone => {
-//             let mut mic = MicrophoneDevice::new(self.device_info.id, self.device_info.name.clone());
-//             let confs = mic.get_all_available_configs()
-//                 .unwrap()
-//                 .iter()
-//                 .map(|config| DeviceConfig::Microphone(config.clone()))
-//                 .collect::<Vec<DeviceConfig>>();
-//             Ok(confs)
-//         },
-//     }
-// }
-
+impl DeviceManager {
+    pub fn get_all_available_cameras() -> Result<Vec<V4lCameraDevice>, Error> {
+        let device_paths = all_devices_paths_linux().unwrap();
+        println!("Found {} devices!", device_paths.len());
+        if device_paths.len() == 0 {
+            println!("No devices found!");
+            return Ok(vec![]);
+        }
+        Ok(vec![])
+        // let mut cam = CameraDevice::new(device_paths[0].clone(), device_paths[0].clone());
+        // let confs = cam.get_all_available_configs()
+        //     .unwrap()
+        //     .iter()
+        //     .map(|config| DeviceConfig::Camera(config.clone()))
+        //     .collect::<Vec<DeviceConfig>>();
+        // Ok(confs)
+    }
+}
 // pub async fn run(&mut self, data_tx: flume::Sender<FramePacket>) -> Result<(), Error> {
 
 //     let device = match self.device_info.device_type {
@@ -375,43 +376,12 @@ pub enum Device {
 //     Ok(())
 // }
 
-// fn initialize(&mut self, device: &mut DevicePrimitive, config: DeviceConfig) -> Result<(), Error> {
-//     match device {
-//         DevicePrimitive::Camera(camera) => {
-//             camera.
-//             camera.open_stream()?;
-//             self.status = Some(DeviceStatus::Initialized);
-//         },
-//         DevicePrimitive::Microphone(mic) => {
-//             // Initialize microphone stream here
-//             self.status = Some(DeviceStatus::Initialized);
-//         }
-//     }
-//     Ok(())
-// }
-
-// fn create_device(&mut self, cpal_host: Option<&cpal::Host>) -> Result<Box<DevicePrimitive>, Error> {
-//     let device = self.device_info.create_device(cpal_host)?;
-//     self.status = Some(DeviceStatus::Created);
-//     Ok(device)
-// }
-
 // pub fn get_all_available_devices(
-//     nokhwa_backend: &ApiBackend,
 //     cpal_host: &cpal::Host,
 // ) -> Result<Vec<Self>, Error> {
 //     let mut all_device_infos = Vec::new();
 
 //     all_device_infos.extend(
-//         nokhwa::query(*nokhwa_backend)
-//             .unwrap()
-//             .into_iter()
-//             .map(|device| DeviceInformation {
-//                 id: device.index().as_index().unwrap() as u8,
-//                 name: device.human_name().to_string(),
-//                 device_type: DeviceType::Camera,
-//             })
-//             .collect::<Vec<DeviceInformation>>(),
 //     );
 
 //     all_device_infos.extend(
@@ -437,5 +407,4 @@ pub enum Device {
 //         .collect::<Vec<Self>>();
 
 //     Ok(out)
-// }
 // }

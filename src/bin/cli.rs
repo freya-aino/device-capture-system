@@ -7,7 +7,7 @@ use std::path::Path;
 use std::thread::{self, spawn};
 use std::time::{self, Duration};
 
-use device_capture_system::{CpalMicrophoneDevice, FramePacket, Receiver, Sender};
+use device_capture_system::{CpalMicrophoneDevice, FramePacket, Receiver, Sender, V4lCameraDevice};
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -91,92 +91,20 @@ fn benchmark_sender(iterations: u32, data_size: u32, data_chunk_size: u32) -> Re
 }
 
 fn main() {
-    // let device_paths = all_devices_paths_linux().unwrap();
-    // println!("Found {} devices!", device_paths.len());
-    // if device_paths.len() == 0 {
-    //     println!("No devices found!");
-    //     return;
-    // }
-    // let dev_path = device_paths.get(1).unwrap();
-    // let dev = Device::with_path(dev_path).unwrap();
-    // let caps = dev.query_caps().unwrap();
-    // println!("{:?}", caps);
+    let cam = V4lCameraDevice::new(0);
 
-    let cpal_host = cpal::default_host();
-    let mut mic = CpalMicrophoneDevice::new(0, &cpal_host);
+    cam.print_configurations().unwrap();
 
-    mic.print_configurations();
-    println!("mic: {:?}", mic.get_name());
-
-    mic.open(None, None, None, None, None).unwrap();
-
-    thread::sleep(Duration::from_secs(1));
-
-    mic.close().unwrap();
+    // let cpal_host = cpal::default_host();
+    // let mut mic = CpalMicrophoneDevice::new(0, &cpal_host);
+    // mic.print_configurations();
+    // println!("mic: {:?}", mic.get_name());
+    // mic.open(None, None, None, None, None).unwrap();
+    // thread::sleep(Duration::from_secs(1));
+    // mic.close().unwrap();
 
     // // get all devices
     // let all_device_managers = DeviceManager::get_all_available_devices(&nokhwa_backend, &cpal_host).unwrap();
-
-    // match cli.command {
-    //     Commands::Info { index } => {
-    //         match index {
-    //             Some(index) => {
-    //                 if index as usize >= all_device_managers.len() {
-    //                     println!("Invalid index: {} only {} devices available!", index, all_device_managers.len());
-    //                     return;
-    //                 }
-
-    //                 let device_manager = all_device_managers.get(index as usize).unwrap();
-
-    //                 match device_manager.device_info.device_type {
-    //                     DeviceType::Camera => {
-    //                         let mut cam = CameraDevice::new(
-    //                             device_manager.device_info.id,
-    //                             device_manager.device_info.name.clone(),
-    //                         );
-    //                         cam.initialize().unwrap();
-
-    //                         println!("Device:      {:?}", device_manager.device_info.name);
-
-    //                         let all_configs = cam.get_all_available_configs().unwrap();
-
-    //                         println!("Configs Found: {}", all_configs.len());
-    //                         for conf in all_configs.iter() {
-    //                             println!("{:?}", conf);
-    //                         }
-    //                         println!("");
-
-    //                     }
-    //                     DeviceType::Microphone => {
-    //                         println!("Microphone device found!");
-    //                     }
-    //                 }
-    //             },
-    //             None => {
-    //                 // print all devices
-    //                 println!("\nDevices Found: {}", all_device_managers.len());
-    //                 for dm in all_device_managers.iter() {
-    //                     println!(
-    //                         "{} - {:?} - {}",
-    //                         dm.system_id, dm.device_info.device_type, dm.device_info.name
-    //                     );
-    //                 }
-    //                 println!("");
-    //             }
-    //         }
-    //     }
-    //     // Commands::Device { index, device_command} => {
-
-    //     //     let device_manager = all_device_managers.get(index as usize).unwrap();
-
-    //     //     println!("Device:      {:?}", device_manager.device_info.name);
-    //     //     println!("System ID:   {:?}", device_manager.system_id);
-    //     //     println!("Device Type: {:?}", device_manager.device_info.device_type);
-    //     //     println!("Local ID:    {:?}", device_manager.device_info.id);
-
-    //     //     process_device_command(device_command).unwrap();
-    //     // }
-    // }
 }
 
 fn process_device_command(device_command: DeviceCommand) -> Result<(), Error> {
@@ -236,14 +164,6 @@ fn process_config_command(config_command: ConfigCommand) -> Result<(), Error> {
 //             continue;
 //         }
 //     }
-
-// let all_configs = match dev_man.device.get_all_available_configs() {
-//     Ok(configs) => configs,
-//     Err(err) => {
-//         eprintln!("Error getting available configs: {}", err);
-//         continue;
-//     }
-// };
 
 // let all_configs = dev_man.device.get_all_available_configs().unwrap();
 
