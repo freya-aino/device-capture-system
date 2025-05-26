@@ -1,7 +1,10 @@
+use anyhow::{Error, Result};
+
 use v4l::FourCC;
 use v4l::frameinterval::FrameIntervalEnum;
 use v4l::video::Capture;
 
+use super::{CameraConfig, DeviceInformation, DeviceType};
 
 pub struct V4lCameraDevice {
     device_info: DeviceInformation,
@@ -56,12 +59,14 @@ impl V4lCameraDevice {
             }
         }
 
+        let device_info = DeviceInformation {
+            id: id,
+            name: caps.card,
+            device_type: DeviceType::Camera,
+        };
+
         V4lCameraDevice {
-            DeviceInformation {
-                id: id,
-                name: caps.card,
-                device_type: DeviceType::Camera,
-            },
+            device_info: device_info,
             device: dev,
             camera_configs: out_configs,
         }

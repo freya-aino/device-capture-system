@@ -1,14 +1,3 @@
-use anyhow::{Error, Result};
-// use clap::{Parser, Subcommand};
-// use glob::glob;
-// use std::ffi::OsString;
-// use std::net::Ipv4Addr;
-// use std::path::Path;
-// use std::thread::{self, spawn};
-// use std::time::{self, Duration};
-
-// use device_capture_system::{CpalMicrophoneDevice, FramePacket, Receiver, Sender, V4lCameraDevice};
-
 // #[derive(Parser)]
 // #[command(author, version, about)]
 // pub struct Cli {
@@ -89,14 +78,9 @@ use anyhow::{Error, Result};
 
 //     Ok(())
 // }
-
-
-
-
+//
 
 fn main() {
-
-    
 
     // use device_capture_system::V4lCameraDevice;
 

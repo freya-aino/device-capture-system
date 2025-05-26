@@ -1,19 +1,16 @@
 use anyhow::{Error, Result};
-
 use std::net::{Ipv4Addr, SocketAddrV4};
-use std::time::SystemTime;
-
 use zmq::{Context, Socket};
 
+use super::{ConnectionStats, ConnectionStatus};
 
 pub struct Connection {
-    address: SocketAddrV4,
-    queue_size: u32,
-    socket: Option<Socket>,
-    status: ConnectionStatus,
-    stats: Option<ConnectionStats>,
+    pub address: SocketAddrV4,
+    pub queue_size: u32,
+    pub socket: Option<Socket>,
+    pub status: ConnectionStatus,
+    pub stats: Option<ConnectionStats>,
 }
-
 
 impl Connection {
     pub fn new(host_address: Ipv4Addr, port: u16, queue_size: u32) -> Self {
@@ -31,10 +28,6 @@ impl Connection {
             Some(ref socket) => Ok(socket),
             None => Err(Error::msg("Socket is not initialized.")),
         }
-    }
-
-    pub fn set_status(&mut self, status: ConnectionStatus) {
-        self.status = status;
     }
 
     pub fn initialize(
@@ -63,7 +56,7 @@ impl Connection {
         }
         self.socket = Some(socket);
         self.stats = Some(ConnectionStats::new());
-        self.set_status(ConnectionStatus::Initialized);
+        self.status = ConnectionStatus::Initialized;
         Ok(())
     }
 

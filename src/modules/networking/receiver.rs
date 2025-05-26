@@ -1,9 +1,15 @@
-use zmq::SUB;
-use zmq::Error::EAGAIN;
+use std::net::Ipv4Addr;
+use std::time::SystemTime;
 
+use anyhow::{Error, Result};
+use zmq::Error::EAGAIN;
+use zmq::{Context, SUB};
+
+use crate::networking::{Connection, ConnectionStatus, FramePacketInformation};
+
+use super::FramePacket;
 
 pub struct Receiver(Connection);
-
 
 impl Receiver {
     pub fn new(host_address: Ipv4Addr, port: u16, queue_size: u32) -> Self {
@@ -39,29 +45,23 @@ impl Receiver {
             Ok(parts) => {
                 assert!(parts.len() >= 2, "Expected 2 or more parts in the message.");
 
-                let rcv_ts = SystemTime::now();
+                let mut frame_information = FramePacketInformation::deserialize(&parts[0]).unwrap();
+                frame_information.rx_timestamp = Some(SystemTime::now());
+                let data = parts[1..].concat().into_boxed_slice();
 
-                let frame_information = FramePacketInformation::deserialize(&parts[0]).unwrap();
-                let data = parts[1..].concat().to_vec();
-
-                self.0.set_status(ConnectionStatus::Active);
+                self.0.status = ConnectionStatus::Active;
                 self.0.update_stats(data.len() as u64);
 
-                return Ok(Some(FramePacket::new(
-                    rcv_ts,
-                    frame_information.frame_shape,
-                    data,
-                )));
+                return Ok(Some(FramePacket::new(frame_information, data)));
             }
             Err(e) if e == EAGAIN => {
                 // No message available, continue waiting
                 return Ok(None);
             }
             Err(e) => {
-                self.0.set_status(ConnectionStatus::Error);
+                self.0.status = ConnectionStatus::Error;
                 return Err(Error::msg(format!("Error receiving message: {}", e)));
             }
         }
     }
 }
-

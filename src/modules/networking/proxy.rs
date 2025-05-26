@@ -1,6 +1,8 @@
-
-use zmq::{XPUB, XSUB};
+use anyhow::{Error, Result};
 use std::net::Ipv4Addr;
+use zmq::{Context, XPUB, XSUB};
+
+use super::Connection;
 
 pub struct Proxy {
     from: Connection,
