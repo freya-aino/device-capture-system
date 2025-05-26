@@ -1,14 +1,16 @@
+use anyhow::{Error, Result};
 use cpal::traits::HostTrait;
 use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::{SampleFormat, StreamConfig, SupportedStreamConfigRange};
+use std::time::Duration;
 
-
+use super::{DeviceInformation, DeviceType};
 
 pub struct CpalMicrophoneDevice {
-    device_info: DeviceInformation,
-    microphone: cpal::Device,
-    microphone_configs: Vec<SupportedStreamConfigRange>,
-    stream: Option<cpal::Stream>,
+    pub device_info: DeviceInformation,
+    pub microphone: cpal::Device,
+    pub microphone_configs: Vec<SupportedStreamConfigRange>,
+    pub stream: Option<cpal::Stream>,
 }
 
 impl CpalMicrophoneDevice {
@@ -25,9 +27,14 @@ impl CpalMicrophoneDevice {
             .unwrap()
             .collect::<Vec<SupportedStreamConfigRange>>();
 
-        CpalMicrophoneDevice {
+        let device_info = DeviceInformation {
             id: id,
             name: mic.name().unwrap(),
+            device_type: DeviceType::Microphone,
+        };
+
+        CpalMicrophoneDevice {
+            device_info: device_info,
             microphone: mic,
             microphone_configs: conf,
             stream: None,
@@ -35,7 +42,7 @@ impl CpalMicrophoneDevice {
     }
 
     pub fn get_name(&self) -> String {
-        self.name.clone()
+        self.device_info.name.clone()
     }
 
     pub fn print_configurations(&self) {

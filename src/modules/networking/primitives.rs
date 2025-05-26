@@ -1,5 +1,9 @@
+use anyhow::{Error, Result};
+use bincode::{Decode, Encode, config};
+use std::time::SystemTime;
 
-// network.rs
+use crate::modules::devices::DeviceInformation;
+
 #[derive(Debug, PartialEq)]
 pub enum ConnectionStatus {
     Created,
@@ -8,6 +12,17 @@ pub enum ConnectionStatus {
     Paused,
     Error,
     Closed,
+}
+
+#[derive(Debug, PartialEq, Encode, Decode)]
+pub struct ConnectionStats {
+    frames: u64,
+    bytes: u64,
+    current_fps: f32,
+    current_bitrate: f32,
+    current_latency: f32,
+    start_time: SystemTime,
+    last_frame_time: SystemTime,
 }
 
 impl ConnectionStats {
@@ -34,39 +49,15 @@ impl ConnectionStats {
     }
 }
 
-
-#[derive(Debug)]
-pub struct FramePacket {
-    pub frame_info: FramePacketInformation,
-    pub data: Box<[u8]>,
-}
-
-impl FramePacket {
-    pub fn new(timestamp: SystemTime, frame_shape: Vec<u16>, data: Vec<u8>) -> Self {
-        FramePacket {
-            frame_info: FramePacketInformation::new(timestamp, frame_shape),
-            data: data.into_boxed_slice(),
-        }
-    }
-}
-
-
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct FramePacketInformation {
-    timestamp: SystemTime,
-    device_info: DeviceInformation,
-    frame_shape: Vec<u16>,
+    pub device_info: DeviceInformation,
+    pub rx_timestamp: Option<SystemTime>,
+    pub tx_timestamp: Option<SystemTime>,
+    pub frame_shape: Vec<u16>,
 }
 
 impl FramePacketInformation {
-    pub fn new(timestamp: SystemTime, device_info: DeviceInformation, frame_shape: Vec<u16>) -> Self {
-        FramePacketInformation {
-            timestamp,
-            device_info,
-            frame_shape,
-        }
-    }
-
     pub fn serialize(&self) -> Result<Vec<u8>, Error> {
         let ser_info = bincode::encode_to_vec(&self, config::standard())
             .map_err(|e| Error::msg(format!("Serialization error: {}", e)))?;
@@ -77,5 +68,17 @@ impl FramePacketInformation {
         let (info, _) = bincode::decode_from_slice(data, config::standard())
             .map_err(|e| Error::msg(format!("Deserialization error: {}", e)))?;
         Ok(info)
+    }
+}
+
+#[derive(Debug)]
+pub struct FramePacket {
+    pub frame_info: FramePacketInformation,
+    pub data: Box<[u8]>,
+}
+
+impl FramePacket {
+    pub fn new(frame_info: FramePacketInformation, data: Box<[u8]>) -> Self {
+        FramePacket { frame_info, data }
     }
 }

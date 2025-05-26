@@ -1,4 +1,10 @@
-use zmq::PUB;
+use anyhow::{Error, Result};
+use std::{net::Ipv4Addr, time::SystemTime};
+use zmq::{Context, PUB};
+
+use crate::networking::ConnectionStatus;
+
+use super::{Connection, FramePacket};
 
 pub struct Sender(Connection);
 
@@ -40,8 +46,11 @@ impl Sender {
             return Ok(());
         }
 
+        let mut frame_info = frame_packet.frame_info.clone();
+        frame_info.tx_timestamp = Some(SystemTime::now());
+
         let socket = self.0.get_socket()?;
-        let serialized_info = frame_packet.frame_info.serialize()?;
+        let serialized_info = frame_info.serialize()?;
         let data = frame_packet.data.as_ref();
 
         let mut chunked_message: Vec<&[u8]> = Vec::new();
@@ -54,7 +63,7 @@ impl Sender {
 
         socket.send_multipart(&chunked_message, zmq_flags)?;
 
-        self.0.set_status(ConnectionStatus::Active);
+        self.0.status = ConnectionStatus::Active;
         self.0
             .update_stats((serialized_info.len() + frame_packet.data.len()) as u64);
         return Ok(());
