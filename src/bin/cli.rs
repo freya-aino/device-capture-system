@@ -1,99 +1,108 @@
 use anyhow::{Error, Result};
-use clap::{Parser, Subcommand};
-use glob::glob;
-use std::ffi::OsString;
-use std::net::Ipv4Addr;
-use std::path::Path;
-use std::thread::{self, spawn};
-use std::time::{self, Duration};
+// use clap::{Parser, Subcommand};
+// use glob::glob;
+// use std::ffi::OsString;
+// use std::net::Ipv4Addr;
+// use std::path::Path;
+// use std::thread::{self, spawn};
+// use std::time::{self, Duration};
 
-use device_capture_system::{CpalMicrophoneDevice, FramePacket, Receiver, Sender, V4lCameraDevice};
+// use device_capture_system::{CpalMicrophoneDevice, FramePacket, Receiver, Sender, V4lCameraDevice};
 
-#[derive(Parser)]
-#[command(author, version, about)]
-pub struct Cli {
-    #[command(subcommand)]
-    pub command: Commands,
-}
+// #[derive(Parser)]
+// #[command(author, version, about)]
+// pub struct Cli {
+//     #[command(subcommand)]
+//     pub command: Commands,
+// }
 
-#[derive(Subcommand, PartialEq)]
-pub enum Commands {
-    // get all devices, or a specific device by index returns the device information
-    Info {
-        // device command
-        #[clap(short, long)]
-        index: Option<u8>,
-    },
-    // Device {
+// #[derive(Subcommand, PartialEq)]
+// pub enum Commands {
+//     // get all devices, or a specific device by index returns the device information
+//     Info {
+//         // device command
+//         #[clap(short, long)]
+//         index: Option<u8>,
+//     },
+//     // Device {
 
-    //     #[command(subcommand)]
-    //     device_command: DeviceCommand,
-    // },
-}
+//     //     #[command(subcommand)]
+//     //     device_command: DeviceCommand,
+//     // },
+// }
 
-#[derive(Subcommand, PartialEq)]
-pub enum DeviceCommand {
-    Configs {
-        #[command(subcommand)]
-        config_command: ConfigCommand,
-    },
-    // Info,
-    // Start,
-    // Stop,
-    // Pause,
-    // Resume,
-    // Terminate,
-}
+// #[derive(Subcommand, PartialEq)]
+// pub enum DeviceCommand {
+//     Configs {
+//         #[command(subcommand)]
+//         config_command: ConfigCommand,
+//     },
+//     // Info,
+//     // Start,
+//     // Stop,
+//     // Pause,
+//     // Resume,
+//     // Terminate,
+// }
 
-#[derive(Subcommand, PartialEq)]
-pub enum ConfigCommand {
-    list,
-    set,
-    get,
-}
+// #[derive(Subcommand, PartialEq)]
+// pub enum ConfigCommand {
+//     list,
+//     set,
+//     get,
+// }
 
-fn benchmark_sender(iterations: u32, data_size: u32, data_chunk_size: u32) -> Result<(), Error> {
-    print!("Starting benchmark sender...");
+// fn benchmark_sender(iterations: u32, data_size: u32, data_chunk_size: u32) -> Result<(), Error> {
+//     print!("Starting benchmark sender...");
 
-    let mut sender = Sender::new(
-        Ipv4Addr::new(127, 0, 0, 1),
-        portpicker::pick_unused_port().unwrap(),
-        10,
-    );
+//     let mut sender = Sender::new(
+//         Ipv4Addr::new(127, 0, 0, 1),
+//         portpicker::pick_unused_port().unwrap(),
+//         10,
+//     );
 
-    let context = zmq::Context::new();
-    sender.initialize(&context).unwrap();
+//     let context = zmq::Context::new();
+//     sender.initialize(&context).unwrap();
 
-    let mut average_duration: Duration = Duration::new(0, 0);
-    // time sending frames
-    for _ in 0..iterations {
-        let frame = vec![0u8; data_size as usize];
+//     let mut average_duration: Duration = Duration::new(0, 0);
+//     // time sending frames
+//     for _ in 0..iterations {
+//         let frame = vec![0u8; data_size as usize];
 
-        let start_time = time::SystemTime::now();
+//         let start_time = time::SystemTime::now();
 
-        let fp = FramePacket::new(time::SystemTime::now(), vec![10, 20, 30], frame);
-        sender.send(fp, zmq::DONTWAIT, data_chunk_size).unwrap();
+//         let fp = FramePacket::new(time::SystemTime::now(), vec![10, 20, 30], frame);
+//         sender.send(fp, zmq::DONTWAIT, data_chunk_size).unwrap();
 
-        let end_time = time::SystemTime::now();
+//         let end_time = time::SystemTime::now();
 
-        let duration = end_time.duration_since(start_time).unwrap();
-        average_duration += duration;
-    }
+//         let duration = end_time.duration_since(start_time).unwrap();
+//         average_duration += duration;
+//     }
 
-    println!("Benchmark completed!");
-    println!(
-        "Average duration: {:?} -- Average fps: {:?}",
-        average_duration.as_secs_f32() / (iterations as f32),
-        1.0 / (average_duration.as_secs_f32() / (iterations as f32))
-    );
+//     println!("Benchmark completed!");
+//     println!(
+//         "Average duration: {:?} -- Average fps: {:?}",
+//         average_duration.as_secs_f32() / (iterations as f32),
+//         1.0 / (average_duration.as_secs_f32() / (iterations as f32))
+//     );
 
-    Ok(())
-}
+//     Ok(())
+// }
+
+
+
+
 
 fn main() {
-    let cam = V4lCameraDevice::new(0);
 
-    cam.print_configurations().unwrap();
+    
+
+    // use device_capture_system::V4lCameraDevice;
+
+    // let cam = V4lCameraDevice::new(0);
+
+    // cam.print_configurations().unwrap();
 
     // let cpal_host = cpal::default_host();
     // let mut mic = CpalMicrophoneDevice::new(0, &cpal_host);
@@ -107,27 +116,27 @@ fn main() {
     // let all_device_managers = DeviceManager::get_all_available_devices(&nokhwa_backend, &cpal_host).unwrap();
 }
 
-fn process_device_command(device_command: DeviceCommand) -> Result<(), Error> {
-    match device_command {
-        DeviceCommand::Configs { config_command } => process_config_command(config_command)?,
-    }
-    Ok(())
-}
+// fn process_device_command(device_command: DeviceCommand) -> Result<(), Error> {
+//     match device_command {
+//         DeviceCommand::Configs { config_command } => process_config_command(config_command)?,
+//     }
+//     Ok(())
+// }
 
-fn process_config_command(config_command: ConfigCommand) -> Result<(), Error> {
-    match config_command {
-        ConfigCommand::list => {
-            println!("Listing all available configs...");
-        }
-        ConfigCommand::set => {
-            println!("Setting config...");
-        }
-        ConfigCommand::get => {
-            println!("Getting current config...");
-        }
-    }
-    Ok(())
-}
+// fn process_config_command(config_command: ConfigCommand) -> Result<(), Error> {
+//     match config_command {
+//         ConfigCommand::list => {
+//             println!("Listing all available configs...");
+//         }
+//         ConfigCommand::set => {
+//             println!("Setting config...");
+//         }
+//         ConfigCommand::get => {
+//             println!("Getting current config...");
+//         }
+//     }
+//     Ok(())
+// }
 
 // let mut mic = MicrophoneDevice::new(1, "test".to_string());
 

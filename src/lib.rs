@@ -1,7 +1,6 @@
 
-pub mod modules;
 
-pub use modules::device::*;
-pub use modules::file::*;
-pub use modules::network::*;
-pub use modules::orchestrator::*;
+mod modules;
+
+#[cfg(feature = "device")]
+use modules::devices::V4lCameraDevice;
