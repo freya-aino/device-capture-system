@@ -1,0 +1,9 @@
+[package]
+name = "devices"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+v4l = "0.14.0"
+tiny_http = "0.12.0"
+shared = { path = "../shared" }
