@@ -75,10 +75,8 @@
 //         average_duration.as_secs_f32() / (iterations as f32),
 //         1.0 / (average_duration.as_secs_f32() / (iterations as f32))
 //     );
-
 //     Ok(())
 // }
-//
 
 fn main() {
 
