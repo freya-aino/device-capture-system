@@ -72,12 +72,12 @@ impl ConnectionStats {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq)]
 pub struct FramePacketInformation {
     pub device_info: DeviceInformation,
     pub rx_timestamp: Option<SystemTime>,
     pub tx_timestamp: Option<SystemTime>,
-    pub frame_shape: Vec<u16>,
+    pub frame_shape: Vec<u32>,
 }
 
 impl FramePacketInformation {
@@ -94,7 +94,7 @@ impl FramePacketInformation {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct FramePacket {
     pub frame_info: FramePacketInformation,
     pub data: Box<[u8]>,
