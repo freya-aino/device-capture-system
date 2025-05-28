@@ -1,10 +1,23 @@
 use anyhow::{Error, Result};
 use cpal::traits::HostTrait;
 use cpal::traits::{DeviceTrait, StreamTrait};
+use cpal::{Device as CpalDevice, Host};
 use cpal::{SampleFormat, StreamConfig, SupportedStreamConfigRange};
 use std::time::Duration;
 
 use shared::{DeviceInformation, DeviceType};
+
+pub fn get_all_microphone_devices(cpal_host: &Host) -> Result<Vec<CpalMicrophoneDevice>, Error> {
+    // let host = cpal::default_host();
+    let devices = cpal_host.input_devices()?;
+
+    let mut out = Vec::<CpalMicrophoneDevice>::new();
+    for (i, dev) in devices.enumerate() {
+        out.push(CpalMicrophoneDevice::new(dev, i as u16));
+    }
+
+    Ok(out)
+}
 
 pub struct CpalMicrophoneDevice {
     pub device_info: DeviceInformation,
@@ -14,13 +27,13 @@ pub struct CpalMicrophoneDevice {
 }
 
 impl CpalMicrophoneDevice {
-    pub fn new(id: u16, cpal_host: &cpal::Host) -> Self {
-        let mic = cpal_host
-            .input_devices()
-            .unwrap()
-            .nth(id as usize)
-            .ok_or_else(|| Error::msg("Device not found"))
-            .unwrap();
+    pub fn new(mic: CpalDevice, id: u16) -> Self {
+        // let mic = cpal_host
+        //     .input_devices()
+        //     .unwrap()
+        //     .nth(id as usize)
+        //     .ok_or_else(|| Error::msg("Device not found"))
+        //     .unwrap();
 
         let conf = mic
             .supported_input_configs()
