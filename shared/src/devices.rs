@@ -1,15 +1,4 @@
-use anyhow::Error;
 use bincode::{Decode, Encode};
-use glob::glob;
-use std::ffi::OsString;
-
-fn all_devices_paths_linux() -> Result<Vec<OsString>, Error> {
-    let device_paths = glob("/dev/video*")?
-        .filter_map(Result::ok)
-        .map(|path| path.into_os_string())
-        .collect::<Vec<OsString>>();
-    Ok(device_paths)
-}
 
 #[derive(Debug, Encode, Decode, Clone)]
 pub enum DeviceType {
