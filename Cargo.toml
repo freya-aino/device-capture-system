@@ -2,5 +2,8 @@
 members = [
     "devices",
     "networking",
+    "device-node",
+    "control-hub",
+    "access-client",
 ]
 resolver = "3"
