@@ -1,24 +1,40 @@
 use anyhow::{Error, Result};
+use glob::glob;
+use shared::{CameraConfig, DeviceInformation, DeviceType};
+use std::ffi::OsString;
 
-use v4l::FourCC;
 use v4l::frameinterval::FrameIntervalEnum;
 use v4l::video::Capture;
 
-use shared::{CameraConfig, DeviceInformation, DeviceType};
+pub fn get_all_camera_devices_linux() -> Result<Vec<V4lCameraDevice>, Error> {
+    let device_paths = glob("/dev/video*")?
+        .filter_map(Result::ok)
+        .map(|path| path.into_os_string())
+        .collect::<Vec<OsString>>();
+
+    let mut out = Vec::<V4lCameraDevice>::new();
+    for (i, dp) in device_paths.iter().enumerate() {
+        out.push(match dp.clone().into_string() {
+            Ok(str_path) => V4lCameraDevice::new(&str_path, i as u16),
+            Err(os_path) => V4lCameraDevice::new(&os_path.to_string_lossy(), i as u16),
+        })
+    }
+
+    Ok(out)
+}
 
 pub struct V4lCameraDevice {
-    device_info: DeviceInformation,
-    device: v4l::Device,
-    camera_configs: Vec<CameraConfig>,
+    pub device_info: DeviceInformation,
+    pub device: v4l::Device,
+    pub camera_configs: Vec<CameraConfig>,
 }
 
 impl V4lCameraDevice {
-    pub fn new(id: u16) -> Self {
-        let dev = v4l::Device::new(id as usize).unwrap();
+    pub fn new(path: &str, id: u16) -> Self {
+        let dev = v4l::Device::with_path(path).unwrap();
+        // v4l::Device::new(id as usize).unwrap();
 
         let caps = dev.query_caps().unwrap();
-
-        // let configs = Format::new(width, height, fourcc);
 
         let formats = dev.enum_formats().unwrap();
 
@@ -70,12 +86,5 @@ impl V4lCameraDevice {
             device: dev,
             camera_configs: out_configs,
         }
-    }
-
-    pub fn print_configurations(&self) -> Result<(), Error> {
-        for cfg in &self.camera_configs {
-            println!("{:?}", cfg);
-        }
-        Ok(())
     }
 }
