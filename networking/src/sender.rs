@@ -2,8 +2,8 @@ use anyhow::{Error, Result};
 use std::{net::Ipv4Addr, time::SystemTime};
 use zmq::{Context, PUB};
 
-use shared::{ConnectionStatus, FramePacket};
 use super::Connection;
+use shared::{ConnectionStatus, FramePacket};
 
 pub struct Sender(Connection);
 
