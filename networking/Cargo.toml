@@ -9,3 +9,4 @@ bincode = "2.0.1"
 anyhow = "1.0.97"
 zmq = "0.10.0"
 shared = { path = "../shared" }
+portpicker = "0.1.1"

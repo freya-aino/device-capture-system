@@ -1,12 +1,12 @@
 use bincode::{Decode, Encode};
 
-#[derive(Debug, Encode, Decode, Clone)]
+#[derive(Debug, Encode, Decode, Clone, PartialEq)]
 pub enum DeviceType {
     Camera,
     Microphone,
 }
 
-#[derive(Debug, Encode, Decode, Clone)]
+#[derive(Debug, Encode, Decode, Clone, PartialEq)]
 pub struct DeviceInformation {
     pub id: u16,
     pub name: String,

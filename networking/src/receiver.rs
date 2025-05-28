@@ -5,8 +5,8 @@ use anyhow::{Error, Result};
 use zmq::Error::EAGAIN;
 use zmq::{Context, SUB};
 
-use shared::{ConnectionStatus, FramePacket, FramePacketInformation};
 use super::Connection;
+use shared::{ConnectionStatus, FramePacket, FramePacketInformation};
 
 pub struct Receiver(Connection);
 
@@ -45,6 +45,10 @@ impl Receiver {
                 assert!(parts.len() >= 2, "Expected 2 or more parts in the message.");
 
                 let mut frame_information = FramePacketInformation::deserialize(&parts[0]).unwrap();
+                assert!(
+                    frame_information.tx_timestamp.is_some(),
+                    "tx_timestamp is not set"
+                );
                 frame_information.rx_timestamp = Some(SystemTime::now());
                 let data = parts[1..].concat().into_boxed_slice();
 
