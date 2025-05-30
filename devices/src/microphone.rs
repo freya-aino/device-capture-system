@@ -1,45 +1,63 @@
 use anyhow::{Error, Result};
-use cpal::traits::HostTrait;
 use cpal::traits::{DeviceTrait, StreamTrait};
-use cpal::{Device as CpalDevice, Host};
-use cpal::{SampleFormat, StreamConfig, SupportedStreamConfigRange};
+use cpal::{Device as CpalDevice, SampleFormat, SupportedBufferSize};
+use cpal::{StreamConfig, SupportedStreamConfigRange};
 use std::time::Duration;
 
-use shared::{DeviceInformation, DeviceType};
+use shared::{Device, DeviceInformation, DeviceType, MicrophoneConfig};
 
-pub fn get_all_microphone_devices(cpal_host: &Host) -> Result<Vec<CpalMicrophoneDevice>, Error> {
-    // let host = cpal::default_host();
-    let devices = cpal_host.input_devices()?;
+pub struct CpalMicrophoneDevice {
+    pub device_info: DeviceInformation,
+    pub microphone: cpal::Device,
+    pub stream: Option<cpal::Stream>,
+}
 
-    let mut out = Vec::<CpalMicrophoneDevice>::new();
-    for (i, dev) in devices.enumerate() {
-        out.push(CpalMicrophoneDevice::new(dev, i as u16));
+fn config_ranges_to_configs(
+    config_ranges: Vec<SupportedStreamConfigRange>,
+) -> Result<Vec<MicrophoneConfig>, Error> {
+    let standard_channels: Vec<u16> = vec![1, 2];
+    let standard_sample_rates: Vec<u32> = vec![8000, 16000, 22050, 44100, 48000, 96000];
+    let standard_buffer_sizes: Vec<u32> = vec![128, 256, 512, 1024, 2048, 4096];
+
+    let mut out: Vec<MicrophoneConfig> = Vec::new();
+
+    for cr in config_ranges.iter() {
+        if !standard_channels.contains(&cr.channels()) {
+            continue;
+        }
+        if cr.sample_format() != SampleFormat::I16 {
+            continue;
+        }
+
+        for sample_rate in standard_sample_rates.iter() {
+            if sample_rate < &cr.min_sample_rate().0 && sample_rate > &cr.max_sample_rate().0 {
+                continue;
+            }
+
+            for buffer_size in standard_buffer_sizes.iter() {
+                let buffer_size_range = cr.buffer_size();
+
+                match buffer_size_range {
+                    SupportedBufferSize::Range { min, max } => {
+                        if buffer_size >= min && buffer_size <= max {
+                            out.push(MicrophoneConfig {
+                                sample_rate: *sample_rate,
+                                channels: cr.channels(),
+                                buffer_size: *buffer_size,
+                            });
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 
     Ok(out)
 }
 
-pub struct CpalMicrophoneDevice {
-    pub device_info: DeviceInformation,
-    pub microphone: cpal::Device,
-    pub microphone_configs: Vec<SupportedStreamConfigRange>,
-    pub stream: Option<cpal::Stream>,
-}
-
 impl CpalMicrophoneDevice {
     pub fn new(mic: CpalDevice, id: u16) -> Self {
-        // let mic = cpal_host
-        //     .input_devices()
-        //     .unwrap()
-        //     .nth(id as usize)
-        //     .ok_or_else(|| Error::msg("Device not found"))
-        //     .unwrap();
-
-        let conf = mic
-            .supported_input_configs()
-            .unwrap()
-            .collect::<Vec<SupportedStreamConfigRange>>();
-
         let device_info = DeviceInformation {
             id: id,
             name: mic.name().unwrap(),
@@ -49,51 +67,57 @@ impl CpalMicrophoneDevice {
         CpalMicrophoneDevice {
             device_info: device_info,
             microphone: mic,
-            microphone_configs: conf,
             stream: None,
         }
     }
 
-    pub fn get_name(&self) -> String {
-        self.device_info.name.clone()
-    }
-
-    pub fn print_configurations(&self) {
-        for (i, conf) in self.microphone_configs.iter().enumerate() {
-            println!("Microphone: {} - {:?}", i, conf);
-        }
-    }
-
-    pub fn open(
-        &mut self,
-        timeout: Option<Duration>,
-        sample_rate: Option<u32>,
-        channels: Option<u16>,
-        buffer_size: Option<u32>,
-        sample_format: Option<SampleFormat>,
-    ) -> Result<(), Error> {
-        let supported_config = self.microphone.default_input_config().unwrap();
-
+    pub fn build_stream_configs(
+        &self,
+        mic_config: MicrophoneConfig,
+    ) -> Result<StreamConfig, Error> {
         let stream_config = StreamConfig {
-            channels: channels.unwrap_or(supported_config.channels()),
-            sample_rate: match sample_rate {
-                Some(rate) => cpal::SampleRate(rate),
-                None => supported_config.sample_rate(),
-            },
-            buffer_size: match buffer_size {
-                Some(size) => cpal::BufferSize::Fixed(size),
-                None => cpal::BufferSize::Default,
-            },
+            channels: mic_config.channels,
+            sample_rate: cpal::SampleRate(mic_config.sample_rate),
+            buffer_size: cpal::BufferSize::Fixed(mic_config.buffer_size),
         };
+        return Ok(stream_config);
+    }
+}
 
-        let sample_format = sample_format.unwrap_or(supported_config.sample_format());
+impl Device for CpalMicrophoneDevice {
+    type Config = MicrophoneConfig;
+
+    fn id(&self) -> u16 {
+        self.device_info.id
+    }
+
+    fn name(&self) -> &str {
+        &self.device_info.name
+    }
+
+    fn device_type(&self) -> &DeviceType {
+        &self.device_info.device_type
+    }
+
+    fn get_configs(&self) -> Result<Vec<MicrophoneConfig>, Error> {
+        let conf_ranges = self
+            .microphone
+            .supported_input_configs()
+            .unwrap()
+            .collect::<Vec<SupportedStreamConfigRange>>();
+
+        Ok(config_ranges_to_configs(conf_ranges).unwrap())
+    }
+
+    fn open(&mut self, config: MicrophoneConfig, timeout: Option<Duration>) -> Result<(), Error> {
+        let stream_config = self.build_stream_configs(config).unwrap();
 
         let stream = self
             .microphone
             .build_input_stream_raw(
                 &stream_config,
-                sample_format,
-                |data, info| {
+                SampleFormat::I16,
+                |data, _| {
                     // process audio data
                     let bytes = data.bytes();
 
@@ -117,7 +141,7 @@ impl CpalMicrophoneDevice {
         Ok(())
     }
 
-    pub fn close(&mut self) -> Result<(), Error> {
+    fn close(&mut self) -> Result<(), Error> {
         if let Some(stream) = self.stream.take() {
             stream.pause()?;
         }
