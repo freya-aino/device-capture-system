@@ -1,5 +1,4 @@
 use shared::{DeviceInformation, DeviceType, FramePacket, FramePacketInformation};
-use std::time::SystemTime;
 
 fn generate_dummy_frame(size: usize) -> Vec<u8> {
     vec![0u8; size]
@@ -32,7 +31,7 @@ mod tests {
     use networking::{Receiver, Sender};
     use portpicker::pick_unused_port;
 
-    use crate::{generate_dummy_frame, generate_dummy_frame_packet};
+    use crate::generate_dummy_frame_packet;
 
     #[test]
     fn send_and_receive() {
