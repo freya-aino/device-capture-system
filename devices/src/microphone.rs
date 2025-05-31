@@ -1,10 +1,13 @@
 use anyhow::{Error, Result};
 use cpal::traits::{DeviceTrait, StreamTrait};
-use cpal::{Device as CpalDevice, SampleFormat, SupportedBufferSize};
+use cpal::{Device as CpalDevice, SampleFormat, Stream, SupportedBufferSize};
 use cpal::{StreamConfig, SupportedStreamConfigRange};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use shared::{Device, DeviceInformation, DeviceType, MicrophoneConfig};
+use shared::{
+    Device, DeviceInformation, DeviceType, FramePacket, FramePacketInformation, MicrophoneConfig,
+};
 
 pub struct CpalMicrophoneDevice {
     pub device_info: DeviceInformation,
@@ -73,7 +76,7 @@ impl CpalMicrophoneDevice {
 
     pub fn build_stream_configs(
         &self,
-        mic_config: MicrophoneConfig,
+        mic_config: &MicrophoneConfig,
     ) -> Result<StreamConfig, Error> {
         let stream_config = StreamConfig {
             channels: mic_config.channels,
@@ -109,21 +112,50 @@ impl Device for CpalMicrophoneDevice {
         Ok(config_ranges_to_configs(conf_ranges).unwrap())
     }
 
-    fn open(&mut self, config: MicrophoneConfig, timeout: Option<Duration>) -> Result<(), Error> {
-        let stream_config = self.build_stream_configs(config).unwrap();
+    fn open(
+        &mut self,
+        config: MicrophoneConfig,
+        callback: Box<dyn Fn(FramePacket) + Send + 'static>,
+        timeout: Option<Duration>,
+    ) -> Result<(), Error> {
+        assert!(
+            self.stream.is_none(),
+            "Microphone is already open (stream is not None)"
+        );
+
+        let stream_config = self.build_stream_configs(&config).unwrap();
+
+        println!(
+            "Config used for microphone - {:?} - {:?}",
+            self.device_info.name, stream_config
+        );
+
+        let di = self.device_info.clone();
 
         let stream = self
             .microphone
             .build_input_stream_raw(
                 &stream_config,
                 SampleFormat::I16,
-                |data, _| {
+                move |data, _| {
                     // process audio data
-                    let bytes = data.bytes();
+                    let frame_shape: Vec<u32> = vec![
+                        config.sample_rate,
+                        config.channels as u32,
+                        config.buffer_size,
+                    ];
 
-                    println!("Received {} bytes of audio data", bytes.len());
+                    let frame_packet = FramePacket::new(
+                        FramePacketInformation {
+                            device_info: di.clone(),
+                            rx_timestamp: None,
+                            tx_timestamp: None,
+                            frame_shape: frame_shape,
+                        },
+                        data.bytes().to_vec().into_boxed_slice(),
+                    );
 
-                    // TODO: process audio data here
+                    callback(frame_packet);
                 },
                 |err| {
                     println!("Error from audio stream: {}", err);

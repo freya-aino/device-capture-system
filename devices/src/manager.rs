@@ -1,24 +1,21 @@
 use anyhow::Error;
 use cpal::{Host, traits::HostTrait};
-use flume::Receiver;
 use glob::glob;
-use shared::{Device, DeviceCommand, DeviceStatus};
+use shared::{Device, DeviceStatus};
 use std::ffi::OsString;
 
 use crate::{CpalMicrophoneDevice, V4lCameraDevice};
 
 pub struct DeviceManager<D: Device> {
-    pub device: Box<D>,
+    pub device: D,
     pub device_status: DeviceStatus,
-    // pub rx: Receiver<DeviceCommand>,
     pub ip: Option<String>,
     pub port: Option<u16>,
 }
 
 impl DeviceManager<CpalMicrophoneDevice> {
     pub fn new(
-        device: Box<CpalMicrophoneDevice>,
-        // rx: Receiver<DeviceCommand>,
+        device: CpalMicrophoneDevice,
         device_status: DeviceStatus,
         ip: Option<String>,
         port: Option<u16>,
@@ -43,25 +40,16 @@ impl DeviceManager<CpalMicrophoneDevice> {
 
         let mut out = Vec::<Self>::new();
         for device in devices {
-            out.push(Self::new(
-                Box::new(device),
-                DeviceStatus::Available,
-                None,
-                None,
-            ));
+            out.push(Self::new(device, DeviceStatus::Available, None, None));
         }
 
         Ok(out)
-    }
-
-    pub fn save_to_file(&self, folder_path: &str) -> Result<(), Error> {
-        Ok(())
     }
 }
 
 impl DeviceManager<V4lCameraDevice> {
     pub fn new(
-        device: Box<V4lCameraDevice>,
+        device: V4lCameraDevice,
         // rx: Receiver<DeviceCommand>,
         device_status: DeviceStatus,
         ip: Option<String>,
@@ -92,12 +80,7 @@ impl DeviceManager<V4lCameraDevice> {
 
         let mut out = Vec::<Self>::new();
         for device in devices {
-            out.push(Self::new(
-                Box::new(device),
-                DeviceStatus::Available,
-                None,
-                None,
-            ));
+            out.push(Self::new(device, DeviceStatus::Available, None, None));
         }
 
         Ok(out)
