@@ -11,9 +11,8 @@ use shared::{
 };
 use v4l::buffer::Type;
 use v4l::frameinterval::FrameIntervalEnum;
-use v4l::video::capture::Parameters;
-use v4l::video::capture::parameters::Modes;
 use v4l::{FourCC, Fraction};
+// use v4l::video::capture::Parameters;
 // use v4l::io::traits::{CaptureStream, OutputStream};
 use v4l::video::Capture;
 
@@ -126,8 +125,8 @@ impl Device for V4lCameraDevice {
     fn start(
         &mut self,
         config: CameraConfig,
-        callback: Box<dyn Fn(FramePacket) + Send + 'static>,
-    ) -> Result<JoinHandle<()>, Error> {
+        callback: Box<dyn Fn(FramePacket) -> Result<(), Error> + Send + 'static>,
+    ) -> Result<JoinHandle<Result<(), Error>>, Error> {
         assert!(
             self.device_status() == &DeviceStatus::Available,
             "Camera is not in available status"
@@ -141,38 +140,44 @@ impl Device for V4lCameraDevice {
         let mut params = self.device.params().expect("Failed to get device params");
         params.interval = Fraction::new(config.fps.0, config.fps.1);
 
-        let params = self
+        println!(
+            "Desired camera configurations - {:?}\n{:?}\n{:?}\n",
+            self.device_info.name, params, format
+        );
+
+        let params_ = self
             .device
             .set_params(&params)
             .expect("Failed to set device params");
 
-        let format = self
+        let format_ = self
             .device
             .set_format(&format)
             .expect("Failed to set device format");
 
         println!(
-            "Config used for camera - {:?} - {:?} - {:?}",
+            "Config used by camera - {:?}\n{:?}\n{:?}\n",
             self.device_info.name,
             self.device.format(),
             self.device.params()
         );
 
-        let mut stream = v4l::io::mmap::Stream::new(&mut self.device, Type::VideoCapture)
-            .expect("Failde to create Stream");
+        let mut stream =
+            v4l::io::mmap::Stream::with_buffers(&mut self.device, Type::VideoCapture, 128)
+                .expect("Failde to create Stream");
 
         // if let Some(timeout) = timeout {
         //     stream.set_timeout(timeout);
         // }
 
-        println!("Opened camera device");
+        println!("Camera device started");
 
         let device_information = self.device_info.clone();
 
         let (tx, rx) = flume::unbounded::<DeviceCommand>();
         self.command_tx = Some(tx);
 
-        let handle = spawn(move || {
+        let handle = spawn(move || -> Result<(), Error> {
             loop {
                 let timing = Instant::now();
 
@@ -189,7 +194,7 @@ impl Device for V4lCameraDevice {
 
                 let (buf, _) = v4l::io::traits::CaptureStream::next(&mut stream)
                     .expect("Unable to read frame");
-                let frame_shape = vec![format.width, format.height, 3];
+                let frame_shape = vec![config.width, config.height];
 
                 let frame_packet = FramePacket::new(
                     FramePacketInformation {
@@ -201,13 +206,14 @@ impl Device for V4lCameraDevice {
                     buf.to_vec().into_boxed_slice(),
                 );
 
-                callback(frame_packet);
+                callback(frame_packet)?;
 
                 let elapsed = timing.elapsed();
                 println!("Frame capture took {:?}", elapsed);
             }
 
-            v4l::io::traits::Stream::stop(&mut stream).unwrap();
+            v4l::io::traits::Stream::stop(&mut stream)?;
+            Ok(())
         });
 
         Ok(handle)

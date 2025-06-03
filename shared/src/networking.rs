@@ -104,4 +104,16 @@ impl FramePacket {
     pub fn new(frame_info: FramePacketInformation, data: Box<[u8]>) -> Self {
         FramePacket { frame_info, data }
     }
+
+    pub fn decode_to_I16LE(bytes: &[u8]) -> Result<Vec<i16>, Error> {
+        assert!(
+            bytes.len() % 2 == 0,
+            "bytes length needs to be even for I16LE decoding"
+        );
+        let i16_samples = bytes
+            .chunks_exact(2)
+            .map(|b| i16::from_le_bytes([b[0], b[1]]))
+            .collect::<Vec<i16>>();
+        Ok(i16_samples)
+    }
 }
