@@ -1,5 +1,6 @@
 use anyhow::{Error, Result};
 use bincode::{Decode, Encode, config};
+use std::net::Ipv4Addr;
 use std::thread::{JoinHandle, spawn};
 use std::time::SystemTime;
 
@@ -27,17 +28,16 @@ pub fn start_static_http_server(
     return Ok(guard);
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum ConnectionStatus {
-    Created,
-    Initialized,
+    Available,
     Active,
     Paused,
     Error,
     Closed,
 }
 
-#[derive(Debug, PartialEq, Encode, Decode)]
+#[derive(Debug, PartialEq, Encode, Decode, Clone)]
 pub struct ConnectionStats {
     frames: u64,
     bytes: u64,
@@ -105,7 +105,7 @@ impl FramePacket {
         FramePacket { frame_info, data }
     }
 
-    pub fn decode_to_I16LE(bytes: &[u8]) -> Result<Vec<i16>, Error> {
+    pub fn decode_to_i16_le(bytes: &[u8]) -> Result<Vec<i16>, Error> {
         assert!(
             bytes.len() % 2 == 0,
             "bytes length needs to be even for I16LE decoding"

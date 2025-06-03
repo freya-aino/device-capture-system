@@ -5,15 +5,33 @@ use zmq::{Context, PUB};
 use super::Connection;
 use shared::{ConnectionStatus, FramePacket};
 
+// #[derive(Clone)]
 pub struct Sender(Connection);
 
 impl Sender {
-    pub fn new(host_address: Ipv4Addr, port: u16, queue_size: u32) -> Self {
-        Sender(Connection::new(host_address, port, queue_size))
+    pub fn new(host_address: Ipv4Addr, port: u16, queue_size: u32, data_chunk_size: u32) -> Self {
+        Sender(Connection::new(
+            host_address,
+            port,
+            queue_size,
+            data_chunk_size,
+        ))
     }
 
-    pub fn initialize(&mut self, context: &Context) -> Result<(), Error> {
-        self.0.initialize(context, PUB)
+    pub fn connection_status(&self) -> &ConnectionStatus {
+        &self.0.status
+    }
+
+    pub fn data_chunk_size(&self) -> u32 {
+        self.0.data_chunk_size
+    }
+
+    pub fn start(&mut self, context: &Context) -> Result<(), Error> {
+        self.0.open(context, PUB)
+    }
+
+    pub fn stop(&mut self) -> Result<(), Error> {
+        self.0.close()
     }
 
     pub fn send(
@@ -27,28 +45,9 @@ impl Sender {
             "Data chunk size must be greater than 0."
         );
 
-        assert!(
-            self.0.status != ConnectionStatus::Closed,
-            "Trying to send while connection is closed."
-        );
-        assert!(
-            self.0.status != ConnectionStatus::Created,
-            "Trying to send while connection is not initialized."
-        );
-        assert!(
-            !self.0.socket.is_none(),
-            "Trying to send while socket is None (Status is not correct, this might hint at a previous function having exited unexpetedly)."
-        );
-
-        if self.0.status == ConnectionStatus::Paused {
-            println!("Calling send while connection is paused...");
-            return Ok(());
-        }
-
         let mut frame_info = frame_packet.frame_info.clone();
         frame_info.tx_timestamp = Some(SystemTime::now());
 
-        let socket = self.0.get_socket()?;
         let serialized_info = frame_info.serialize()?;
         let data = frame_packet.data.as_ref();
 
@@ -60,7 +59,9 @@ impl Sender {
             chunked_message.push(chunk);
         }
 
-        socket.send_multipart(&chunked_message, zmq_flags)?;
+        self.0
+            .get_socket()?
+            .send_multipart(&chunked_message, zmq_flags)?;
 
         self.0.status = ConnectionStatus::Active;
         self.0

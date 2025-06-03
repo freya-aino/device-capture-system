@@ -8,6 +8,7 @@ use flume::{Sender, TryRecvError};
 use std::{
     io::{Read, Write},
     thread::{JoinHandle, spawn},
+    time::Instant,
 };
 
 use shared::{
@@ -149,6 +150,8 @@ impl Device for AlsaMicrophoneDevice {
             println!("Microphone started");
 
             loop {
+                let timing = Instant::now();
+
                 match rx.try_recv() {
                     Err(err) => match err {
                         TryRecvError::Disconnected => break,
@@ -178,6 +181,9 @@ impl Device for AlsaMicrophoneDevice {
                 );
 
                 callback(fp)?;
+
+                let elapsed = timing.elapsed();
+                println!("Frame capture took: {:?}", elapsed);
             }
             io.flush()?;
             Ok(())
