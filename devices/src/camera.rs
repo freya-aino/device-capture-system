@@ -1,52 +1,75 @@
+use std::ffi::OsString;
 use std::thread::{JoinHandle, spawn};
+use std::time::Instant;
 
-use anyhow::{Error, Result};
+use anyhow::{Error, Result, anyhow};
+use flume::Sender;
+use glob::glob;
 use shared::{
-    CameraConfig, Device, DeviceInformation, DeviceType, FramePacket, FramePacketInformation,
+    CameraConfig, Device, DeviceCommand, DeviceInformation, DeviceStatus, DeviceType, FramePacket,
+    FramePacketInformation,
 };
-use v4l::FourCC;
 use v4l::buffer::Type;
 use v4l::frameinterval::FrameIntervalEnum;
-use v4l::io::mmap::Stream;
-use v4l::io::traits::CaptureStream;
+use v4l::video::capture::Parameters;
+use v4l::video::capture::parameters::Modes;
+use v4l::{FourCC, Fraction};
+// use v4l::io::traits::{CaptureStream, OutputStream};
 use v4l::video::Capture;
 
 pub struct V4lCameraDevice {
     pub device_info: DeviceInformation,
     pub device: v4l::Device,
-    pub handle: Option<JoinHandle<Result<(), Error>>>,
+    pub command_tx: Option<Sender<DeviceCommand>>,
 }
 
 impl V4lCameraDevice {
-    pub fn new(path: &str, id: u16) -> Self {
-        let dev = v4l::Device::with_path(path).unwrap();
+    pub fn new(system_path: String) -> Result<Self, Error> {
+        let dev = v4l::Device::with_path(&system_path).unwrap();
         let caps = dev.query_caps().unwrap();
-        let device_info = DeviceInformation {
-            id: id,
-            name: caps.card,
-            device_type: DeviceType::Camera,
-        };
-        V4lCameraDevice {
-            device_info: device_info,
+        Ok(V4lCameraDevice {
+            device_info: DeviceInformation {
+                id: system_path,
+                name: caps.card,
+                device_type: DeviceType::Camera,
+                device_status: DeviceStatus::Available,
+            },
             device: dev,
-            handle: None,
+            command_tx: None,
+        })
+    }
+
+    pub fn get_all_v4l_devices() -> Result<Vec<V4lCameraDevice>, Error> {
+        let device_paths = glob("/dev/video*")?
+            .filter_map(Result::ok)
+            .map(|path| path.into_os_string())
+            .collect::<Vec<OsString>>();
+
+        let mut devices = Vec::<V4lCameraDevice>::new();
+        for dp in device_paths.iter() {
+            devices.push(match dp.clone().into_string() {
+                Ok(str_path) => V4lCameraDevice::new(str_path)?,
+                Err(os_path) => V4lCameraDevice::new(os_path.to_string_lossy().to_string())?,
+            })
         }
+        Ok(devices)
     }
 }
 
 impl Device for V4lCameraDevice {
     type Config = CameraConfig;
 
-    fn id(&self) -> u16 {
-        self.device_info.id
+    fn id(&self) -> &str {
+        &self.device_info.id
     }
-
     fn name(&self) -> &str {
         &self.device_info.name
     }
-
     fn device_type(&self) -> &DeviceType {
         &self.device_info.device_type
+    }
+    fn device_status(&self) -> &DeviceStatus {
+        &self.device_info.device_status
     }
 
     fn get_configs(&self) -> Result<Vec<CameraConfig>, Error> {
@@ -61,6 +84,11 @@ impl Device for V4lCameraDevice {
             let fourcc = format.fourcc;
             let fourcc_byte = fourcc.repr;
 
+            // if fourcc != FourCC::new(b"YUYV") {
+            // && fourcc != FourCC::new(b"NV12") {
+            // continue;
+            // }
+
             let frame_sizes = self.device.enum_framesizes(fourcc).unwrap();
             for fs in frame_sizes {
                 let size = fs.size.to_discrete().into_iter().nth(0).unwrap();
@@ -72,19 +100,19 @@ impl Device for V4lCameraDevice {
                     .enum_frameintervals(fourcc, width, height)
                     .unwrap();
                 for fi in frame_intervals {
-                    let fps = match fi.interval {
+                    let (num, denom) = match fi.interval {
                         FrameIntervalEnum::Discrete(frac) => {
-                            frac.denominator as f32 / frac.numerator as f32
+                            (frac.numerator as u32, frac.denominator as u32)
                         }
                         FrameIntervalEnum::Stepwise(step) => {
-                            step.step.denominator as f32 / step.step.numerator as f32
+                            (step.step.numerator as u32, step.step.denominator as u32)
                         }
                     };
 
                     let cfg = CameraConfig {
                         width: size.width,
                         height: size.height,
-                        fps: fps,
+                        fps: (num, denom),
                         fourcc: fourcc_byte.clone(),
                     };
                     out_configs.push(cfg);
@@ -95,24 +123,28 @@ impl Device for V4lCameraDevice {
         Ok(out_configs)
     }
 
-    fn open(
+    fn start(
         &mut self,
         config: CameraConfig,
         callback: Box<dyn Fn(FramePacket) + Send + 'static>,
-        timeout: Option<std::time::Duration>,
-    ) -> Result<(), Error> {
+    ) -> Result<JoinHandle<()>, Error> {
         assert!(
-            self.handle.is_none(),
-            "Camera is already open (handle is not None)"
+            self.device_status() == &DeviceStatus::Available,
+            "Camera is not in available status"
         );
 
         let mut format = self.device.format().expect("Failed to get device format");
-
-        let buffer_count = 4;
-
         format.width = config.width;
         format.height = config.height;
         format.fourcc = FourCC::new(&config.fourcc);
+
+        let mut params = self.device.params().expect("Failed to get device params");
+        params.interval = Fraction::new(config.fps.0, config.fps.1);
+
+        let params = self
+            .device
+            .set_params(&params)
+            .expect("Failed to set device params");
 
         let format = self
             .device
@@ -120,30 +152,48 @@ impl Device for V4lCameraDevice {
             .expect("Failed to set device format");
 
         println!(
-            "Config used for camera - {:?} - {:?}",
-            self.device_info.name, format
+            "Config used for camera - {:?} - {:?} - {:?}",
+            self.device_info.name,
+            self.device.format(),
+            self.device.params()
         );
 
-        let mut stream = Stream::with_buffers(&mut self.device, Type::VideoCapture, buffer_count)
+        let mut stream = v4l::io::mmap::Stream::new(&mut self.device, Type::VideoCapture)
             .expect("Failde to create Stream");
 
-        if let Some(timeout) = timeout {
-            stream.set_timeout(timeout);
-        }
+        // if let Some(timeout) = timeout {
+        //     stream.set_timeout(timeout);
+        // }
 
         println!("Opened camera device");
 
-        let di = self.device_info.clone();
+        let device_information = self.device_info.clone();
 
-        let handle: JoinHandle<Result<(), Error>> = spawn(move || {
-            for _ in 0..100 {
-                // test wise TODO replace with handler
-                let (buf, _) = stream.next().expect("Unable to read frame");
+        let (tx, rx) = flume::unbounded::<DeviceCommand>();
+        self.command_tx = Some(tx);
+
+        let handle = spawn(move || {
+            loop {
+                let timing = Instant::now();
+
+                match rx.try_recv() {
+                    Err(err) => match err {
+                        flume::TryRecvError::Empty => {}
+                        flume::TryRecvError::Disconnected => break,
+                    },
+                    Ok(command) => match command {
+                        DeviceCommand::Stop => break,
+                        _ => {}
+                    },
+                }
+
+                let (buf, _) = v4l::io::traits::CaptureStream::next(&mut stream)
+                    .expect("Unable to read frame");
                 let frame_shape = vec![format.width, format.height, 3];
 
                 let frame_packet = FramePacket::new(
                     FramePacketInformation {
-                        device_info: di.clone(),
+                        device_info: device_information.clone(),
                         rx_timestamp: None,
                         tx_timestamp: None,
                         frame_shape: frame_shape,
@@ -152,16 +202,24 @@ impl Device for V4lCameraDevice {
                 );
 
                 callback(frame_packet);
+
+                let elapsed = timing.elapsed();
+                println!("Frame capture took {:?}", elapsed);
             }
-            Ok(())
+
+            v4l::io::traits::Stream::stop(&mut stream).unwrap();
         });
 
-        self.handle = Some(handle);
-
-        Ok(())
+        Ok(handle)
     }
 
-    fn close(&mut self) -> std::result::Result<(), Error> {
-        Ok(())
+    fn stop(&mut self) -> Result<(), Error> {
+        match self.command_tx.take() {
+            Some(tx) => {
+                tx.send(DeviceCommand::Stop).unwrap();
+                Ok(())
+            }
+            None => Err(anyhow!("tryed closing without tx initialized")),
+        }
     }
 }

@@ -1,4 +1,4 @@
-use shared::{DeviceInformation, DeviceType, FramePacket, FramePacketInformation};
+use shared::{DeviceInformation, DeviceStatus, DeviceType, FramePacket, FramePacketInformation};
 
 fn generate_dummy_frame(size: usize) -> Vec<u8> {
     vec![0u8; size]
@@ -6,9 +6,10 @@ fn generate_dummy_frame(size: usize) -> Vec<u8> {
 
 fn generate_dummy_frame_packet_info(size: usize) -> FramePacketInformation {
     let device_info = DeviceInformation {
-        id: 0,
+        id: "test-device_id".to_string(),
         name: "test-device".to_string(),
         device_type: DeviceType::Camera,
+        device_status: DeviceStatus::Available,
     };
     FramePacketInformation {
         device_info: device_info,
