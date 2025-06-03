@@ -1,5 +1,9 @@
-use alsa::{Direction, PCM};
-use anyhow::{Error, Ok, Result};
+use alsa::{
+    Direction, PCM, ValueOr,
+    device_name::HintIter,
+    pcm::{Access, Format, HwParams},
+};
+use anyhow::{Error, Result, anyhow};
 use flume::{Sender, TryRecvError};
 use std::{
     io::{Read, Write},
@@ -28,6 +32,65 @@ impl AlsaMicrophoneDevice {
             command_tx: None,
         }
     }
+
+    // fn get_devices_for_card(card: Card) -> Result<Vec<AlsaMicrophoneDevice>, Error> {
+    //     let card_ctl = Ctl::from_card(&card, false)?;
+
+    //     let card_info = card_ctl.card_info()?;
+    //     let card_id = card_info.get_id()?;
+    //     let card_name = card_info.get_name()?;
+
+    //     let mut out_devices = Vec::<AlsaMicrophoneDevice>::new();
+
+    //     for device in DeviceIter::new(&card_ctl) {
+    //         let pcm_info = card_ctl.pcm_info(device as u32, 0, Direction::Capture);
+
+    //         match pcm_info {
+    //             Ok(info) => {
+    //                 for subdev_id in 0..info.get_subdevices_count() {
+    //                     let subdev_info =
+    //                         card_ctl.pcm_info(device as u32, subdev_id, Direction::Capture)?;
+
+    //                     let device_name = subdev_info.get_name()?;
+
+    //                     out_devices.push(AlsaMicrophoneDevice::new(
+    //                         device_name.to_string(),
+    //                         card_name.to_string(),
+    //                     ));
+    //                 }
+    //             }
+    //             Err(_) => continue,
+    //         }
+    //     }
+
+    //     Ok(out_devices)
+    // }
+
+    pub fn get_all_alsa_microphones() -> Result<Vec<AlsaMicrophoneDevice>, Error> {
+        let hints = HintIter::new_str(None, "pcm")?;
+
+        let mut out_devices = Vec::<AlsaMicrophoneDevice>::new();
+        for hint in hints {
+            if !hint.direction.is_none() || hint.direction == Some(Direction::Playback) {
+                continue;
+            }
+
+            let id = hint.name.unwrap();
+            let name = hint.desc.unwrap();
+
+            if id == "default" || id == "null" || id == "pipewire" || id == "sysdefault" {
+                continue;
+            }
+
+            if id.contains("DEV") {
+                continue;
+            }
+
+            out_devices.push(AlsaMicrophoneDevice::new(id, name));
+        }
+
+        Ok(out_devices)
+    }
 }
 
 impl Device for AlsaMicrophoneDevice {
@@ -53,8 +116,8 @@ impl Device for AlsaMicrophoneDevice {
     fn start(
         &mut self,
         config: MicrophoneConfig,
-        callback: Box<dyn Fn(FramePacket) + Send + 'static>,
-    ) -> Result<JoinHandle<()>, Error> {
+        callback: Box<dyn Fn(FramePacket) -> Result<(), Error> + Send + 'static>,
+    ) -> Result<JoinHandle<Result<(), Error>>, Error> {
         assert!(
             self.device_status() == &DeviceStatus::Available,
             "Camera is not in available status"
@@ -65,14 +128,31 @@ impl Device for AlsaMicrophoneDevice {
         let (tx, rx) = flume::bounded::<DeviceCommand>(32);
         self.command_tx = Some(tx);
 
-        let handle = spawn(move || {
-            let pcm = PCM::new(&device_info.id, Direction::Capture, false).unwrap();
-            let mut io = pcm.io_u8().unwrap();
+        let handle = spawn(move || -> Result<(), Error> {
+            let pcm = PCM::new(&device_info.id, Direction::Capture, false)?;
+
+            // set parameters
+            let params = HwParams::any(&pcm)?;
+            params.set_channels(config.channels as u32)?;
+            params.set_rate(config.sample_rate, ValueOr::Nearest)?;
+            params.set_format(Format::S16LE)?;
+            params.set_access(Access::RWInterleaved)?;
+
+            println!("Desired microphone configurations {:?}", params);
+
+            // start pcm
+            pcm.hw_params(&params)?;
+            pcm.start()?;
+            let mut io = pcm.io_i16()?;
+
+            println!("Config used by Microphone: {:?}", pcm.get_params());
+            println!("Microphone started");
+
             loop {
                 match rx.try_recv() {
                     Err(err) => match err {
                         TryRecvError::Disconnected => break,
-                        TryRecvError::Empty => continue,
+                        TryRecvError::Empty => {}
                     },
                     c => match c.unwrap() {
                         DeviceCommand::Stop => {
@@ -82,29 +162,39 @@ impl Device for AlsaMicrophoneDevice {
                     },
                 }
 
+                // capture buffer (i16 little-endian --> u8 byte level representation)
                 let mut buffer = Vec::<u8>::new();
-                buffer.resize(config.buffer_size as usize, 0);
-                io.read_exact(buffer.as_mut_slice()).unwrap();
+                buffer.resize(config.buffer_size as usize * 2, 0);
+                io.read_exact(&mut buffer)?;
 
                 let fp = FramePacket::new(
                     FramePacketInformation {
                         device_info: device_info.clone(),
                         rx_timestamp: None,
                         tx_timestamp: None,
-                        frame_shape: vec![config.buffer_size],
+                        frame_shape: vec![config.buffer_size, 2],
                     },
                     buffer.into_boxed_slice(),
                 );
 
-                callback(fp);
+                callback(fp)?;
             }
-            io.flush().unwrap();
+            io.flush()?;
+            Ok(())
         });
         Ok(handle)
     }
 
     fn stop(&mut self) -> Result<(), Error> {
-        Ok(())
+        match self.command_tx.take() {
+            Some(tx) => {
+                tx.send(DeviceCommand::Stop).unwrap();
+                Ok(())
+            }
+            None => Err(anyhow!(
+                "Tried stopping while command channel not initialized"
+            )),
+        }
     }
 }
 

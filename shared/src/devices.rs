@@ -18,8 +18,8 @@ pub trait Device {
     fn start(
         &mut self,
         config: Self::Config,
-        callback: Box<dyn Fn(FramePacket) + Send + 'static>,
-    ) -> Result<JoinHandle<()>, Error>;
+        callback: Box<dyn Fn(FramePacket) -> Result<(), Error> + Send + 'static>,
+    ) -> Result<JoinHandle<Result<(), Error>>, Error>;
     fn stop(&mut self) -> Result<(), Error>;
 }
 
