@@ -4,23 +4,30 @@ use zmq::{Context, Socket};
 
 use shared::{ConnectionStats, ConnectionStatus};
 
+// #[derive(Clone)]
 pub struct Connection {
     pub address: SocketAddrV4,
     pub queue_size: u32,
+    pub data_chunk_size: u32,
     pub socket: Option<Socket>,
     pub status: ConnectionStatus,
-    pub stats: Option<ConnectionStats>,
+    pub stats: ConnectionStats,
 }
 
 impl Connection {
-    pub fn new(host_address: Ipv4Addr, port: u16, queue_size: u32) -> Self {
+    pub fn new(host_address: Ipv4Addr, port: u16, queue_size: u32, data_chunk_size: u32) -> Self {
         Connection {
             address: SocketAddrV4::new(host_address, port),
             queue_size: queue_size,
+            data_chunk_size: data_chunk_size,
             socket: None,
-            status: ConnectionStatus::Created,
-            stats: None,
+            status: ConnectionStatus::Available,
+            stats: ConnectionStats::new(),
         }
+    }
+
+    pub fn connection_status(&self) -> &ConnectionStatus {
+        &self.status
     }
 
     pub fn get_socket(&self) -> Result<&Socket, Error> {
@@ -30,11 +37,7 @@ impl Connection {
         }
     }
 
-    pub fn initialize(
-        &mut self,
-        context: &Context,
-        socket_type: zmq::SocketType,
-    ) -> Result<(), Error> {
+    pub fn open(&mut self, context: &Context, socket_type: zmq::SocketType) -> Result<(), Error> {
         let endpoint = format!("tcp://{}:{}", self.address.ip(), self.address.port());
 
         let socket = context.socket(socket_type)?;
@@ -55,8 +58,8 @@ impl Connection {
             }
         }
         self.socket = Some(socket);
-        self.stats = Some(ConnectionStats::new());
-        self.status = ConnectionStatus::Initialized;
+        self.stats = ConnectionStats::new();
+        self.status = ConnectionStatus::Active;
         Ok(())
     }
 
@@ -74,13 +77,10 @@ impl Connection {
 
         self.socket = None;
         self.status = ConnectionStatus::Closed;
-        self.stats = None;
         Ok(())
     }
 
-    pub fn update_stats(&mut self, bytes: u64) {
-        if let Some(ref mut stats) = self.stats {
-            stats.update(bytes);
-        }
+    pub fn update_stats(&mut self, num_data_bytes: u64) {
+        self.stats.update(num_data_bytes);
     }
 }

@@ -39,11 +39,11 @@ mod tests {
         let context = zmq::Context::new();
 
         let port = pick_unused_port().unwrap();
-        let mut sender = Sender::new(Ipv4Addr::new(127, 0, 0, 1), port, 10);
-        let mut receiver = Receiver::new(Ipv4Addr::new(127, 0, 0, 1), port, 10);
+        let mut sender = Sender::new(Ipv4Addr::new(127, 0, 0, 1), port, 10, 1024);
+        let mut receiver = Receiver::new(Ipv4Addr::new(127, 0, 0, 1), port, 10, 1024);
 
-        sender.initialize(&context).unwrap();
-        receiver.initialize(&context).unwrap();
+        sender.start(&context).unwrap();
+        receiver.start(&context).unwrap();
 
         let in_fp = generate_dummy_frame_packet();
         sender

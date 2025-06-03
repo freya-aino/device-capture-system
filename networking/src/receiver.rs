@@ -11,22 +11,35 @@ use shared::{ConnectionStatus, FramePacket, FramePacketInformation};
 pub struct Receiver(Connection);
 
 impl Receiver {
-    pub fn new(host_address: Ipv4Addr, port: u16, queue_size: u32) -> Self {
-        Receiver(Connection::new(host_address, port, queue_size))
+    pub fn new(host_address: Ipv4Addr, port: u16, queue_size: u32, data_chunk_size: u32) -> Self {
+        Receiver(Connection::new(
+            host_address,
+            port,
+            queue_size,
+            data_chunk_size,
+        ))
     }
 
-    pub fn initialize(&mut self, context: &Context) -> Result<(), Error> {
-        self.0.initialize(context, SUB)
+    pub fn connection_status(&self) -> &ConnectionStatus {
+        &self.0.status
+    }
+
+    pub fn data_chunk_size(&self) -> u32 {
+        self.0.data_chunk_size
+    }
+
+    pub fn start(&mut self, context: &Context) -> Result<(), Error> {
+        self.0.open(context, SUB)
+    }
+
+    pub fn stop(&mut self) -> Result<(), Error> {
+        self.0.close()
     }
 
     pub fn receive(&mut self, zmq_flags: i32) -> Result<Option<FramePacket>, Error> {
         assert!(
             self.0.status != ConnectionStatus::Closed,
             "Trying to receive while connection is closed."
-        );
-        assert!(
-            self.0.status != ConnectionStatus::Created,
-            "Trying to receive while connection is not initialized."
         );
         assert!(
             !self.0.socket.is_none(),

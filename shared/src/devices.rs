@@ -63,20 +63,20 @@ pub struct CameraConfig {
     pub width: u32,
     pub height: u32,
     pub fps: (u32, u32),
-    pub fourcc: [u8; 4],
+    pub fourcc: [char; 4],
 }
 
-impl std::fmt::Debug for CameraConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let parsed = String::from_utf8(self.fourcc.to_vec()).unwrap();
+// impl std::fmt::Debug for CameraConfig {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         let parsed = String::from_utf8(self.fourcc.to_vec()).unwrap();
 
-        write!(
-            f,
-            "CameraConfig {{ width: {}, height: {}, fps: {}/{}, fourcc: {} }}",
-            self.width, self.height, self.fps.0, self.fps.1, parsed
-        )
-    }
-}
+//         write!(
+//             f,
+//             "CameraConfig {{ width: {}, height: {}, fps: {}/{}, fourcc: {} }}",
+//             self.width, self.height, self.fps.0, self.fps.1, parsed
+//         )
+//     }
+// }
 
 impl DeviceConfig for MicrophoneConfig {}
 impl DeviceConfig for CameraConfig {}

@@ -112,7 +112,7 @@ impl Device for V4lCameraDevice {
                         width: size.width,
                         height: size.height,
                         fps: (num, denom),
-                        fourcc: fourcc_byte.clone(),
+                        fourcc: fourcc_byte.map(|b| b as char),
                     };
                     out_configs.push(cfg);
                 }
@@ -135,7 +135,7 @@ impl Device for V4lCameraDevice {
         let mut format = self.device.format().expect("Failed to get device format");
         format.width = config.width;
         format.height = config.height;
-        format.fourcc = FourCC::new(&config.fourcc);
+        format.fourcc = FourCC::new(&config.fourcc.map(|a| a as u8));
 
         let mut params = self.device.params().expect("Failed to get device params");
         params.interval = Fraction::new(config.fps.0, config.fps.1);
@@ -209,7 +209,7 @@ impl Device for V4lCameraDevice {
                 callback(frame_packet)?;
 
                 let elapsed = timing.elapsed();
-                println!("Frame capture took {:?}", elapsed);
+                println!("Frame capture took: {:?}", elapsed);
             }
 
             v4l::io::traits::Stream::stop(&mut stream)?;
