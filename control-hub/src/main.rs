@@ -1,15 +1,16 @@
 use anyhow::{Error, Result};
 use bincode::{config, encode_to_vec};
-use shared::{DeviceInformation, DeviceType};
+use shared::{DeviceInformation, DeviceStatus, DeviceType};
 use std::thread::sleep;
 use std::time::Duration;
 use tiny_http::{Request, Response};
 
 fn resp_fn(req: Request) -> Result<(), Error> {
     let info = DeviceInformation {
-        device_type: DeviceType::Camera,
-        id: 10,
+        id: "".to_string(),
         name: "test".to_string(),
+        device_status: DeviceStatus::Available,
+        device_type: DeviceType::Camera,
     };
     let data = encode_to_vec(info, config::standard()).unwrap();
     let resp = Response::from_data(data);

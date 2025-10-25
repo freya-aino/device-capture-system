@@ -1,7 +1,10 @@
 use anyhow::{Error, Result};
 use devices::AlsaMicrophoneDevice;
 use shared::{ConnectionStatus, Device, DeviceStatus, MicrophoneConfig};
-use std::sync::{Arc, Mutex};
+use std::{
+    net::Ipv4Addr,
+    sync::{Arc, Mutex},
+};
 use zmq::Context;
 
 use networking::Sender;
@@ -12,10 +15,21 @@ pub struct DeviceNode<T: Device> {
 }
 
 impl DeviceNode<AlsaMicrophoneDevice> {
-    pub fn new(device: AlsaMicrophoneDevice, sender: Sender) -> Self {
+    pub fn new(
+        device: AlsaMicrophoneDevice,
+        ip: Ipv4Addr,
+        port: u16,
+        queue_size: u32,
+        data_chunk_size: u32,
+    ) -> Self {
         DeviceNode {
-            device,
-            sender: Arc::new(Mutex::new(sender)),
+            device: device,
+            sender: Arc::new(Mutex::new(Sender::new(
+                ip,
+                port,
+                queue_size,
+                data_chunk_size,
+            ))),
         }
     }
 

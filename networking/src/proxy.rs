@@ -40,8 +40,8 @@ impl Proxy {
     }
 
     pub fn stop(&mut self) -> Result<(), Error> {
-        self.from.close();
-        self.to.close();
+        self.from.close()?;
+        self.to.close()?;
         Ok(())
     }
 }

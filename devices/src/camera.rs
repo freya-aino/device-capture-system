@@ -145,13 +145,11 @@ impl Device for V4lCameraDevice {
             self.device_info.name, params, format
         );
 
-        let params_ = self
-            .device
+        self.device
             .set_params(&params)
             .expect("Failed to set device params");
 
-        let format_ = self
-            .device
+        self.device
             .set_format(&format)
             .expect("Failed to set device format");
 

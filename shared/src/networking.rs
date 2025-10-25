@@ -1,6 +1,5 @@
 use anyhow::{Error, Result};
 use bincode::{Decode, Encode, config};
-use std::net::Ipv4Addr;
 use std::thread::{JoinHandle, spawn};
 use std::time::SystemTime;
 

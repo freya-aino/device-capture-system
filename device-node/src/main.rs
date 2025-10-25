@@ -1,7 +1,9 @@
 use anyhow::{Error, Result};
 use clap::{Parser, Subcommand};
-use device_node::{get_all_devices, print_all_devices, test_alsa_mic, test_v4l_cameras};
-use std::{env::consts::OS, net::Ipv4Addr};
+use device_node::{
+    DeviceNode, get_all_devices, print_all_devices, test_alsa_mic, test_v4l_cameras,
+};
+use std::{env::consts::OS, net::Ipv4Addr, str::FromStr};
 
 #[derive(Parser)]
 #[command(name = "device-node")]
@@ -17,12 +19,12 @@ enum ClapCommand {
         #[arg(short, long)]
         verbose: bool,
     },
-    Run {
-        #[arg(short, long, default_value_t = String::from("0.0.0.0"))]
-        host: String,
-        #[arg(short, long, default_value_t = 8080)]
-        port: u16,
-    },
+    // Run {
+    //     #[arg(short, long, default_value_t = String::from("0.0.0.0"))]
+    //     host: String,
+    //     #[arg(short, long, default_value_t = 8080)]
+    //     port: u16,
+    // },
 }
 
 fn main() -> Result<(), Error> {
@@ -37,6 +39,11 @@ fn main() -> Result<(), Error> {
 
     test_v4l_cameras(&mut cam, 5)?;
     test_alsa_mic(&mut mic, 5)?;
+
+    let ip_addr_str = "0.0.0.0";
+    let port = 10000;
+
+    let dn = DeviceNode::new(cam, Ipv4Addr::from_str(ip_addr_str), port, 128, 1024);
 
     //---
 
