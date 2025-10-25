@@ -83,7 +83,7 @@ pub fn test_v4l_cameras(cam: &mut V4lCameraDevice, seconds: u64) -> Result<(), E
     let handle = cam.start(
         DEFAULT_CAMERA_CONFIG.clone(),
         Box::new(|a| -> Result<(), Error> {
-            // println!("data len: {:?}", a.data.len());
+            println!("data len: {:?}", a.data.len());
             Ok(())
         }),
     )?;
