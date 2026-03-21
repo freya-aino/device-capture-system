@@ -5,28 +5,6 @@ use std::time::SystemTime;
 
 use super::DeviceInformation;
 
-pub fn start_static_http_server(
-    ip: String,
-    port: String,
-    func: fn(tiny_http::Request) -> Result<(), Error>,
-) -> Result<JoinHandle<Result<(), Error>>, Error> {
-    let server = tiny_http::Server::http(format!("{}:{}", ip, port)).unwrap();
-    let guard = spawn(move || -> Result<(), Error> {
-        println!("Server started");
-        loop {
-            let rq = server.recv().unwrap();
-            if rq.method().as_str() != "GET" {
-                continue;
-            }
-
-            println!("Received request: {:?}", rq.remote_addr());
-
-            func(rq).unwrap();
-        }
-    });
-    return Ok(guard);
-}
-
 #[derive(Debug, PartialEq, Clone)]
 pub enum ConnectionStatus {
     Available,

@@ -22,6 +22,6 @@ fn resp_fn(req: Request) -> Result<(), Error> {
 fn main() {
     //
 
-    shared::start_static_http_server("127.0.0.1".to_string(), "8080".to_string(), resp_fn).unwrap();
+    // shared::start_static_http_server("127.0.0.1".to_string(), "8080".to_string(), resp_fn).unwrap();
     sleep(Duration::from_secs(100));
 }
