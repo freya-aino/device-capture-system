@@ -1,16 +1,6 @@
-[package]
-name = "device-capture-system"
-version = "0.1.0"
-edition = "2024"
-
-[lib]
-name = "device_capture_system"
-path = "src/lib.rs"
-
-[[bin]]
-name = "cli"
-path = "src/bin/cli.rs"
-
-[dependencies]
-anyhow = "1.0.97"
-v4l = "0.14.0"
+[workspace]
+members = [
+  "access-client", 
+  "control-hub",
+  "device-node"
+]

@@ -5,14 +5,16 @@ edition = "2024"
 
 [dependencies]
 alsa = "0.9.1"
+v4l = "0.14.0"
 anyhow = "1.0.98"
 bincode = "2.0.1"
-devices = { path = "../devices" }
-glob = "0.3.2"
-networking = { path = "../networking" }
-shared = { path = "../shared" }
-tokio = { version = "1.49.0", features = ["full"] }
-# tiny_http = "0.12.0"
-v4l = "0.14.0"
-warp = { version = "0.4.2", features = ["server"] }
 zmq = "0.10.0"
+glob = "0.3.2"
+
+tokio = { version = "1.49.0", features = ["full"] }
+warp = { version = "0.4.2", features = ["server"] }
+
+networking = { path = "../networking" }
+devices = { path = "../devices" }
+shared = { path = "../shared" }
+
