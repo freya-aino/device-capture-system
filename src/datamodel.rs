@@ -26,8 +26,17 @@ enum PixelFormat {
 
 // ---------------- STRUCTS ----------------
 
-#[derive(Debug, Clone)]
-pub struct DeviceId(pub u32);
+// #[derive(Debug)]
+// pub struct CaptureStats {
+//     frames_captured: u64,
+//     frames_droped: u64,
+//     bytes_captured: u64,
+//     current_fps: f32,
+//     current_bitrate: f32,
+//     current_latency: f32,
+//     uptime_seconds: u64,
+//     last_frame_time: SystemTime,
+// }
 
 struct DeviceInfo {
     pub id: DeviceId,

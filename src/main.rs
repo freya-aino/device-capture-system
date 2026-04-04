@@ -1,31 +1,17 @@
-// mod datamodel;
+use std::sync::Arc;
 
-// use anyhow::{Result, Error};
-// use datamodel::{Device, CameraDevice, MicrophoneDevice};
-// use nokhwa::query;
-// use nokhwa::native_api_backend;
-// // use nokhwa::utils::FrameFormat;
-// // use nokhwa::Camera;
-// // use nokhwa::utils::CameraFormat;
-// // use nokhwa::utils::CameraIndex;
-// // use nokhwa::utils::RequestedFormat;
-// // use nokhwa::utils::RequestedFormatType;
-// // use nokhwa::pixel_format::RgbFormat;
-// use cpal::traits::{DeviceTrait, HostTrait};
+// use anyhow::{Error, Result};
 
-// // #[derive(Parser, Debug)]
-// // #[command(version, about, long_about = None)]
-// // struct Args {
-// //     #[arg(short = 'l', long = "list-cameras")]
-// //     list_cameras: bool,
+// use std::thread;
+// use std::time::Duration;
 
-// //     #[arg(short, long)]
-// //     verbose: bool,
-// // }
+// use nokhwa::utils::CameraIndex;
+// use nokhwa::pixel_format::{RgbAFormat, RgbFormat};
 
-// // fn print_cameras_human_readable(cameras: &Vec<CameraInfo>, verbose: bool) -> Result<(), Error> {
 
-// //     println!("listing {} cameras\n", cameras.len());
+// fn start_cam_thread(device: Device) -> Result<(), Error> {
+
+//     let cam_unwrap = cam?;
 
 // //     for camera in cameras {
 // //         let index = camera.index().to_string().parse::<u8>().expect("failed to parse camera index");
@@ -91,58 +77,18 @@
 //     Ok(microphones)
 // }
 
-// // fn get_all_microphone_formats() -> Result<Vec<MicrophoneConfig>, Error>
 
-// fn main() {
+// use devices::DeviceManager;
+// use devices::MicrophoneDevice;
+// use devices::MicrophoneConfig;
 
-//     // let args = Args::parse();
+use anyhow::{Error, Result};
+use cpal::traits::{DeviceTrait, HostTrait};
+use cpal::Device as Microphone;
+use nokhwa::utils::{CameraIndex, CameraInfo, RequestedFormat, RequestedFormatType};
+use nokhwa::pixel_format::RgbFormat;
 
-//     // // list cameras
-//     // if args.list_cameras {
-//     //     print_cameras_human_readable(&camera_infos, args.verbose).unwrap();
-//     // }
-
-//     // list camera configuration options for one camera
-
-//     // list_camera_formats_human_readable(camera_infos[0].index()).unwrap();
-
-//     let cameras = get_all_cameras().unwrap();
-//     let microphones = get_all_microphones().unwrap();
-
-//     for camera in cameras {
-//         println!("{:?}", camera);
-//     }
-//     for microphone in microphones {
-//         println!("{:?}", microphone);
-//     }
-
-//     // let host = cpal::default_host();
-//     // let devices = host.devices().unwrap();
-
-//     // for device in devices {
-
-//     //     let audio_input_config = device.supported_input_configs().unwrap();
-//     //     let name = device.name().unwrap();
-
-//     //     for config in audio_input_config{
-//     //         println!("I: {:?} : {:?}", name, config);
-//     //     }
-//     // }
-
-//     // let camera_id = CameraIndex::Index(0);
-//     // let mut cam = Camera::new(camera_id, request_format).unwrap();
-//     // let mut formats = cam.compatible_camera_formats().unwrap();
-//     // formats.sort_by_key(|a| a.width() * a.height() * a.frame_rate());
-
-//     // for f in formats {
-//     //     println!("{:?}", f);
-//     // }
-
-// }
-
-mod datamodel;
-
-use std::ops::Index;
+use clap::Parser;
 
 use anyhow::Error;
 use datamodel::Device;
