@@ -1,0 +1,13 @@
+/home/fey/Programming/device-capture-system/target/debug/deps/cpal-a720e1e1876b1da5.d: /home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/lib.rs /home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/error.rs /home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/host/mod.rs /home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/host/alsa/mod.rs /home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/host/alsa/enumerate.rs /home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/host/null/mod.rs /home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/platform/mod.rs /home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/samples_formats.rs /home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/traits.rs
+
+/home/fey/Programming/device-capture-system/target/debug/deps/libcpal-a720e1e1876b1da5.rmeta: /home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/lib.rs /home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/error.rs /home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/host/mod.rs /home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/host/alsa/mod.rs /home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/host/alsa/enumerate.rs /home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/host/null/mod.rs /home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/platform/mod.rs /home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/samples_formats.rs /home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/traits.rs
+
+/home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/lib.rs:
+/home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/error.rs:
+/home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/host/mod.rs:
+/home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/host/alsa/mod.rs:
+/home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/host/alsa/enumerate.rs:
+/home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/host/null/mod.rs:
+/home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/platform/mod.rs:
+/home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/samples_formats.rs:
+/home/fey/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpal-0.15.3/src/traits.rs:
