@@ -142,6 +142,9 @@
 
 mod datamodel;
 
+use std::ops::Index;
+
+use anyhow::Error;
 use datamodel::Device;
 use nokhwa::Camera;
 use nokhwa::pixel_format::RgbFormat;
@@ -154,10 +157,8 @@ fn main() {
 
     let backend = nokhwa::native_api_backend().unwrap();
 
-    for info in cam_infos {
-        println!("outside : {:?}", info);
+    let cam_infos = nokhwa::query(backend).unwrap();
 
-        // let dev = Device::new(info);
 
         let cam = Camera::new(
             CameraIndex::Index(info.id.0 as u32),
