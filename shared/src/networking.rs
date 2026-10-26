@@ -1,6 +1,6 @@
 use anyhow::{Error, Result};
 use bincode::{Decode, Encode, config};
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 use super::DeviceInformation;
 
@@ -13,15 +13,14 @@ pub enum ConnectionStatus {
     Closed,
 }
 
-#[derive(Debug, PartialEq, Encode, Decode, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ConnectionStats {
     frames: u64,
     bytes: u64,
     current_fps: f32,
     current_bitrate: f32,
     current_latency: f32,
-    start_time: SystemTime,
-    last_frame_time: SystemTime,
+    first_frame_time: Option<Instant>,
 }
 
 impl ConnectionStats {
@@ -32,19 +31,44 @@ impl ConnectionStats {
             current_fps: 0.0,
             current_bitrate: 0.0,
             current_latency: 0.0,
-            start_time: SystemTime::now(),
-            last_frame_time: SystemTime::now(),
+            first_frame_time: None,
         }
     }
 
     pub fn update(&mut self, bytes: u64) {
+        let now = Instant::now();
         self.frames += 1;
         self.bytes += bytes;
-        self.current_fps = 1.0 / (self.last_frame_time.elapsed().unwrap().as_secs() as f32);
-        self.current_bitrate =
-            (self.bytes as f32) / (self.last_frame_time.elapsed().unwrap().as_secs_f32() * 1024.0);
-        self.current_latency = self.last_frame_time.elapsed().unwrap().as_secs_f32();
-        self.last_frame_time = SystemTime::now();
+        let first = *self.first_frame_time.get_or_insert(now);
+        let span = now.duration_since(first).as_secs_f32();
+        if self.frames > 1 && span > 0.0 {
+            self.current_fps = (self.frames - 1) as f32 / span;
+            self.current_bitrate = (self.bytes * 8) as f32 / span;
+        }
+    }
+
+    pub fn record_latency(&mut self, latency: Duration) {
+        self.current_latency = latency.as_secs_f32();
+    }
+
+    pub fn frames(&self) -> u64 {
+        self.frames
+    }
+
+    pub fn bytes(&self) -> u64 {
+        self.bytes
+    }
+
+    pub fn fps(&self) -> f32 {
+        self.current_fps
+    }
+
+    pub fn bitrate_bps(&self) -> f32 {
+        self.current_bitrate
+    }
+
+    pub fn latency_secs(&self) -> f32 {
+        self.current_latency
     }
 }
 
@@ -156,5 +180,22 @@ mod tests {
         stats.update(50);
         assert_eq!(stats.frames, 2);
         assert_eq!(stats.bytes, 150);
+    }
+
+    #[test]
+    fn connection_stats_fps_is_zero_until_two_frames() {
+        let mut stats = ConnectionStats::new();
+        stats.update(100);
+
+        assert_eq!(stats.fps(), 0.0);
+        assert!(stats.fps().is_finite());
+    }
+
+    #[test]
+    fn connection_stats_record_latency_stores_seconds() {
+        let mut stats = ConnectionStats::new();
+        stats.record_latency(Duration::from_millis(250));
+
+        assert!((stats.latency_secs() - 0.25).abs() < 1e-6);
     }
 }
