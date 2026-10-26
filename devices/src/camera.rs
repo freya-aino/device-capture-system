@@ -137,12 +137,12 @@ impl Device for V4lCameraDevice {
             "Camera is already running"
         );
 
-        let mut format = self.device.format().expect("Failed to get device format");
+        let mut format = self.device.format()?;
         format.width = config.width;
         format.height = config.height;
         format.fourcc = FourCC::new(&config.fourcc.map(|a| a as u8));
 
-        let mut params = self.device.params().expect("Failed to get device params");
+        let mut params = self.device.params()?;
         params.interval = Fraction::new(config.fps.0, config.fps.1);
 
         println!(
@@ -150,13 +150,23 @@ impl Device for V4lCameraDevice {
             self.device_info.name, params, format
         );
 
-        self.device
-            .set_params(&params)
-            .expect("Failed to set device params");
+        self.device.set_params(&params)?;
 
-        self.device
-            .set_format(&format)
-            .expect("Failed to set device format");
+        let negotiated = self.device.set_format(&format)?;
+        if negotiated.width != format.width
+            || negotiated.height != format.height
+            || negotiated.fourcc != format.fourcc
+        {
+            return Err(anyhow!(
+                "Camera negotiated {}x{} {} instead of requested {}x{} {}",
+                negotiated.width,
+                negotiated.height,
+                negotiated.fourcc,
+                format.width,
+                format.height,
+                format.fourcc
+            ));
+        }
 
         println!(
             "Config used by camera - {:?}\n{:?}\n{:?}\n",
@@ -165,9 +175,7 @@ impl Device for V4lCameraDevice {
             self.device.params()
         );
 
-        let mut stream =
-            v4l::io::mmap::Stream::with_buffers(&mut self.device, Type::VideoCapture, 4)
-                .expect("Failed to create Stream");
+        let mut stream = v4l::io::mmap::Stream::with_buffers(&mut self.device, Type::VideoCapture, 4)?;
 
         // if let Some(timeout) = timeout {
         //     stream.set_timeout(timeout);
