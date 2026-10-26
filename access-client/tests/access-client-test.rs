@@ -1,12 +1,9 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread::sleep;
 use std::time::Duration;
 
 use access_client::AccessClient;
 use networking::Sender;
 use shared::{DeviceInformation, DeviceStatus, DeviceType, FramePacket, FramePacketInformation};
-
-static ENDPOINT_ID: AtomicUsize = AtomicUsize::new(0);
 
 fn generate_dummy_frame_packet() -> FramePacket {
     let device_info = DeviceInformation {
@@ -27,8 +24,7 @@ fn generate_dummy_frame_packet() -> FramePacket {
 #[test]
 fn next_frame_returns_published_frame() {
     let context = zmq::Context::new();
-    let id = ENDPOINT_ID.fetch_add(1, Ordering::SeqCst);
-    let endpoint = format!("inproc://access-client-test-{}", id);
+    let endpoint = "tcp://127.0.0.1:16201".to_string();
 
     let mut client = AccessClient::new_endpoint(endpoint.clone(), 10, 1024);
     client.connect().unwrap();
@@ -58,8 +54,7 @@ fn next_frame_returns_published_frame() {
 
 #[test]
 fn next_frame_times_out_when_nothing_is_published() {
-    let id = ENDPOINT_ID.fetch_add(1, Ordering::SeqCst);
-    let endpoint = format!("inproc://access-client-timeout-test-{}", id);
+    let endpoint = "tcp://127.0.0.1:16202".to_string();
 
     let mut client = AccessClient::new_endpoint(endpoint, 10, 1024);
     client.connect().unwrap();
