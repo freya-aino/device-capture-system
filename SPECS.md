@@ -1,9 +1,9 @@
-# SPEC.md — Device Capture System
+# SPECS.md — Device Capture System
 
 This document specifies the intended design of the system: the deployment topologies it must
 support, the roles each component plays, the wire protocol, and the current implementation state
 against that spec. It consolidates the architecture described in `README.md`/`AGENT.md` with the
-findings in `CODE_REVIEW.md` (updated 2026-10-26, reviewed commit `eb9e36c`).
+findings in `CODE_REVIEW.md` (updated 2026-10-26, reviewed commit `40c8af5`).
 
 Status markers used throughout: ✅ done · ⚠️ partial/broken · ❌ not implemented.
 
@@ -127,10 +127,17 @@ for frame in ds.get_frame():
     ...
 ```
 
-This is feasible without any FFI because the wire format is simple and fully specified in §7
-below: a `pyzmq` `SUB` socket connected to the hub's XPUB port, decoding a small bincode header
-(fixed field set, no dynamic schema) followed by concatenated raw bytes. Two implementation paths,
-either is viable:
+This API exists today as PyO3 bindings in `python-client/`, exporting a `device_system` extension
+module with `DeviceSystem` (hub connection + iterator) and `Frame` (header + raw bytes). It wraps
+the Rust `access-client` so Python shares the exact wire decoder.
+
+Packaging/distribution is still missing (no maturin / `pyproject.toml`), and there are no
+dedicated automated tests for the bindings yet.
+
+A pure-Python implementation remains feasible because the wire format is simple and fully
+specified in §7 below: a `pyzmq` `SUB` socket connected to the hub's XPUB port, decoding a small
+bincode header (fixed field set, no dynamic schema) followed by concatenated raw bytes. Two
+implementation paths are viable:
 
 1. **Pure Python** — reimplement the bincode header decode (small, static format) with `pyzmq` +
    `struct`/a minimal bincode decoder. No Rust toolchain needed by consumers.
@@ -147,23 +154,24 @@ since it removes the risk of the Python decoder silently drifting from the Rust 
 
 ## 6. Current implementation state
 
-Condensed from `CODE_REVIEW.md` (updated against commit `eb9e36c`); see that file for full detail,
+Condensed from `CODE_REVIEW.md` (updated against commit `40c8af5`); see that file for full detail,
 line numbers, and the fix the review already applied (the `devices` crate's broken module
 re-export, §4.1 there).
 
 | Component | State | Blocks which role(s) |
 |---|---|---|
-| `shared` (data model) | ⚠️ Works, but `ConnectionStats::update` math is wrong (whole-second FPS → `inf`, cumulative-byte "bitrate", mislabeled inter-frame gap as latency; real `tx`/`rx` timestamps go unused) | Observability for all roles |
-| `networking::Connection`/`Sender`/`Receiver` | ⚠️ Point-to-point works, covered by loopback tests. `close()` now uses `disconnect` and propagates errors. Receiver still `.unwrap()`s/`assert!`s on attacker-/peer-controlled input | Producer, Consumer |
+| `shared` (data model) | ✅ Works: `ConnectionStats` uses `Instant` for interval math and records per-frame latency | Observability for all roles |
+| `networking::Connection`/`Sender`/`Receiver` | ✅ Works: receive path validates peer input and drops malformed frames; a sequence part enables gap-based dropped-frame counts | Producer, Consumer |
 | `networking::Proxy` | ✅ Works: `start()` runs `zmq::proxy_steerable` on a forwarding thread; `stop()` terminates it cleanly through a control socket. Covered by `proxy-test.rs` and the hub pipeline test | Receiver + Accumulator |
-| `devices::V4lCameraDevice` | ⚠️ Compiles, enumerates (no capability filtering — lists non-capture `/dev/video*` nodes as cameras). Allocates 128 mmap buffers (~512MB/cam, ~4s latency at 30fps; 3–4 is typical). `frame_shape` taken from requested config, not the negotiated format | Producer (camera) |
-| `devices::AlsaMicrophoneDevice` | ⚠️ Compiles, enumerates — but the direction filter is inverted (keeps duplex-only hints, drops real capture devices) and the virtual-device filter does exact-string match against `sysdefault:CARD=PCH`-style ids, so it never matches. Net effect observed on review hardware: real mics dropped, virtual `sysdefault` kept. Buffer sizing also ignores channel count | Producer (mic) |
+| `devices::V4lCameraDevice` | ⚠️ Compiles, enumerates: capability filtering is in place, buffer count reduced, negotiated-format validation added; capture path still needs real-hardware exercise | Producer (camera) |
+| `devices::AlsaMicrophoneDevice` | ⚠️ Compiles, enumerates: enumeration filters fixed and buffer sizing accounts for channels; capture path still needs real-hardware exercise | Producer (mic) |
 | `devices::microphone_windows` | ❌ Empty file | Producer on Windows |
-| `devices::manager` | ⬜ Fully commented out | n/a (dead) |
-| `device-node::DeviceNode` | ✅ Generic over `T: Device`, so cameras and microphones use the same wiring. `status()` reports real device and connection state, served as JSON on `GET /status`. No remote start/stop control yet | Producer (status observable; no remote control) |
-| `control-hub` | ⚠️ Runs `Proxy` from `HUB_*` environment config with Ctrl+C shutdown. No sync/calibration | Syncer (missing) |
-| `access-client` | ✅ `AccessClient` (`connect`, `next_frame`, `run`, `disconnect`) plus a CLI binary. Covered by `access-client-test.rs` and the hub pipeline test. No Python binding | Consumer (Python API missing) |
-| `DeviceStatus` | ❌ Set to `Available` at construction and never updated again anywhere — the `assert!(status == Available)` guards in `start()` can never fire (so `start()` can be called twice, leaking the first capture thread), and any future `/status` endpoint would be meaningless | All roles' observability |
+| `devices::manager` | ✅ Deleted | n/a |
+| `device-node::DeviceNode` | ⚠️ Works: generic over `T: Device`, can publish one camera/mic stream, serves `GET /status`; remote start/stop control is still planned | Producer (remote control missing) |
+| `control-hub` | ⚠️ Works as XSUB/XPUB proxy from `HUB_*` env config; sync/calibration are not implemented | Syncer (missing) |
+| `access-client` | ✅ `AccessClient` (`connect`, `next_frame`, `run`, `disconnect`) plus a CLI binary; used by Python bindings | Consumer |
+| `python-client` | ⚠️ PyO3 bindings (`device_system`) exist, but are not packaged and have no dedicated automated tests | Consumer (packaging) |
+| `DeviceStatus` | ✅ Status transitions are implemented and observable via `device-node` | Observability for Producer |
 
 ### 6.1 What already satisfies the topology requirement (§3)
 The *shape* of the deployment flexibility is already real: `Sender::new`/`Receiver::new`/
@@ -176,10 +184,9 @@ Sync (§2 Syncer) is still missing.
 1. ✅ Resolved: `networking::Proxy` forwards data (`proxy_steerable`), and `control-hub` runs it.
 2. ✅ Resolved for the transport path: `control-hub` loads config and runs `Proxy`. Sync and
    calibration (per the README TODO) are still missing.
-3. ✅ Resolved: `access-client` exposes frames through `AccessClient`. A Python-facing API (§5) is
-   still missing.
-4. ✅ Resolved: `DeviceNode` is generic over `T: Device`. Its `DeviceStatus` still never changes
-   (§6), so the `/status` endpoint is still blocked.
+3. ⚠️ Partly resolved: Python bindings exist (§5), but packaging/distribution is still missing.
+4. ✅ Resolved: `DeviceNode` is generic over `T: Device`, device status transitions are implemented,
+   and `/status` is served.
 
 ---
 
@@ -191,7 +198,8 @@ A frame is one ZMQ multipart message:
 | Part | Content |
 |---|---|
 | `0` | `bincode::encode_to_vec(FramePacketInformation, config::standard())` |
-| `1..n` | Raw frame bytes, split into `data_chunk_size`-byte chunks (receiver concatenates them back; chunk boundaries carry no meaning) |
+| `1` | Sender-local `u64` sequence number (little-endian) |
+| `2..n` | Raw frame bytes, split into `data_chunk_size`-byte chunks (receiver concatenates them back; chunk boundaries carry no meaning) |
 
 `FramePacketInformation`:
 
@@ -208,12 +216,10 @@ Payload formats by device type:
 
 - **Camera** — raw v4l2 buffer in the negotiated FourCC (default `YUYV`), `frame_shape = [width, height]`.
 - **Microphone** — interleaved `S16LE` samples as bytes, `frame_shape = [buffer_size, channels]`
-  (currently hardcoded to `[buffer_size, 2]` regardless of actual channel count — see §6 table).
+  (channel count is included).
 
-Per-frame latency is measurable today as `rx_timestamp - tx_timestamp`, but nothing in the
-codebase currently computes it (`ConnectionStats::update` uses frame-to-frame gaps instead — §6).
-Any consumer wanting real latency numbers must compute this itself from the two timestamps until
-`ConnectionStats` is fixed.
+Per-frame latency is measurable today as `rx_timestamp - tx_timestamp`. The receive path records
+this into `ConnectionStats` (best-effort; frames without a `tx_timestamp` are dropped).
 
 Defaults (`device-node/src/helper.rs`):
 
@@ -232,25 +238,24 @@ done; the remaining work is the capture and receive-path fixes.
 1. ✅ Done: fix `Proxy` and add loopback proxy tests (`proxy-test.rs`, hub pipeline test).
 2. ✅ Done: minimal `control-hub` `main()` loads config and runs `Proxy`.
 3. ✅ Done: `access-client` connects a `Receiver` to the hub and exposes frames via
-   `AccessClient`. Still open: the Python bindings that sit on top of it (§5).
+   `AccessClient`. Still open: packaging the Python bindings that sit on top of it (§5).
 4. ✅ Done: microphone enumeration filter fixed (playback-only skipped, virtual devices matched by
    base name) and camera capability filtering (`V4L2_CAP_VIDEO_CAPTURE`) added. Build-verified
    with a Nix shell providing libclang; the hardware itself has not been exercised.
-5. Remove panics on the network receive path (`unwrap()`/`assert!` on peer-controlled data in
-   `Receiver::receive`, `FramePacketInformation::deserialize`).
+5. ✅ Done: remove panics on the network receive path (peer-controlled input is validated and
+   malformed frames are dropped).
 6. ✅ Done: camera and microphone set `DeviceStatus` to `Running` on start and `Stopped` on stop,
    and `device-node run` serves `GET /status` (JSON with device and connection state) on
    `DEVICE_NODE_STATUS_ADDR` (default `127.0.0.1:8080`). Covered by `device-node/tests/status-test.rs`.
 7. ✅ Done: `DeviceNode` is generic over `T: Device`, so producer hosts can publish cameras.
-8. ✅ Partly done: camera buffer count reduced from 128 to 4. Still open: validating the
-   negotiated v4l2 format instead of trusting the request.
-9. Rewrite `ConnectionStats` using the existing `tx_timestamp`/`rx_timestamp` pair and `Instant`
-   instead of `SystemTime` for interval math.
+8. ✅ Done: camera buffer count reduced from 128 to 4, and the negotiated v4l2 format is validated.
+9. ✅ Done: rewrite `ConnectionStats` to use `Instant` for interval math and record per-frame latency
+   from `tx_timestamp`/`rx_timestamp`.
 10. Add sync (time alignment across producers) and calibration to `control-hub`, per the README
     TODO — this is the one piece of §2's "Syncer" role with no code today.
 11. ✅ Done: Python client (§5) as a PyO3 extension in `python-client/`. `DeviceSystem(hub_ip, hub_port)`
     with `get_frame()` / `next_frame()` wraps `AccessClient`, so Python shares the Rust wire decoder.
-    Verified end to end against the loopback publisher example. Not packaged yet (no maturin config).
+    Not packaged yet (no maturin config / `pyproject.toml`) and has no dedicated automated tests.
 
 ---
 

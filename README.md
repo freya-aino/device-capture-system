@@ -40,9 +40,10 @@ not implemented yet.
 | `shared`        | lib  | Common data model: the `Device` / `DeviceConfig` traits, `DeviceInformation`, `FramePacket(Information)`, `ConnectionStatus`, `ConnectionStats`. Frame metadata is (de)serialized with `bincode`. |
 | `devices`       | lib  | Concrete capture devices: `V4lCameraDevice` (v4l2 mmap streaming) and `AlsaMicrophoneDevice` (ALSA PCM capture). Each runs its capture loop on its own thread and pushes `FramePacket`s into a user callback. |
 | `networking`    | lib  | ZeroMQ transport: `Connection` (socket lifecycle + stats), `Sender` (PUB), `Receiver` (SUB) and `Proxy` (XSUB↔XPUB forwarder). |
-| `device-node`   | bin  | Runs on each capture machine: lists devices and can publish one camera/mic stream to a hub (HTTP control API is planned). |
+| `device-node`   | bin+lib  | Runs on each capture machine: lists devices and can publish one camera/mic stream to a hub (HTTP control API is planned). |
 | `control-hub`   | bin  | Central process: currently runs the XSUB/XPUB ZMQ proxy for fan-in/fan-out (HTTP API, sync and calibration are planned). |
-| `access-client` | bin  | Consumer-side client used to subscribe to the hub's aggregated stream (currently prints received frames). |
+| `access-client` | bin+lib  | Consumer-side client used to subscribe to the hub's aggregated stream (CLI prints received frames; library yields decoded frames). |
+| `python-client` | lib  | Python bindings via PyO3 (`device_system` extension module) that wrap `access-client` to receive frames from a hub. |
 
 ### Frame transport
 
@@ -51,17 +52,22 @@ A frame is sent as a single ZMQ multipart message:
 | Part    | Content                                                            |
 |---------|--------------------------------------------------------------------|
 | `0`     | `bincode`-encoded `FramePacketInformation` (device info, frame shape, tx timestamp) |
-| `1..n`  | The raw frame bytes, split into `data_chunk_size` chunks            |
+| `1`     | Sender-local `u64` sequence number (little-endian)                  |
+| `2..n`  | The raw frame bytes, split into `data_chunk_size` chunks            |
 
 The sender stamps `tx_timestamp` just before sending; the receiver stamps `rx_timestamp` on
 arrival and re-joins the data chunks, which makes per-frame latency measurable. Subscribers
 subscribe to all topics, and the high-water mark on both sides is set from `queue_size`.
 
+The receiver tracks per-device sequence gaps and counts them as dropped frames, which helps detect
+silent drops caused by PUB high-water marks (drops are only observable once a later frame arrives).
+
 Payload formats:
 
 - **Camera** – raw v4l2 buffer in the FourCC of the requested config (default `YUYV`),
-  `frame_shape = [width, height]` from that config. The driver may negotiate a different format; the
-  code does not yet read the negotiated format back (see `CODE_REVIEW.md` §4.7).
+  `frame_shape = [width, height]` from that config. If the driver negotiates a different width,
+  height or FourCC than requested, `start()` returns an error instead of silently using the
+  negotiated format (see `CODE_REVIEW.md` §4.7).
 - **Microphone** – interleaved `S16LE` samples as bytes, `frame_shape = [buffer_size, channels]`.
   Use `FramePacket::decode_to_i16_le` to get `i16` samples back.
 
@@ -69,7 +75,19 @@ Payload formats:
 
 - Linux (the capture code is Linux-only; `device-node` asserts this at startup)
 - Rust toolchain with **edition 2024** support (Rust 1.85+)
-- System libraries:
+- System libraries — pick one:
+
+  **Option A: [devenv](https://devenv.sh)** (recommended if you have Nix). This repo's
+  `devenv.nix`/`devenv.yaml` pin `pkg-config`, `alsa-lib`, `zeromq`, `libv4l`, a Rust toolchain and
+  `LIBCLANG_PATH` together, so `bindgen` always finds a `libclang` that's ABI-compatible with the
+  rest of the shell:
+
+  ```bash
+  devenv shell -- cargo build --workspace
+  # or, with direnv: `direnv allow` once, then `cargo build --workspace` works directly
+  ```
+
+  **Option B: system packages**
 
   ```bash
   # Debian / Ubuntu
@@ -84,7 +102,10 @@ Payload formats:
 
   Without `alsa.pc` / `libzmq` headers on the `pkg-config` path the build fails in the
   `alsa-sys` / `zmq-sys` build scripts. The `v4l` dependency uses `bindgen` and needs a working
-  `libclang` installation; if `bindgen` can't find it, set `LIBCLANG_PATH` to your libclang dir.
+  `libclang` installation; if `bindgen` can't find it, set `LIBCLANG_PATH` to your libclang dir. On
+  a system with more than one `libclang` build available (e.g. NixOS outside of `devenv`), make sure
+  the one you point at matches the glibc your `cargo`/`rustc` actually links against, or `bindgen`
+  fails with an `undefined symbol` error rather than a "not found" one.
 
 ## Build & Run
 
@@ -192,9 +213,10 @@ frame is queued, so it cannot be used as a loop condition.
     - [ ] transfer calibration code from python-opencv
 - [ ] Client
   - [x] Minimal Rust access client (`access-client`) that receives frames from the hub
-  - [ ] write python client library
-    - [ ] `DeviceSystem(hub_ip, hub_port)`
-    - [ ] `DeviceSystem.get_frame() -> generator`
+  - [x] Python client bindings (PyO3 extension in `python-client/`)
+    - [x] `DeviceSystem(hub_ip, hub_port)`
+    - [x] `DeviceSystem.get_frame() -> generator`
+  - [ ] Package Python bindings (maturin / `pyproject.toml`)
 
 ## License
 
