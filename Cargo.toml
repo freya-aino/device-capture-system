@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "shared",
     "devices",
     "networking",
     "device-node",
