@@ -1,6 +1,5 @@
 use anyhow::{Error, Result};
 use bincode::{Decode, Encode, config};
-use std::thread::{JoinHandle, spawn};
 use std::time::SystemTime;
 
 use super::DeviceInformation;
@@ -92,5 +91,70 @@ impl FramePacket {
             .map(|b| i16::from_le_bytes([b[0], b[1]]))
             .collect::<Vec<i16>>();
         Ok(i16_samples)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{DeviceStatus, DeviceType};
+
+    fn dummy_device_info() -> DeviceInformation {
+        DeviceInformation {
+            id: "id".to_string(),
+            name: "name".to_string(),
+            device_type: DeviceType::Camera,
+            device_status: DeviceStatus::Available,
+        }
+    }
+
+    #[test]
+    fn frame_packet_information_roundtrip() {
+        let info = FramePacketInformation {
+            device_info: dummy_device_info(),
+            rx_timestamp: None,
+            tx_timestamp: Some(SystemTime::now()),
+            frame_shape: vec![1920, 1080],
+        };
+
+        let bytes = info.serialize().unwrap();
+        let decoded = FramePacketInformation::deserialize(&bytes).unwrap();
+
+        assert_eq!(info, decoded);
+    }
+
+    #[test]
+    fn frame_packet_information_deserialize_invalid_data_errs() {
+        let result = FramePacketInformation::deserialize(&[1, 2, 3]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn decode_to_i16_le_round_trips_known_values() {
+        let samples: Vec<i16> = vec![0, 1, -1, i16::MAX, i16::MIN];
+        let bytes: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
+
+        let decoded = FramePacket::decode_to_i16_le(&bytes).unwrap();
+
+        assert_eq!(samples, decoded);
+    }
+
+    #[test]
+    #[should_panic(expected = "bytes length needs to be even")]
+    fn decode_to_i16_le_odd_length_panics() {
+        let _ = FramePacket::decode_to_i16_le(&[0u8, 1, 2]);
+    }
+
+    #[test]
+    fn connection_stats_update_tracks_frames_and_bytes() {
+        let mut stats = ConnectionStats::new();
+        stats.update(100);
+
+        assert_eq!(stats.frames, 1);
+        assert_eq!(stats.bytes, 100);
+
+        stats.update(50);
+        assert_eq!(stats.frames, 2);
+        assert_eq!(stats.bytes, 150);
     }
 }

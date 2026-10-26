@@ -80,3 +80,45 @@ pub struct CameraConfig {
 
 impl DeviceConfig for MicrophoneConfig {}
 impl DeviceConfig for CameraConfig {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn device_information_equality_depends_on_all_fields() {
+        let base = DeviceInformation {
+            id: "id".to_string(),
+            name: "name".to_string(),
+            device_type: DeviceType::Camera,
+            device_status: DeviceStatus::Available,
+        };
+
+        let same = base.clone();
+        assert_eq!(base, same);
+
+        let mut different_status = base.clone();
+        different_status.device_status = DeviceStatus::Running;
+        assert_ne!(base, different_status);
+
+        let mut different_type = base.clone();
+        different_type.device_type = DeviceType::Microphone;
+        assert_ne!(base, different_type);
+    }
+
+    #[test]
+    fn device_information_encode_decode_roundtrip() {
+        let info = DeviceInformation {
+            id: "id".to_string(),
+            name: "name".to_string(),
+            device_type: DeviceType::Microphone,
+            device_status: DeviceStatus::Stopped,
+        };
+
+        let encoded = bincode::encode_to_vec(&info, bincode::config::standard()).unwrap();
+        let (decoded, _): (DeviceInformation, usize) =
+            bincode::decode_from_slice(&encoded, bincode::config::standard()).unwrap();
+
+        assert_eq!(info, decoded);
+    }
+}
