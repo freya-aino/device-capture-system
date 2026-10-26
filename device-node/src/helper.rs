@@ -100,3 +100,31 @@ pub fn test_v4l_cameras(cam: &mut V4lCameraDevice, seconds: u64) -> Result<(), E
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn volume_from_audio_frame_silence_is_zero() {
+        let silence = vec![0i16; 10];
+        assert_eq!(volume_from_audio_frame(&silence), 0.0);
+    }
+
+    #[test]
+    fn volume_from_audio_frame_max_amplitude_is_one() {
+        let loudest = vec![i16::MAX; 10];
+        let vol = volume_from_audio_frame(&loudest);
+        assert!((vol - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn volume_from_audio_frame_is_amplitude_independent_of_sign() {
+        let positive = vec![1000i16; 10];
+        let negative = vec![-1000i16; 10];
+        assert_eq!(
+            volume_from_audio_frame(&positive),
+            volume_from_audio_frame(&negative)
+        );
+    }
+}

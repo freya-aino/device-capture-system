@@ -1,6 +1,5 @@
 use anyhow::{Error, Result};
-use devices::AlsaMicrophoneDevice;
-use shared::{ConnectionStatus, Device, DeviceStatus, MicrophoneConfig};
+use shared::{ConnectionStatus, Device, DeviceStatus};
 use std::{
     net::Ipv4Addr,
     sync::{Arc, Mutex},
@@ -9,19 +8,16 @@ use zmq::Context;
 
 use networking::Sender;
 
+/// Publishes frames captured from any `Device` (camera, microphone, ...) to a hub via
+/// a ZMQ `Sender`. Generic over `T: Device` so any producer host can run either device
+/// type through the same wiring.
 pub struct DeviceNode<T: Device> {
     device: T,
     sender: Arc<Mutex<Sender>>,
 }
 
-impl DeviceNode<AlsaMicrophoneDevice> {
-    pub fn new(
-        device: AlsaMicrophoneDevice,
-        ip: Ipv4Addr,
-        port: u16,
-        queue_size: u32,
-        data_chunk_size: u32,
-    ) -> Self {
+impl<T: Device> DeviceNode<T> {
+    pub fn new(device: T, ip: Ipv4Addr, port: u16, queue_size: u32, data_chunk_size: u32) -> Self {
         DeviceNode {
             device: device,
             sender: Arc::new(Mutex::new(Sender::new(
@@ -33,11 +29,23 @@ impl DeviceNode<AlsaMicrophoneDevice> {
         }
     }
 
-    pub fn start(
-        &mut self,
-        device_config: MicrophoneConfig,
-        context: &Context,
-    ) -> Result<(), Error> {
+    pub fn new_endpoint(
+        device: T,
+        endpoint: impl Into<String>,
+        queue_size: u32,
+        data_chunk_size: u32,
+    ) -> Self {
+        DeviceNode {
+            device,
+            sender: Arc::new(Mutex::new(Sender::new_endpoint(
+                endpoint,
+                queue_size,
+                data_chunk_size,
+            ))),
+        }
+    }
+
+    pub fn start(&mut self, device_config: T::Config, context: &Context) -> Result<(), Error> {
         let sender = self.sender.clone();
 
         sender.lock().unwrap().start(context).unwrap();
