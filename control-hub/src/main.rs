@@ -1,27 +1,123 @@
-use anyhow::{Error, Result};
-use bincode::{config, encode_to_vec};
-use shared::{DeviceInformation, DeviceStatus, DeviceType};
-use std::thread::sleep;
+use std::net::Ipv4Addr;
+use std::str::FromStr;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use tiny_http::{Request, Response};
 
-fn resp_fn(req: Request) -> Result<(), Error> {
-    let info = DeviceInformation {
-        id: "".to_string(),
-        name: "test".to_string(),
-        device_status: DeviceStatus::Available,
-        device_type: DeviceType::Camera,
-    };
-    let data = encode_to_vec(info, config::standard()).unwrap();
-    let resp = Response::from_data(data);
+use anyhow::{Error, Result};
+use networking::Proxy;
 
-    req.respond(resp).unwrap();
+struct HubConfig {
+    producer_ip: Ipv4Addr,
+    producer_port: u16,
+    consumer_ip: Ipv4Addr,
+    consumer_port: u16,
+    queue_size: u32,
+    data_chunk_size: u32,
+}
+
+fn env_or<T: FromStr>(key: &str, default: T) -> T {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse::<T>().ok())
+        .unwrap_or(default)
+}
+
+impl HubConfig {
+    /// Loads bind addresses/ports and transport tuning from the environment, falling
+    /// back to sane defaults so `control-hub` runs out of the box on one machine.
+    fn from_env() -> Self {
+        HubConfig {
+            // `networking::Proxy` currently *connects* its XSUB side to a producer endpoint,
+            // so the default must be a concrete address, not 0.0.0.0.
+            producer_ip: env_or("HUB_PRODUCER_IP", Ipv4Addr::new(127, 0, 0, 1)),
+            producer_port: env_or("HUB_PRODUCER_PORT", 5555),
+            consumer_ip: env_or("HUB_CONSUMER_IP", Ipv4Addr::new(0, 0, 0, 0)),
+            consumer_port: env_or("HUB_CONSUMER_PORT", 5556),
+            queue_size: env_or("HUB_QUEUE_SIZE", 128),
+            data_chunk_size: env_or("HUB_DATA_CHUNK_SIZE", 1024),
+        }
+    }
+}
+
+fn main() -> Result<(), Error> {
+    let config = HubConfig::from_env();
+
+    println!(
+        "control-hub: producer endpoint tcp://{}:{} (XSUB connect), consumers -> tcp://{}:{} (XPUB bind)",
+        config.producer_ip, config.producer_port, config.consumer_ip, config.consumer_port
+    );
+
+    let context = zmq::Context::new();
+    let mut proxy = Proxy::new(
+        config.producer_ip,
+        config.producer_port,
+        config.consumer_ip,
+        config.consumer_port,
+        config.queue_size,
+        config.data_chunk_size,
+    );
+
+    proxy.start(&context)?;
+    println!("control-hub: proxy running, press Ctrl+C to stop");
+
+    let running = Arc::new(AtomicBool::new(true));
+    let running_handler = running.clone();
+    ctrlc::set_handler(move || running_handler.store(false, Ordering::SeqCst))
+        .map_err(|e| Error::msg(format!("Failed to set Ctrl+C handler: {}", e)))?;
+
+    while running.load(Ordering::SeqCst) {
+        std::thread::sleep(Duration::from_millis(200));
+    }
+
+    println!("control-hub: shutting down proxy");
+    proxy.stop()?;
+
     Ok(())
 }
 
-fn main() {
-    //
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
 
-    // shared::start_static_http_server("127.0.0.1".to_string(), "8080".to_string(), resp_fn).unwrap();
-    sleep(Duration::from_secs(100));
+    // Environment variables are process-global, so tests touching them must not run
+    // concurrently with each other.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn env_or_falls_back_to_default_when_unset() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::remove_var("TEST_ENV_OR_MISSING");
+        }
+        let value: u16 = env_or("TEST_ENV_OR_MISSING", 1234);
+        assert_eq!(value, 1234);
+    }
+
+    #[test]
+    fn env_or_parses_set_value() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::set_var("TEST_ENV_OR_SET", "4242");
+        }
+        let value: u16 = env_or("TEST_ENV_OR_SET", 1234);
+        assert_eq!(value, 4242);
+        unsafe {
+            std::env::remove_var("TEST_ENV_OR_SET");
+        }
+    }
+
+    #[test]
+    fn env_or_falls_back_on_unparseable_value() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::set_var("TEST_ENV_OR_INVALID", "not-a-number");
+        }
+        let value: u16 = env_or("TEST_ENV_OR_INVALID", 1234);
+        assert_eq!(value, 1234);
+        unsafe {
+            std::env::remove_var("TEST_ENV_OR_INVALID");
+        }
+    }
 }
