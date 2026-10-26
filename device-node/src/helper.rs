@@ -22,10 +22,10 @@ pub fn volume_from_audio_frame(buf: &[i16]) -> f64 {
     let mut sum = 0f64;
     for &x in buf {
         let sq = (x as f64) * (x as f64);
-        sum += sq.sqrt();
+        sum += sq;
     }
-    let avg = sum / (buf.len() as f64);
-    avg / (i16::MAX as f64)
+    let mean = sum / (buf.len() as f64);
+    mean.sqrt() / (i16::MAX as f64)
 }
 
 pub fn get_all_devices() -> Result<(Vec<V4lCameraDevice>, Vec<AlsaMicrophoneDevice>), Error> {
