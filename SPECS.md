@@ -233,15 +233,16 @@ done; the remaining work is the capture and receive-path fixes.
 2. ✅ Done: minimal `control-hub` `main()` loads config and runs `Proxy`.
 3. ✅ Done: `access-client` connects a `Receiver` to the hub and exposes frames via
    `AccessClient`. Still open: the Python bindings that sit on top of it (§5).
-4. Fix microphone enumeration (inverted filter, virtual-device string match) and add camera
-   capability filtering (`V4L2_CAP_VIDEO_CAPTURE`).
+4. ✅ Done: microphone enumeration filter fixed (playback-only skipped, virtual devices matched by
+   base name) and camera capability filtering (`V4L2_CAP_VIDEO_CAPTURE`) added. Build-verified
+   with a Nix shell providing libclang; the hardware itself has not been exercised.
 5. Remove panics on the network receive path (`unwrap()`/`assert!` on peer-controlled data in
    `Receiver::receive`, `FramePacketInformation::deserialize`).
-6. Make `DeviceStatus` actually transition (`Available` → `Running` → `Stopped`), then build the
-   planned `/status` HTTP endpoint on `device-node` on top of real state.
+6. ✅ Done for the devices: camera and microphone set `DeviceStatus` to `Running` on start and
+   `Stopped` on stop. Still open: the planned `/status` HTTP endpoint on `device-node`.
 7. ✅ Done: `DeviceNode` is generic over `T: Device`, so producer hosts can publish cameras.
-8. Reduce camera buffer count (128 → 3–4) and validate the negotiated v4l2 format instead of
-   trusting the request.
+8. ✅ Partly done: camera buffer count reduced from 128 to 4. Still open: validating the
+   negotiated v4l2 format instead of trusting the request.
 9. Rewrite `ConnectionStats` using the existing `tx_timestamp`/`rx_timestamp` pair and `Instant`
    instead of `SystemTime` for interval math.
 10. Add sync (time alignment across producers) and calibration to `control-hub`, per the README

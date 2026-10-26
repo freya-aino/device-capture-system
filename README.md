@@ -62,9 +62,7 @@ Payload formats:
 - **Camera** – raw v4l2 buffer in the FourCC of the requested config (default `YUYV`),
   `frame_shape = [width, height]` from that config. The driver may negotiate a different format; the
   code does not yet read the negotiated format back (see `CODE_REVIEW.md` §4.7).
-- **Microphone** – interleaved `S16LE` samples as bytes. `frame_shape` is currently `[buffer_size, 2]`
-  regardless of the channel count, which is only correct for stereo; for the default mono config the
-  shape should be `[buffer_size, 1]` (see `CODE_REVIEW.md` §4.8).
+- **Microphone** – interleaved `S16LE` samples as bytes, `frame_shape = [buffer_size, channels]`.
   Use `FramePacket::decode_to_i16_le` to get `i16` samples back.
 
 ## Requirements
@@ -126,9 +124,8 @@ abort in restricted/sandboxed environments. Prefer installing the system `libzmq
 - Cameras are discovered by globbing `/dev/video*`; the device id is the path and the name comes
   from the v4l2 capability `card` string. Available resolutions / frame intervals can be queried
   with `Device::get_configs`.
-- Microphones are discovered through ALSA PCM hints. The filter that is meant to skip playback-only
-  and virtual entries (`default`, `null`, `sysdefault`, `pipewire`, …) is currently not working: it
-  drops real capture devices and keeps some virtual ones (see `CODE_REVIEW.md` §4.3).
+- Microphones are discovered through ALSA PCM hints, skipping playback-only and virtual entries
+  (`default`, `null`, `sysdefault`, `pipewire`, …).
 - Make sure your user can access the devices, e.g. it is in the `video` and `audio` groups.
 
 Defaults used by `device-node` (see `device-node/src/helper.rs`):
