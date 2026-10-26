@@ -27,7 +27,7 @@ where
         loop {
             let request = server.recv()?;
             if let Err(e) = handle_request(request, &node) {
-                eprintln!("Status request failed: {}", e);
+                tracing::warn!("Status request failed: {}", e);
             }
         }
     })
@@ -57,7 +57,7 @@ fn handle_request<T: Device>(request: Request, node: &Mutex<DeviceNode<T>>) -> R
             request.respond(json_response(body, 200))?;
         }
         Err(e) => {
-            eprintln!("Status unavailable: {}", e);
+            tracing::warn!("Status unavailable: {}", e);
             request.respond(json_response(
                 "{\"error\":\"status unavailable\"}".to_string(),
                 500,

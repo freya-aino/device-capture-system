@@ -52,18 +52,13 @@ impl<T: Device> DeviceNode<T> {
             .lock()
             .map_err(|_| anyhow!("sender lock poisoned"))?
             .start(context)?;
-        let data_chunk_size = sender
-            .lock()
-            .map_err(|_| anyhow!("sender lock poisoned"))?
-            .data_chunk_size();
-
         self.device.start(
             device_config,
             Box::new(move |fp| -> Result<(), Error> {
                 let mut locked_sender = sender
                     .lock()
                     .map_err(|_| anyhow!("sender lock poisoned"))?;
-                locked_sender.send(fp, zmq::DONTWAIT, data_chunk_size)?;
+                locked_sender.send(fp, zmq::DONTWAIT)?;
                 Ok(())
             }),
         )?;

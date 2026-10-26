@@ -19,6 +19,7 @@ fn print_usage() {
 }
 
 fn main() -> Result<(), Error> {
+    tracing_subscriber::fmt::init();
     assert_eq!(OS, "linux", "Unsupported OS: {}", OS);
 
     let (all_cams, all_mics) = get_all_devices()?;

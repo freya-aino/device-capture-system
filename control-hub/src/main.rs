@@ -41,6 +41,7 @@ impl HubConfig {
 }
 
 fn main() -> Result<(), Error> {
+    tracing_subscriber::fmt::init();
     let config = HubConfig::from_env();
 
     println!(

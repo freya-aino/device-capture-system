@@ -13,6 +13,7 @@ fn env_or<T: FromStr>(key: &str, default: T) -> T {
 }
 
 fn main() -> Result<(), Error> {
+    tracing_subscriber::fmt::init();
     let hub_ip: Ipv4Addr = env_or("HUB_IP", Ipv4Addr::new(127, 0, 0, 1));
     let hub_port: u16 = env_or("HUB_PORT", 5556);
     let queue_size: u32 = env_or("CLIENT_QUEUE_SIZE", 128);
