@@ -30,7 +30,8 @@ streams, keep them in sync, and expose them to clients.
 ```
 
 Current implementation note: `control-hub` forwards **one** producer endpoint to consumers; true
-multi-producer fan-in is planned (see [TODO](#todo)).
+multi-producer fan-in is planned (see [TODO](#todo)). The REST API shown in the diagram is planned and
+not implemented yet.
 
 ### Crates
 
@@ -58,8 +59,12 @@ subscribe to all topics, and the high-water mark on both sides is set from `queu
 
 Payload formats:
 
-- **Camera** – raw v4l2 buffer in the negotiated FourCC (default `YUYV`), `frame_shape = [width, height]`.
-- **Microphone** – interleaved `S16LE` samples as bytes, `frame_shape = [buffer_size, 2]`.
+- **Camera** – raw v4l2 buffer in the FourCC of the requested config (default `YUYV`),
+  `frame_shape = [width, height]` from that config. The driver may negotiate a different format; the
+  code does not yet read the negotiated format back (see `CODE_REVIEW.md` §4.7).
+- **Microphone** – interleaved `S16LE` samples as bytes. `frame_shape` is currently `[buffer_size, 2]`
+  regardless of the channel count, which is only correct for stereo; for the default mono config the
+  shape should be `[buffer_size, 1]` (see `CODE_REVIEW.md` §4.8).
   Use `FramePacket::decode_to_i16_le` to get `i16` samples back.
 
 ## Requirements
@@ -98,6 +103,11 @@ cargo run -p control-hub
 cargo run -p access-client            # connects to :5556 and prints frames
 ```
 
+For a multi-host setup, the `<hub_ip> <hub_port>` arguments of `device-node run` are the address the
+producer's PUB socket **binds** to, not the hub's address. Bind on a local address (for example
+`0.0.0.0 5555`) on the capture machine, and point the hub at that producer with `HUB_PRODUCER_IP` and
+`HUB_PRODUCER_PORT`. Renaming these arguments is still open.
+
 ## Tests
 
 ```bash
@@ -116,8 +126,9 @@ abort in restricted/sandboxed environments. Prefer installing the system `libzmq
 - Cameras are discovered by globbing `/dev/video*`; the device id is the path and the name comes
   from the v4l2 capability `card` string. Available resolutions / frame intervals can be queried
   with `Device::get_configs`.
-- Microphones are discovered through ALSA PCM hints, skipping playback-only and virtual entries
-  (`default`, `null`, `sysdefault`, `pipewire`, …).
+- Microphones are discovered through ALSA PCM hints. The filter that is meant to skip playback-only
+  and virtual entries (`default`, `null`, `sysdefault`, `pipewire`, …) is currently not working: it
+  drops real capture devices and keeps some virtual ones (see `CODE_REVIEW.md` §4.3).
 - Make sure your user can access the devices, e.g. it is in the `video` and `audio` groups.
 
 Defaults used by `device-node` (see `device-node/src/helper.rs`):
@@ -155,10 +166,15 @@ use std::net::Ipv4Addr;
 let mut receiver = Receiver::new(Ipv4Addr::new(127, 0, 0, 1), 5555, 128, 1024);
 receiver.start(&zmq::Context::new())?;
 
-while let Some(packet) = receiver.receive(zmq::DONTWAIT)? {
-    println!("{} bytes from {}", packet.data.len(), packet.frame_info.device_info.name);
+loop {
+    if let Some(packet) = receiver.receive(0)? {
+        println!("{} bytes from {}", packet.data.len(), packet.frame_info.device_info.name);
+    }
 }
 ```
+
+`receive(0)` blocks until a frame arrives. `receive(zmq::DONTWAIT)` returns `None` at once when no
+frame is queued, so it cannot be used as a loop condition.
 
 ## TODO
 
