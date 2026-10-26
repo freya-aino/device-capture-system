@@ -67,18 +67,38 @@ impl Receiver {
 
         match socket.recv_multipart(zmq_flags) {
             Ok(parts) => {
-                assert!(parts.len() >= 2, "Expected 2 or more parts in the message.");
+                if parts.len() < 2 {
+                    eprintln!(
+                        "Dropping malformed frame: expected 2 or more parts, got {}.",
+                        parts.len()
+                    );
+                    return Ok(None);
+                }
 
-                let mut frame_information = FramePacketInformation::deserialize(&parts[0]).unwrap();
-                assert!(
-                    frame_information.tx_timestamp.is_some(),
-                    "tx_timestamp is not set"
-                );
-                frame_information.rx_timestamp = Some(SystemTime::now());
+                let mut frame_information = match FramePacketInformation::deserialize(&parts[0]) {
+                    Ok(info) => info,
+                    Err(e) => {
+                        eprintln!("Dropping frame with undecodable header: {}", e);
+                        return Ok(None);
+                    }
+                };
+                let tx_timestamp = match frame_information.tx_timestamp {
+                    Some(tx) => tx,
+                    None => {
+                        eprintln!("Dropping frame without tx_timestamp.");
+                        return Ok(None);
+                    }
+                };
+
+                let rx_timestamp = SystemTime::now();
+                frame_information.rx_timestamp = Some(rx_timestamp);
                 let data = parts[1..].concat().into_boxed_slice();
 
                 self.0.status = ConnectionStatus::Active;
                 self.0.update_stats(data.len() as u64);
+                if let Ok(latency) = rx_timestamp.duration_since(tx_timestamp) {
+                    self.0.stats.record_latency(latency);
+                }
 
                 return Ok(Some(FramePacket::new(frame_information, data)));
             }
