@@ -10,6 +10,7 @@ use shared::{
     FramePacketInformation,
 };
 use v4l::buffer::Type;
+use v4l::capability::Flags;
 use v4l::frameinterval::FrameIntervalEnum;
 use v4l::{FourCC, Fraction};
 // use v4l::video::capture::Parameters;
@@ -24,8 +25,11 @@ pub struct V4lCameraDevice {
 
 impl V4lCameraDevice {
     pub fn new(system_path: String) -> Result<Self, Error> {
-        let dev = v4l::Device::with_path(&system_path).unwrap();
-        let caps = dev.query_caps().unwrap();
+        let dev = v4l::Device::with_path(&system_path)?;
+        let caps = dev.query_caps()?;
+        if !caps.capabilities.contains(Flags::VIDEO_CAPTURE) {
+            return Err(anyhow!("{} is not a video capture device", system_path));
+        }
         Ok(V4lCameraDevice {
             device_info: DeviceInformation {
                 id: system_path,
@@ -46,10 +50,11 @@ impl V4lCameraDevice {
 
         let mut devices = Vec::<V4lCameraDevice>::new();
         for dp in device_paths.iter() {
-            devices.push(match dp.clone().into_string() {
-                Ok(str_path) => V4lCameraDevice::new(str_path)?,
-                Err(os_path) => V4lCameraDevice::new(os_path.to_string_lossy().to_string())?,
-            })
+            let path = dp.to_string_lossy().to_string();
+            match V4lCameraDevice::new(path.clone()) {
+                Ok(device) => devices.push(device),
+                Err(e) => eprintln!("Skipping {}: {}", path, e),
+            }
         }
         Ok(devices)
     }
@@ -128,8 +133,8 @@ impl Device for V4lCameraDevice {
         callback: Box<dyn Fn(FramePacket) -> Result<(), Error> + Send + 'static>,
     ) -> Result<JoinHandle<Result<(), Error>>, Error> {
         assert!(
-            self.device_status() == &DeviceStatus::Available,
-            "Camera is not in available status"
+            self.device_status() != &DeviceStatus::Running,
+            "Camera is already running"
         );
 
         let mut format = self.device.format().expect("Failed to get device format");
@@ -161,8 +166,8 @@ impl Device for V4lCameraDevice {
         );
 
         let mut stream =
-            v4l::io::mmap::Stream::with_buffers(&mut self.device, Type::VideoCapture, 128)
-                .expect("Failde to create Stream");
+            v4l::io::mmap::Stream::with_buffers(&mut self.device, Type::VideoCapture, 4)
+                .expect("Failed to create Stream");
 
         // if let Some(timeout) = timeout {
         //     stream.set_timeout(timeout);
@@ -214,13 +219,16 @@ impl Device for V4lCameraDevice {
             Ok(())
         });
 
+        self.device_info.device_status = DeviceStatus::Running;
         Ok(handle)
     }
 
     fn stop(&mut self) -> Result<(), Error> {
         match self.command_tx.take() {
             Some(tx) => {
-                tx.send(DeviceCommand::Stop).unwrap();
+                tx.send(DeviceCommand::Stop)
+                    .map_err(|_| anyhow!("capture thread already stopped"))?;
+                self.device_info.device_status = DeviceStatus::Stopped;
                 Ok(())
             }
             None => Err(anyhow!("tryed closing without tx initialized")),

@@ -72,14 +72,17 @@ impl AlsaMicrophoneDevice {
 
         let mut out_devices = Vec::<AlsaMicrophoneDevice>::new();
         for hint in hints {
-            if !hint.direction.is_none() || hint.direction == Some(Direction::Playback) {
+            if hint.direction == Some(Direction::Playback) {
                 continue;
             }
 
-            let id = hint.name.unwrap();
-            let name = hint.desc.unwrap();
+            let Some(id) = hint.name else {
+                continue;
+            };
+            let name = hint.desc.unwrap_or_else(|| id.clone());
 
-            if id == "default" || id == "null" || id == "pipewire" || id == "sysdefault" {
+            let base = id.split(':').next().unwrap_or(&id);
+            if matches!(base, "default" | "null" | "pipewire" | "sysdefault") {
                 continue;
             }
 
@@ -120,8 +123,8 @@ impl Device for AlsaMicrophoneDevice {
         callback: Box<dyn Fn(FramePacket) -> Result<(), Error> + Send + 'static>,
     ) -> Result<JoinHandle<Result<(), Error>>, Error> {
         assert!(
-            self.device_status() == &DeviceStatus::Available,
-            "Camera is not in available status"
+            self.device_status() != &DeviceStatus::Running,
+            "Microphone is already running"
         );
 
         let device_info = self.device_info.clone();
@@ -167,7 +170,7 @@ impl Device for AlsaMicrophoneDevice {
 
                 // capture buffer (i16 little-endian --> u8 byte level representation)
                 let mut buffer = Vec::<u8>::new();
-                buffer.resize(config.buffer_size as usize * 2, 0);
+                buffer.resize(config.buffer_size as usize * config.channels as usize * 2, 0);
                 io.read_exact(&mut buffer)?;
 
                 let fp = FramePacket::new(
@@ -175,7 +178,7 @@ impl Device for AlsaMicrophoneDevice {
                         device_info: device_info.clone(),
                         rx_timestamp: None,
                         tx_timestamp: None,
-                        frame_shape: vec![config.buffer_size, 2],
+                        frame_shape: vec![config.buffer_size, config.channels as u32],
                     },
                     buffer.into_boxed_slice(),
                 );
@@ -188,13 +191,16 @@ impl Device for AlsaMicrophoneDevice {
             io.flush()?;
             Ok(())
         });
+        self.device_info.device_status = DeviceStatus::Running;
         Ok(handle)
     }
 
     fn stop(&mut self) -> Result<(), Error> {
         match self.command_tx.take() {
             Some(tx) => {
-                tx.send(DeviceCommand::Stop).unwrap();
+                tx.send(DeviceCommand::Stop)
+                    .map_err(|_| anyhow!("capture thread already stopped"))?;
+                self.device_info.device_status = DeviceStatus::Stopped;
                 Ok(())
             }
             None => Err(anyhow!(
