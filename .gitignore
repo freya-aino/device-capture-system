@@ -35,3 +35,9 @@ Thumbs.db
 *.so
 *.dylib
 *.dll
+
+# devenv
+.devenv*
+devenv.local.nix
+devenv.local.yaml
+.direnv
