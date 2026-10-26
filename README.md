@@ -1,30 +1,188 @@
 # Device Capture System
 
+A Rust workspace for capturing synchronized video and audio from multiple machines and streaming
+the raw frames over the network.
+
+Cameras are captured through **v4l2**, microphones through **ALSA**, and every captured frame is
+published as a chunked **ZeroMQ** multipart message. A central hub is intended to collect those
+streams, keep them in sync, and expose them to clients.
+
+> **Status: early development.** The capture layer (`devices`) and transport layer (`networking`)
+> are implemented. `device-node` can list devices and publish either a camera or microphone stream.
+> `control-hub` currently forwards a **single producer endpoint** to any number of consumers
+> (XSUB/XPUB proxy). True multi-producer fan-in, sync/calibration, and HTTP APIs are not
+> implemented yet. `access-client` can subscribe to the hub and print frames. See [TODO](#todo).
+
+## Architecture
+
+```
+  ┌──────────────────────┐        ZMQ PUB        ┌──────────────┐
+  │ device-node (host A) │ ───── frames ───────► │              │
+  │  v4l2 cam + ALSA mic │                       │ control-hub  │ ◄── REST
+  └──────────────────────┘                       │  XSUB ─ XPUB │
+  ┌──────────────────────┐                       │              │
+  │ device-node (host B) │ ───── frames ───────► │              │
+  └──────────────────────┘                       └──────┬───────┘
+                                                        │ ZMQ SUB
+                                                 ┌──────▼───────┐
+                                                 │ access-client│
+                                                 └──────────────┘
+```
+
+Current implementation note: `control-hub` forwards **one** producer endpoint to consumers; true
+multi-producer fan-in is planned (see [TODO](#todo)).
+
+### Crates
+
+| Crate           | Kind | Description                                                                                                     |
+|-----------------|------|-----------------------------------------------------------------------------------------------------------------|
+| `shared`        | lib  | Common data model: the `Device` / `DeviceConfig` traits, `DeviceInformation`, `FramePacket(Information)`, `ConnectionStatus`, `ConnectionStats`. Frame metadata is (de)serialized with `bincode`. |
+| `devices`       | lib  | Concrete capture devices: `V4lCameraDevice` (v4l2 mmap streaming) and `AlsaMicrophoneDevice` (ALSA PCM capture). Each runs its capture loop on its own thread and pushes `FramePacket`s into a user callback. |
+| `networking`    | lib  | ZeroMQ transport: `Connection` (socket lifecycle + stats), `Sender` (PUB), `Receiver` (SUB) and `Proxy` (XSUB↔XPUB forwarder). |
+| `device-node`   | bin  | Runs on each capture machine: lists devices and can publish one camera/mic stream to a hub (HTTP control API is planned). |
+| `control-hub`   | bin  | Central process: currently runs the XSUB/XPUB ZMQ proxy for fan-in/fan-out (HTTP API, sync and calibration are planned). |
+| `access-client` | bin  | Consumer-side client used to subscribe to the hub's aggregated stream (currently prints received frames). |
+
+### Frame transport
+
+A frame is sent as a single ZMQ multipart message:
+
+| Part    | Content                                                            |
+|---------|--------------------------------------------------------------------|
+| `0`     | `bincode`-encoded `FramePacketInformation` (device info, frame shape, tx timestamp) |
+| `1..n`  | The raw frame bytes, split into `data_chunk_size` chunks            |
+
+The sender stamps `tx_timestamp` just before sending; the receiver stamps `rx_timestamp` on
+arrival and re-joins the data chunks, which makes per-frame latency measurable. Subscribers
+subscribe to all topics, and the high-water mark on both sides is set from `queue_size`.
+
+Payload formats:
+
+- **Camera** – raw v4l2 buffer in the negotiated FourCC (default `YUYV`), `frame_shape = [width, height]`.
+- **Microphone** – interleaved `S16LE` samples as bytes, `frame_shape = [buffer_size, 2]`.
+  Use `FramePacket::decode_to_i16_le` to get `i16` samples back.
+
+## Requirements
+
+- Linux (the capture code is Linux-only; `device-node` asserts this at startup)
+- Rust toolchain with **edition 2024** support (Rust 1.85+)
+- System libraries:
+
+  ```bash
+  # Debian / Ubuntu
+  sudo apt install build-essential pkg-config libasound2-dev libzmq3-dev libv4l-dev clang libclang-dev
+
+  # Fedora
+  sudo dnf install gcc pkgconf-pkg-config alsa-lib-devel zeromq-devel libv4l-devel clang clang-devel
+
+  # Arch
+  sudo pacman -S base-devel pkgconf alsa-lib zeromq v4l-utils clang
+  ```
+
+  Without `alsa.pc` / `libzmq` headers on the `pkg-config` path the build fails in the
+  `alsa-sys` / `zmq-sys` build scripts. The `v4l` dependency uses `bindgen` and needs a working
+  `libclang` installation; if `bindgen` can't find it, set `LIBCLANG_PATH` to your libclang dir.
+
+## Build & Run
+
+```bash
+cargo build --workspace
+cargo run -p device-node              # defaults to `list`
+cargo run -p device-node -- list
+
+# One-machine demo (3-process topology):
+# - `device-node` PUB binds on 127.0.0.1:5555
+# - `control-hub` XSUB connects to 127.0.0.1:5555 and XPUB binds on :5556
+cargo run -p device-node -- run mic 0 127.0.0.1 5555
+cargo run -p control-hub
+cargo run -p access-client            # connects to :5556 and prints frames
+```
+
+## Tests
+
+```bash
+cargo test --workspace
+cargo test -p networking      # send/receive + proxy fan-in/out
+```
+
+The transport-layer tests are hardware-free and exercise the `Sender`/`Receiver` round trip and
+`Proxy` forwarding. Device capture tests require an actual camera/microphone.
+
+Note: if `libzmq` is missing and Cargo falls back to building `zeromq-src`, test execution may
+abort in restricted/sandboxed environments. Prefer installing the system `libzmq` dev package.
+
+## Device Setup
+
+- Cameras are discovered by globbing `/dev/video*`; the device id is the path and the name comes
+  from the v4l2 capability `card` string. Available resolutions / frame intervals can be queried
+  with `Device::get_configs`.
+- Microphones are discovered through ALSA PCM hints, skipping playback-only and virtual entries
+  (`default`, `null`, `sysdefault`, `pipewire`, …).
+- Make sure your user can access the devices, e.g. it is in the `video` and `audio` groups.
+
+Defaults used by `device-node` (see `device-node/src/helper.rs`):
+
+| Device     | Default configuration                                   |
+|------------|----------------------------------------------------------|
+| Camera     | 1920x1080, 30 fps (`1/30`), FourCC `YUYV`                 |
+| Microphone | 16 kHz, 1 channel, 512-sample buffer, `S16LE`             |
+
+## Usage
+
+Capturing from a microphone and publishing the frames:
+
+```rust
+use devices::AlsaMicrophoneDevice;
+use device_node::DeviceNode;
+use shared::MicrophoneConfig;
+use std::net::Ipv4Addr;
+
+let mic = AlsaMicrophoneDevice::get_all_alsa_microphones()?.remove(0);
+let mut node = DeviceNode::new(mic, Ipv4Addr::new(0, 0, 0, 0), 5555, 128, 1024);
+
+node.start(
+    MicrophoneConfig { sample_rate: 16000, channels: 1, buffer_size: 512 },
+    &zmq::Context::new(),
+)?;
+```
+
+Receiving the frames on the other side:
+
+```rust
+use networking::Receiver;
+use std::net::Ipv4Addr;
+
+let mut receiver = Receiver::new(Ipv4Addr::new(127, 0, 0, 1), 5555, 128, 1024);
+receiver.start(&zmq::Context::new())?;
+
+while let Some(packet) = receiver.receive(zmq::DONTWAIT)? {
+    println!("{} bytes from {}", packet.data.len(), packet.frame_info.device_info.name);
+}
+```
+
 ## TODO
-- [ ] Device Node CLI
+
+- [x] Device Node CLI
+  - [x] List devices
+  - [x] Run a single device (camera/mic) and publish frames
   - [ ] Generate / Save Config
 - [ ] Device Node HTTP Server
   - [ ] Device Status
   - [ ] StartDevice / StopDevice / RestartDevice
-- [ ] Control Hub 
-  - [ ] Load Config and Initialize ZMQ
+- [x] `DeviceNode` support for cameras + microphones
+- [ ] Control Hub
+  - [x] Load bind/connect config from env and run a ZMQ proxy
+  - [ ] Multi-producer fan-in (currently forwards only one producer endpoint)
   - [ ] Sync
   - [ ] Calibrate
     - [ ] choose & implement general reference point detection model
-    - [ ] transfere calibration code from python-opencv
+    - [ ] transfer calibration code from python-opencv
 - [ ] Client
+  - [x] Minimal Rust access client (`access-client`) that receives frames from the hub
   - [ ] write python client library
-    - [ ] DeviceSystem(hub_ip, hub_port)
-    - [ ] DeviceSystem.get_frame() -> generator 
+    - [ ] `DeviceSystem(hub_ip, hub_port)`
+    - [ ] `DeviceSystem.get_frame() -> generator`
 
-## Device Node
+## License
 
-- Device Code running `alsa` and `v4l2` to capture devices.
-- Open ZMQ Socket for transmitting raw video/audio data
-- REST API for querying (device parameters) and Controling device capture
-
-## Descriptio
-
-## Device Setup
-
-## Usage
+MIT — see [LICENSE](LICENSE).
