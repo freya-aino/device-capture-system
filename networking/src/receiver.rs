@@ -20,6 +20,18 @@ impl Receiver {
         ))
     }
 
+    pub fn new_endpoint(
+        endpoint: impl Into<String>,
+        queue_size: u32,
+        data_chunk_size: u32,
+    ) -> Self {
+        Receiver(Connection::new_endpoint(
+            endpoint,
+            queue_size,
+            data_chunk_size,
+        ))
+    }
+
     pub fn connection_status(&self) -> &ConnectionStatus {
         &self.0.status
     }

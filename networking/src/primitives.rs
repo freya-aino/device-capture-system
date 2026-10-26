@@ -2,7 +2,6 @@
 // use bincode::{Decode, Encode, config};
 // use std::time::SystemTime;
 
-
 // #[derive(Debug, PartialEq)]
 // pub enum ConnectionStatus {
 //     Created,
