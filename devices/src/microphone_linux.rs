@@ -8,7 +8,6 @@ use flume::{Sender, TryRecvError};
 use std::{
     io::{Read, Write},
     thread::{JoinHandle, spawn},
-    time::Instant,
 };
 
 use shared::{
@@ -153,19 +152,13 @@ impl Device for AlsaMicrophoneDevice {
             println!("Microphone started");
 
             loop {
-                let timing = Instant::now();
-
                 match rx.try_recv() {
                     Err(err) => match err {
                         TryRecvError::Disconnected => break,
                         TryRecvError::Empty => {}
                     },
-                    c => match c.unwrap() {
-                        DeviceCommand::Stop => {
-                            break;
-                        }
-                        _ => {}
-                    },
+                    Ok(DeviceCommand::Stop) => break,
+                    Ok(_) => {}
                 }
 
                 // capture buffer (i16 little-endian --> u8 byte level representation)
@@ -184,9 +177,6 @@ impl Device for AlsaMicrophoneDevice {
                 );
 
                 callback(fp)?;
-
-                let elapsed = timing.elapsed();
-                println!("Frame capture took: {:?}", elapsed);
             }
             io.flush()?;
             Ok(())
