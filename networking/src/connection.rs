@@ -95,7 +95,7 @@ impl Connection {
         let soc = match self.socket.take() {
             Some(soc) => soc,
             None => {
-                println!("Socket is already closed.");
+                tracing::debug!("Socket is already closed.");
                 return Ok(());
             }
         };

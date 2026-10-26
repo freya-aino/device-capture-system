@@ -44,7 +44,7 @@ fn frame_published_to_hub_reaches_access_client() {
     sleep(Duration::from_millis(500));
 
     let in_fp = generate_dummy_frame_packet();
-    producer.send(in_fp.clone(), zmq::DONTWAIT, 1024).unwrap();
+    producer.send(in_fp.clone(), zmq::DONTWAIT).unwrap();
 
     let received = client
         .next_frame(Duration::from_secs(2))

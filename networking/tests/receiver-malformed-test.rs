@@ -16,7 +16,11 @@ fn valid_parts(payload: &[u8]) -> Vec<Vec<u8>> {
         tx_timestamp: Some(SystemTime::now()),
         frame_shape: vec![2, 2],
     };
-    vec![info.serialize().unwrap(), payload.to_vec()]
+    vec![
+        info.serialize().unwrap(),
+        0u64.to_le_bytes().to_vec(),
+        payload.to_vec(),
+    ]
 }
 
 #[test]

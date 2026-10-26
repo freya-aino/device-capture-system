@@ -6,16 +6,17 @@ use super::Connection;
 use shared::{ConnectionStatus, FramePacket};
 
 // #[derive(Clone)]
-pub struct Sender(Connection);
+pub struct Sender {
+    connection: Connection,
+    next_sequence: u64,
+}
 
 impl Sender {
     pub fn new(host_address: Ipv4Addr, port: u16, queue_size: u32, data_chunk_size: u32) -> Self {
-        Sender(Connection::new(
-            host_address,
-            port,
-            queue_size,
-            data_chunk_size,
-        ))
+        Sender {
+            connection: Connection::new(host_address, port, queue_size, data_chunk_size),
+            next_sequence: 0,
+        }
     }
 
     pub fn new_endpoint(
@@ -23,35 +24,30 @@ impl Sender {
         queue_size: u32,
         data_chunk_size: u32,
     ) -> Self {
-        Sender(Connection::new_endpoint(
-            endpoint,
-            queue_size,
-            data_chunk_size,
-        ))
+        Sender {
+            connection: Connection::new_endpoint(endpoint, queue_size, data_chunk_size),
+            next_sequence: 0,
+        }
     }
 
     pub fn connection_status(&self) -> &ConnectionStatus {
-        &self.0.status
+        &self.connection.status
     }
 
     pub fn data_chunk_size(&self) -> u32 {
-        self.0.data_chunk_size
+        self.connection.data_chunk_size
     }
 
     pub fn start(&mut self, context: &Context) -> Result<(), Error> {
-        self.0.open(context, PUB)
+        self.connection.open(context, PUB)
     }
 
     pub fn stop(&mut self) -> Result<(), Error> {
-        self.0.close()
+        self.connection.close()
     }
 
-    pub fn send(
-        &mut self,
-        frame_packet: FramePacket,
-        zmq_flags: i32,
-        data_chunk_size: u32,
-    ) -> Result<(), Error> {
+    pub fn send(&mut self, frame_packet: FramePacket, zmq_flags: i32) -> Result<(), Error> {
+        let data_chunk_size = self.connection.data_chunk_size;
         assert!(
             data_chunk_size > 0,
             "Data chunk size must be greater than 0."
@@ -61,22 +57,25 @@ impl Sender {
         frame_info.tx_timestamp = Some(SystemTime::now());
 
         let serialized_info = frame_info.serialize()?;
+        let serialized_sequence = self.next_sequence.to_le_bytes();
         let data = frame_packet.data.as_ref();
 
         let mut chunked_message: Vec<&[u8]> = Vec::new();
 
-        // append data to chunked message
+        // append sequence number and data to chunked message
         chunked_message.push(&serialized_info);
+        chunked_message.push(&serialized_sequence);
         for chunk in data.chunks(data_chunk_size as usize) {
             chunked_message.push(chunk);
         }
 
-        self.0
+        self.connection
             .get_socket()?
             .send_multipart(&chunked_message, zmq_flags)?;
 
-        self.0.status = ConnectionStatus::Active;
-        self.0
+        self.next_sequence += 1;
+        self.connection.status = ConnectionStatus::Active;
+        self.connection
             .update_stats((serialized_info.len() + frame_packet.data.len()) as u64);
         return Ok(());
     }

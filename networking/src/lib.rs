@@ -1,5 +1,4 @@
 mod connection;
-mod primitives;
 mod proxy;
 mod receiver;
 mod sender;

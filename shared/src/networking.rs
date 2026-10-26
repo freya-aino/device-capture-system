@@ -198,4 +198,32 @@ mod tests {
 
         assert!((stats.latency_secs() - 0.25).abs() < 1e-6);
     }
+
+    #[test]
+    fn connection_stats_fps_and_bitrate_are_positive_after_several_frames() {
+        let mut stats = ConnectionStats::new();
+        stats.update(100);
+        std::thread::sleep(Duration::from_millis(5));
+        stats.update(100);
+        std::thread::sleep(Duration::from_millis(5));
+        stats.update(100);
+
+        assert!(stats.fps() > 0.0 && stats.fps().is_finite());
+        assert!(stats.bitrate_bps() > 0.0 && stats.bitrate_bps().is_finite());
+    }
+
+    #[test]
+    fn connection_stats_bitrate_is_bits_per_frame_interval_times_fps() {
+        let mut stats = ConnectionStats::new();
+        stats.update(100);
+        std::thread::sleep(Duration::from_millis(5));
+        stats.update(100);
+        std::thread::sleep(Duration::from_millis(5));
+        stats.update(100);
+
+        // bitrate = bytes * 8 / span and fps = (frames - 1) / span, so the ratio is fixed
+        let bits_per_frame = stats.bitrate_bps() / stats.fps();
+        let expected = (300.0 * 8.0) / 2.0;
+        assert!((bits_per_frame - expected).abs() / expected < 1e-3);
+    }
 }

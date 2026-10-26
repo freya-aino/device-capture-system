@@ -34,7 +34,7 @@ fn main() -> anyhow::Result<()> {
             frame_shape: vec![2, 2],
         };
         let data = vec![i as u8, 1, 2, 3].into_boxed_slice();
-        producer.send(FramePacket::new(frame_info, data), zmq::DONTWAIT, 1024)?;
+        producer.send(FramePacket::new(frame_info, data), zmq::DONTWAIT)?;
         sleep(Duration::from_millis(50));
     }
 

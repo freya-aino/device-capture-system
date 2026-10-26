@@ -55,7 +55,7 @@ mod tests {
         sleep(Duration::from_millis(500));
 
         let in_fp = generate_dummy_frame_packet();
-        sender.send(in_fp.clone(), zmq::DONTWAIT, 1024).unwrap();
+        sender.send(in_fp.clone(), zmq::DONTWAIT).unwrap();
 
         sleep(Duration::from_millis(500));
 
