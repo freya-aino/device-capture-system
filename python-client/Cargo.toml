@@ -1,0 +1,18 @@
+[package]
+name = "device-system-py"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "device_system"
+crate-type = ["cdylib"]
+
+[dependencies]
+access-client = { path = "../access-client" }
+shared = { path = "../shared" }
+anyhow = "1.0.98"
+pyo3 = { version = "0.30.1", features = ["extension-module"] }
+
+[dev-dependencies]
+networking = { path = "../networking" }
+zmq = "0.10.0"

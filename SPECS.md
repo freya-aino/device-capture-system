@@ -160,7 +160,7 @@ re-export, §4.1 there).
 | `devices::AlsaMicrophoneDevice` | ⚠️ Compiles, enumerates — but the direction filter is inverted (keeps duplex-only hints, drops real capture devices) and the virtual-device filter does exact-string match against `sysdefault:CARD=PCH`-style ids, so it never matches. Net effect observed on review hardware: real mics dropped, virtual `sysdefault` kept. Buffer sizing also ignores channel count | Producer (mic) |
 | `devices::microphone_windows` | ❌ Empty file | Producer on Windows |
 | `devices::manager` | ⬜ Fully commented out | n/a (dead) |
-| `device-node::DeviceNode` | ⚠️ Generic over `T: Device`, so cameras and microphones use the same wiring. `status()` still always reports `Available` (see `DeviceStatus` below). No HTTP control API (start/stop/status) | Producer (no remote control) |
+| `device-node::DeviceNode` | ✅ Generic over `T: Device`, so cameras and microphones use the same wiring. `status()` reports real device and connection state, served as JSON on `GET /status`. No remote start/stop control yet | Producer (status observable; no remote control) |
 | `control-hub` | ⚠️ Runs `Proxy` from `HUB_*` environment config with Ctrl+C shutdown. No sync/calibration | Syncer (missing) |
 | `access-client` | ✅ `AccessClient` (`connect`, `next_frame`, `run`, `disconnect`) plus a CLI binary. Covered by `access-client-test.rs` and the hub pipeline test. No Python binding | Consumer (Python API missing) |
 | `DeviceStatus` | ❌ Set to `Available` at construction and never updated again anywhere — the `assert!(status == Available)` guards in `start()` can never fire (so `start()` can be called twice, leaking the first capture thread), and any future `/status` endpoint would be meaningless | All roles' observability |
@@ -238,8 +238,9 @@ done; the remaining work is the capture and receive-path fixes.
    with a Nix shell providing libclang; the hardware itself has not been exercised.
 5. Remove panics on the network receive path (`unwrap()`/`assert!` on peer-controlled data in
    `Receiver::receive`, `FramePacketInformation::deserialize`).
-6. ✅ Done for the devices: camera and microphone set `DeviceStatus` to `Running` on start and
-   `Stopped` on stop. Still open: the planned `/status` HTTP endpoint on `device-node`.
+6. ✅ Done: camera and microphone set `DeviceStatus` to `Running` on start and `Stopped` on stop,
+   and `device-node run` serves `GET /status` (JSON with device and connection state) on
+   `DEVICE_NODE_STATUS_ADDR` (default `127.0.0.1:8080`). Covered by `device-node/tests/status-test.rs`.
 7. ✅ Done: `DeviceNode` is generic over `T: Device`, so producer hosts can publish cameras.
 8. ✅ Partly done: camera buffer count reduced from 128 to 4. Still open: validating the
    negotiated v4l2 format instead of trusting the request.
@@ -247,8 +248,9 @@ done; the remaining work is the capture and receive-path fixes.
    instead of `SystemTime` for interval math.
 10. Add sync (time alignment across producers) and calibration to `control-hub`, per the README
     TODO — this is the one piece of §2's "Syncer" role with no code today.
-11. Only after 1–3 are solid: build the Python client (§5). Items 1–3 are solid now, so this is
-    unblocked.
+11. ✅ Done: Python client (§5) as a PyO3 extension in `python-client/`. `DeviceSystem(hub_ip, hub_port)`
+    with `get_frame()` / `next_frame()` wraps `AccessClient`, so Python shares the Rust wire decoder.
+    Verified end to end against the loopback publisher example. Not packaged yet (no maturin config).
 
 ---
 
