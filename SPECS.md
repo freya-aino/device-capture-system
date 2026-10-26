@@ -3,7 +3,7 @@
 This document specifies the intended design of the system: the deployment topologies it must
 support, the roles each component plays, the wire protocol, and the current implementation state
 against that spec. It consolidates the architecture described in `README.md`/`AGENT.md` with the
-findings in `CODE_REVIEW.md` (2026-10-25, reviewed commit `9c2ff25`).
+findings in `CODE_REVIEW.md` (updated 2026-10-26, reviewed commit `eb9e36c`).
 
 Status markers used throughout: ✅ done · ⚠️ partial/broken · ❌ not implemented.
 
@@ -112,8 +112,8 @@ no log or counter (§6, and CODE_REVIEW §3) — is the one real cost of this ch
 instrumented, not papered over by switching transports.
 
 **Conclusion:** ZMQ is architecturally correct for this system's latency goal. The problem today
-is that the fan-in/fan-out proxy built on top of it doesn't work yet (§6.2), not that the
-transport choice is wrong.
+is that the fan-in/fan-out proxy built on top of it now works (§6.2). The open problems are
+in sync, device capture and the receive path, not in the transport choice.
 
 ---
 
@@ -138,49 +138,48 @@ either is viable:
    a `pyo3` extension module, so the Python client shares the exact Rust implementation and never
    drifts from wire-format changes.
 
-Either path is additive — `access-client/src/main.rs` is currently empty (`fn main() {}`), so
-there is no existing consumer-side behavior to retrofit around. Recommendation: prefer (2) once
-`access-client` has real logic worth sharing, since it removes the risk of the Python decoder
-silently drifting from the Rust wire format after a `shared` change.
+Either path is additive. `access-client` already holds the receive logic (`AccessClient` in
+`access-client/src/lib.rs`), so a binding would wrap existing code. Recommendation: prefer (2),
+since it removes the risk of the Python decoder silently drifting from the Rust wire format after a
+`shared` change.
 
 ---
 
 ## 6. Current implementation state
 
-Condensed from `CODE_REVIEW.md` (commit `9c2ff25`); see that file for full detail, line numbers,
-and the fix the review already applied (the `devices` crate's broken module re-export, §4.1
-there).
+Condensed from `CODE_REVIEW.md` (updated against commit `eb9e36c`); see that file for full detail,
+line numbers, and the fix the review already applied (the `devices` crate's broken module
+re-export, §4.1 there).
 
 | Component | State | Blocks which role(s) |
 |---|---|---|
-| `shared` (data model) | ✅ Works. `ConnectionStats::update` math is wrong (whole-second FPS → `inf`, cumulative-byte "bitrate", mislabeled inter-frame gap as latency; real `tx`/`rx` timestamps go unused) | Observability for all roles |
-| `networking::Connection`/`Sender`/`Receiver` | ✅ Point-to-point works, covered by a real loopback test. `close()` calls `unbind` on a `connect`ed socket and `.unwrap()`s it — panics. Receiver `.unwrap()`s/`assert!`s on attacker-/peer-controlled input | Producer, Consumer |
-| `networking::Proxy` | ❌ Broken: `set_subscribe(&[])` is invalid on `XSUB` (`EINVAL` on `start()`); even if that's fixed, `start()` never calls `zmq::proxy()` or spawns a forwarding thread, so it forwards nothing | **Receiver + Accumulator — the hub's core function doesn't exist yet** |
+| `shared` (data model) | ⚠️ Works, but `ConnectionStats::update` math is wrong (whole-second FPS → `inf`, cumulative-byte "bitrate", mislabeled inter-frame gap as latency; real `tx`/`rx` timestamps go unused) | Observability for all roles |
+| `networking::Connection`/`Sender`/`Receiver` | ⚠️ Point-to-point works, covered by loopback tests. `close()` now uses `disconnect` and propagates errors. Receiver still `.unwrap()`s/`assert!`s on attacker-/peer-controlled input | Producer, Consumer |
+| `networking::Proxy` | ✅ Works: `start()` runs `zmq::proxy_steerable` on a forwarding thread; `stop()` terminates it cleanly through a control socket. Covered by `proxy-test.rs` and the hub pipeline test | Receiver + Accumulator |
 | `devices::V4lCameraDevice` | ⚠️ Compiles, enumerates (no capability filtering — lists non-capture `/dev/video*` nodes as cameras). Allocates 128 mmap buffers (~512MB/cam, ~4s latency at 30fps; 3–4 is typical). `frame_shape` taken from requested config, not the negotiated format | Producer (camera) |
 | `devices::AlsaMicrophoneDevice` | ⚠️ Compiles, enumerates — but the direction filter is inverted (keeps duplex-only hints, drops real capture devices) and the virtual-device filter does exact-string match against `sysdefault:CARD=PCH`-style ids, so it never matches. Net effect observed on review hardware: real mics dropped, virtual `sysdefault` kept. Buffer sizing also ignores channel count | Producer (mic) |
 | `devices::microphone_windows` | ❌ Empty file | Producer on Windows |
 | `devices::manager` | ⬜ Fully commented out | n/a (dead) |
-| `device-node::DeviceNode` | ⚠️ Only implemented for `AlsaMicrophoneDevice` (concrete `impl` block, despite being generic over `T: Device`) — cameras cannot be published at all. No HTTP control API (start/stop/status) | Producer (camera unusable; no remote control) |
-| `control-hub` | ❌ Stub — `main()` just sleeps 100s. No config loading, no `Proxy` wiring, no sync/calibration | **Receiver, Accumulator, Syncer — none exist as a runnable process** |
-| `access-client` | ❌ Stub — `fn main() {}` | Consumer |
+| `device-node::DeviceNode` | ⚠️ Generic over `T: Device`, so cameras and microphones use the same wiring. `status()` still always reports `Available` (see `DeviceStatus` below). No HTTP control API (start/stop/status) | Producer (no remote control) |
+| `control-hub` | ⚠️ Runs `Proxy` from `HUB_*` environment config with Ctrl+C shutdown. No sync/calibration | Syncer (missing) |
+| `access-client` | ✅ `AccessClient` (`connect`, `next_frame`, `run`, `disconnect`) plus a CLI binary. Covered by `access-client-test.rs` and the hub pipeline test. No Python binding | Consumer (Python API missing) |
 | `DeviceStatus` | ❌ Set to `Available` at construction and never updated again anywhere — the `assert!(status == Available)` guards in `start()` can never fire (so `start()` can be called twice, leaking the first capture thread), and any future `/status` endpoint would be meaningless | All roles' observability |
 
 ### 6.1 What already satisfies the topology requirement (§3)
 The *shape* of the deployment flexibility is already real: `Sender::new`/`Receiver::new`/
 `Proxy::new` take `Ipv4Addr` + `u16` with no hardcoded host assumptions, and nothing in
 `device-node`/`control-hub`/`access-client` assumes colocation or separation. Once the stubs in
-§6.2 are filled in, every topology in §3 is reachable purely through config.
+§6.2 are wired up, the transport path of every topology in §3 is reachable through config alone.
+Sync (§2 Syncer) is still missing.
 
 ### 6.2 What blocks it today
-1. `networking::Proxy` doesn't forward data (the XSUB subscribe bug + missing `zmq::proxy()`
-   call) — this is the single highest-priority fix, since every multi-producer topology (§3.2,
-   §3.3, and even §3.1 with >1 device) depends on the hub actually aggregating.
-2. `control-hub` has no logic at all — it needs to load config, open `Proxy`, and (per the
-   README TODO) eventually run sync/calibration.
-3. `access-client` has no logic at all — it needs to open a `Receiver` against the hub and expose
-   frames to a caller (and, per §5, eventually a Python-facing API).
-4. `DeviceNode` needs a camera-generic implementation (today hardcoded to
-   `AlsaMicrophoneDevice`) before a producer host can publish both cameras and mics.
+1. ✅ Resolved: `networking::Proxy` forwards data (`proxy_steerable`), and `control-hub` runs it.
+2. ✅ Resolved for the transport path: `control-hub` loads config and runs `Proxy`. Sync and
+   calibration (per the README TODO) are still missing.
+3. ✅ Resolved: `access-client` exposes frames through `AccessClient`. A Python-facing API (§5) is
+   still missing.
+4. ✅ Resolved: `DeviceNode` is generic over `T: Device`. Its `DeviceStatus` still never changes
+   (§6), so the `/status` endpoint is still blocked.
 
 ---
 
@@ -227,30 +226,28 @@ Defaults (`device-node/src/helper.rs`):
 
 ## 8. Recommended build order
 
-Carried over from `CODE_REVIEW.md` §6, reframed against the topology goal: nothing in §3 is
-reachable until the hub exists, so that dominates the order.
+Carried over from `CODE_REVIEW.md` §6, reframed against the topology goal. Items 1–3 and 7 are
+done; the remaining work is the capture and receive-path fixes.
 
-1. Fix `Proxy` (XSUB subscribe bug + add the actual `zmq::proxy()` forwarding) — add a loopback
-   proxy integration test analogous to `networking-test.rs`. This unblocks every multi-device
-   topology.
-2. Build minimal `control-hub` `main()`: load config (bind addresses for producers-in, port for
-   consumers-out), construct and run `Proxy`.
-3. Build minimal `access-client` `main()`: connect a `Receiver` to the hub, expose frames via a
-   simple callback/generator API — this is the foundation §5's Python bindings sit on top of.
+1. ✅ Done: fix `Proxy` and add loopback proxy tests (`proxy-test.rs`, hub pipeline test).
+2. ✅ Done: minimal `control-hub` `main()` loads config and runs `Proxy`.
+3. ✅ Done: `access-client` connects a `Receiver` to the hub and exposes frames via
+   `AccessClient`. Still open: the Python bindings that sit on top of it (§5).
 4. Fix microphone enumeration (inverted filter, virtual-device string match) and add camera
    capability filtering (`V4L2_CAP_VIDEO_CAPTURE`).
 5. Remove panics on the network receive path (`unwrap()`/`assert!` on peer-controlled data in
    `Receiver::receive`, `FramePacketInformation::deserialize`).
 6. Make `DeviceStatus` actually transition (`Available` → `Running` → `Stopped`), then build the
    planned `/status` HTTP endpoint on `device-node` on top of real state.
-7. Generalize `DeviceNode` beyond `AlsaMicrophoneDevice` so producer hosts can publish cameras.
+7. ✅ Done: `DeviceNode` is generic over `T: Device`, so producer hosts can publish cameras.
 8. Reduce camera buffer count (128 → 3–4) and validate the negotiated v4l2 format instead of
    trusting the request.
 9. Rewrite `ConnectionStats` using the existing `tx_timestamp`/`rx_timestamp` pair and `Instant`
    instead of `SystemTime` for interval math.
 10. Add sync (time alignment across producers) and calibration to `control-hub`, per the README
     TODO — this is the one piece of §2's "Syncer" role with no code today.
-11. Only after 1–3 are solid: build the Python client (§5).
+11. Only after 1–3 are solid: build the Python client (§5). Items 1–3 are solid now, so this is
+    unblocked.
 
 ---
 
