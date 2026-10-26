@@ -55,11 +55,10 @@ impl Receiver {
         );
         assert!(
             !self.0.socket.is_none(),
-            "Trying to receive while socket is None (Status is not correct, this might hint at a previous function having exited unexpetedly)."
+            "Trying to receive while socket is None (Status is not correct, this might hint at a previous function having exited unexpectedly)."
         );
 
         if self.0.status == ConnectionStatus::Paused {
-            println!("Calling receive while connection is paused...");
             return Ok(None);
         }
 

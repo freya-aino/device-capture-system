@@ -51,7 +51,7 @@ pub fn print_all_devices(
 }
 
 pub fn test_alsa_mic(mic: &mut AlsaMicrophoneDevice, seconds: u64) -> Result<(), Error> {
-    println!("piced mic: {:?}", mic.id());
+    println!("picked mic: {:?}", mic.id());
 
     let handle = mic.start(
         DEFAULT_MICROPHONE_CONFIG.clone(),
