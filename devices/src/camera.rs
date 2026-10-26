@@ -52,7 +52,7 @@ impl V4lCameraDevice {
             let path = dp.to_string_lossy().to_string();
             match V4lCameraDevice::new(path.clone()) {
                 Ok(device) => devices.push(device),
-                Err(e) => eprintln!("Skipping {}: {}", path, e),
+                Err(e) => tracing::warn!("Skipping {}: {}", path, e),
             }
         }
         Ok(devices)
@@ -146,7 +146,7 @@ impl Device for V4lCameraDevice {
         let mut params = self.device.params()?;
         params.interval = Fraction::new(config.fps.0, config.fps.1);
 
-        println!(
+        tracing::debug!(
             "Desired camera configurations - {:?}\n{:?}\n{:?}\n",
             self.device_info.name, params, format
         );
@@ -169,7 +169,7 @@ impl Device for V4lCameraDevice {
             ));
         }
 
-        println!(
+        tracing::debug!(
             "Config used by camera - {:?}\n{:?}\n{:?}\n",
             self.device_info.name,
             self.device.format(),
@@ -183,7 +183,7 @@ impl Device for V4lCameraDevice {
         //     stream.set_timeout(timeout);
         // }
 
-        println!("Camera device started");
+        tracing::info!("Camera device started");
 
         let device_information = self.device_info.clone();
 

@@ -1,5 +1,4 @@
 mod camera;
-mod manager;
 
 pub use camera::*;
 
