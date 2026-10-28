@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use anyhow::{Error, Result, anyhow};
-use networking::Proxy;
+use networking::{AlignedRelay, Proxy};
 
 mod status;
 use status::DEFAULT_HUB_STATUS_ADDR;
@@ -17,6 +17,13 @@ struct HubConfig {
     queue_size: u32,
     data_chunk_size: u32,
     status_addr: String,
+    sync: Option<SyncConfig>,
+}
+
+struct SyncConfig {
+    port: u16,
+    devices: Vec<String>,
+    tolerance: Duration,
 }
 
 fn env_or<T: FromStr>(key: &str, default: T) -> T {
@@ -24,6 +31,21 @@ fn env_or<T: FromStr>(key: &str, default: T) -> T {
         .ok()
         .and_then(|v| v.parse::<T>().ok())
         .unwrap_or(default)
+}
+
+/// Parses `HUB_SYNC_DEVICES`, a comma-separated list of device ids that must all appear in a group.
+fn parse_sync_devices(raw: &str) -> Result<Vec<String>> {
+    let devices: Vec<String> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(str::to_string)
+        .collect();
+
+    if devices.is_empty() {
+        return Err(anyhow!("HUB_SYNC_DEVICES is set but contains no device ids"));
+    }
+    Ok(devices)
 }
 
 /// Parses `HUB_PRODUCERS`, a comma-separated list of `ip:port` producer endpoints.
@@ -66,7 +88,26 @@ impl HubConfig {
             queue_size: env_or("HUB_QUEUE_SIZE", 128),
             data_chunk_size: env_or("HUB_DATA_CHUNK_SIZE", 1024),
             status_addr: env_or("HUB_STATUS_ADDR", DEFAULT_HUB_STATUS_ADDR.to_string()),
+            sync: Self::sync_from_env()?,
         })
+    }
+
+    /// Sync is opt-in: it runs only when `HUB_SYNC_PORT` is set, and then needs `HUB_SYNC_DEVICES`.
+    fn sync_from_env() -> Result<Option<SyncConfig>> {
+        let Ok(port) = std::env::var("HUB_SYNC_PORT") else {
+            return Ok(None);
+        };
+        let port: u16 = port
+            .parse()
+            .map_err(|e| anyhow!("invalid HUB_SYNC_PORT {:?}: {}", port, e))?;
+        let devices = parse_sync_devices(&std::env::var("HUB_SYNC_DEVICES").map_err(|_| {
+            anyhow!("HUB_SYNC_PORT is set but HUB_SYNC_DEVICES is missing")
+        })?)?;
+        Ok(Some(SyncConfig {
+            port,
+            devices,
+            tolerance: Duration::from_millis(env_or("HUB_SYNC_TOLERANCE_MS", 20)),
+        }))
     }
 }
 
@@ -106,6 +147,29 @@ fn main() -> Result<(), Error> {
     }
 
     proxy.start(&context)?;
+
+    let mut sync_relay = match config.sync.as_ref() {
+        Some(sync) => {
+            let mut relay = AlignedRelay::new(
+                config
+                    .producers
+                    .iter()
+                    .map(|producer| format!("tcp://{}", producer))
+                    .collect(),
+                format!("tcp://{}:{}", config.consumer_ip, sync.port),
+                sync.devices.clone(),
+                sync.tolerance,
+            );
+            relay.start(&context)?;
+            println!(
+                "control-hub: aligned groups on tcp://{}:{} for devices {:?}",
+                config.consumer_ip, sync.port, sync.devices
+            );
+            Some(relay)
+        }
+        None => None,
+    };
+
     let status_server = status::bind_status_server(&config.status_addr)?;
     let _status_thread = status::start_status_server(status_server, proxy.peer_counts());
     println!(
@@ -123,6 +187,9 @@ fn main() -> Result<(), Error> {
     }
 
     println!("control-hub: shutting down proxy");
+    if let Some(relay) = sync_relay.as_mut() {
+        relay.stop()?;
+    }
     proxy.stop()?;
 
     Ok(())
@@ -193,5 +260,18 @@ mod tests {
     #[test]
     fn parse_producers_rejects_empty_list() {
         assert!(parse_producers(" , ").is_err());
+    }
+
+    #[test]
+    fn parse_sync_devices_trims_and_skips_empty_entries() {
+        assert_eq!(
+            parse_sync_devices(" cam-0, mic-0 ,").unwrap(),
+            vec!["cam-0".to_string(), "mic-0".to_string()]
+        );
+    }
+
+    #[test]
+    fn parse_sync_devices_rejects_empty_list() {
+        assert!(parse_sync_devices(" , ").is_err());
     }
 }
