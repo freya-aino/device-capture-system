@@ -19,6 +19,7 @@ struct MockDevice {
     info: DeviceInformation,
 }
 
+#[derive(Clone)]
 struct MockDeviceConfig;
 impl DeviceConfig for MockDeviceConfig {}
 

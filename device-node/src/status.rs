@@ -8,7 +8,7 @@ use anyhow::{Error, Result, anyhow};
 use shared::{ConnectionStatus, Device, DeviceStatus};
 use tiny_http::{Header, Method, Request, Response, Server};
 
-use crate::DeviceNode;
+use crate::{ControlError, DeviceAction, DeviceNode};
 
 pub const DEFAULT_STATUS_ADDR: &str = "127.0.0.1:8080";
 
@@ -22,6 +22,7 @@ pub fn start_status_server<T>(
 ) -> JoinHandle<Result<(), Error>>
 where
     T: Device + Send + 'static,
+    T::Config: Clone + Send + 'static,
 {
     spawn(move || -> Result<(), Error> {
         loop {
@@ -40,30 +41,73 @@ pub fn status_body(device_status: &DeviceStatus, connection_status: &ConnectionS
     )
 }
 
-fn handle_request<T: Device>(request: Request, node: &Mutex<DeviceNode<T>>) -> Result<(), Error> {
-    if *request.method() != Method::Get || request.url() != "/status" {
-        request.respond(Response::from_string("not found").with_status_code(404))?;
-        return Ok(());
-    }
-
-    let status = match node.lock() {
-        Ok(guard) => guard.status(),
-        Err(_) => Err(anyhow!("device node lock poisoned")),
+fn handle_request<T>(request: Request, node: &Mutex<DeviceNode<T>>) -> Result<(), Error>
+where
+    T: Device,
+    T::Config: Clone,
+{
+    let path = request.url().to_string();
+    let is_get = *request.method() == Method::Get;
+    let is_post = *request.method() == Method::Post;
+    let action = match (is_get, is_post, path.as_str()) {
+        (true, _, "/status") => None,
+        (_, true, "/start") => Some(DeviceAction::Start),
+        (_, true, "/stop") => Some(DeviceAction::Stop),
+        (_, true, "/restart") => Some(DeviceAction::Restart),
+        _ => {
+            request.respond(Response::from_string("not found").with_status_code(404))?;
+            return Ok(());
+        }
     };
 
-    match status {
-        Ok((device_status, connection_status)) => {
-            let body = status_body(&device_status, &connection_status);
-            request.respond(json_response(body, 200))?;
+    let mut guard = match node.lock() {
+        Ok(guard) => guard,
+        Err(_) => return respond_unavailable(request),
+    };
+    let control = match action {
+        Some(action) => guard.apply(action),
+        None => Ok(()),
+    };
+    let status = guard.status();
+    drop(guard);
+
+    match control {
+        Err(ControlError::InvalidTransition {
+            action,
+            status: current,
+        }) => {
+            let body = format!(
+                "{{\"error\":\"cannot {:?} while device is {:?}\"}}",
+                action, current
+            );
+            request.respond(json_response(body, 409))?;
         }
-        Err(e) => {
-            tracing::warn!("Status unavailable: {}", e);
+        Err(ControlError::Failed(e)) => {
+            tracing::warn!("Device control failed: {}", e);
             request.respond(json_response(
-                "{\"error\":\"status unavailable\"}".to_string(),
+                "{\"error\":\"device control failed\"}".to_string(),
                 500,
             ))?;
         }
+        Ok(()) => match status {
+            Ok((device_status, connection_status)) => {
+                let body = status_body(&device_status, &connection_status);
+                request.respond(json_response(body, 200))?;
+            }
+            Err(e) => {
+                tracing::warn!("Status unavailable: {}", e);
+                return respond_unavailable(request);
+            }
+        },
     }
+    Ok(())
+}
+
+fn respond_unavailable(request: Request) -> Result<(), Error> {
+    request.respond(json_response(
+        "{\"error\":\"status unavailable\"}".to_string(),
+        500,
+    ))?;
     Ok(())
 }
 

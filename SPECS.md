@@ -119,8 +119,8 @@ no log or counter (§6, and CODE_REVIEW §3) — is the one real cost of this ch
 instrumented, not papered over by switching transports.
 
 **Conclusion:** ZMQ is architecturally correct for this system's latency goal. Single-producer
-forwarding over it works (§6). The open problems are multi-producer fan-in, sync, hardware validation
-of device capture, and remote control, not the transport choice.
+forwarding over it works (§6). The open problems are sync, hardware validation of device capture,
+and calibration, not the transport choice. Multi-producer fan-in and remote control are implemented.
 
 ---
 
@@ -164,7 +164,7 @@ crate's broken module re-export, §4.1 there).
 | `devices::AlsaMicrophoneDevice` | ⚠️ Compiles, enumerates: enumeration filters fixed and buffer sizing accounts for channels; capture path still needs real-hardware exercise | Producer (mic) |
 | `devices::microphone_windows` | ❌ Empty file | Producer on Windows |
 | `devices::manager` | ✅ Deleted | n/a |
-| `device-node::DeviceNode` | ⚠️ Works: generic over `T: Device`, can publish one camera/mic stream, serves `GET /status`; remote start/stop control is still planned | Producer (remote control missing) |
+| `device-node::DeviceNode` | ✅ Works: generic over `T: Device`, can publish one camera/mic stream, serves `GET /status` and remote `POST /start`, `/stop`, `/restart` with transition checks | Producer |
 | `control-hub` | ⚠️ Works as XSUB/XPUB proxy fanning in every `HUB_PRODUCERS` endpoint (or the single `HUB_PRODUCER_*` pair), configured by `HUB_*` env vars; sync and calibration are not implemented | Syncer (missing) |
 | `access-client` | ✅ `AccessClient` (`connect`, `next_frame`, `run`, `disconnect`) plus a CLI binary; used by Python bindings | Consumer |
 | `python-client` | ⚠️ PyO3 bindings (`device_system`) exist, but are not packaged and have no dedicated automated tests | Consumer (packaging) |
@@ -188,7 +188,7 @@ Open, in priority order:
 1. ❌ Sync and calibration: no code exists (§2 Syncer).
 2. ⚠️ Hardware validation: the v4l2 and ALSA capture loops compile and have hardware-free tests, but
    have not been run end to end against real devices.
-3. ❌ Remote control: no start/stop/restart; only the read-only `/status` exists.
+3. ✅ Remote control: `POST /start`, `/stop` and `/restart` are implemented on the device-node status server (§7.1, item 14).
 4. ⚠️ Python packaging and tests: bindings exist (§5) but are not packaged and have no automated tests.
 5. ❌ Windows microphone: `devices/src/microphone_windows.rs` is empty.
 
@@ -241,9 +241,20 @@ Defaults (`device-node/src/helper.rs`):
 {"device":"Running","connection":"Active"}
 ```
 
-The values are the `Debug` names of `DeviceStatus` and `ConnectionStatus`. Other paths return `404`.
-A failed state read returns `500` with `{"error":"status unavailable"}`. The endpoint is read-only;
-remote control is item 14 in §8.
+The values are the `Debug` names of `DeviceStatus` and `ConnectionStatus`. Other paths and methods return `404`.
+A failed state read returns `500` with `{"error":"status unavailable"}`.
+
+Remote control on the same server (§8 item 14):
+
+- `POST /start`, `POST /stop`, `POST /restart` transition the device and respond with the new status in the
+  same JSON format.
+- A transition the current `DeviceStatus` does not allow (`/start` while `Running`, `/stop` or `/restart`
+  while not `Running`, or any control on a node that was never started) returns `409` with
+  `{"error":"cannot <Action> while device is <Status>"}`.
+- A device failure during control returns `500` with `{"error":"device control failed"}`.
+
+The server validates transitions before calling the device, so a bad request cannot trigger the device's
+own start/stop assertions.
 
 ### 7.2 Environment configuration
 
@@ -261,7 +272,7 @@ The binaries read these variables (see `README.md`, Configuration):
 
 ## 8. Build order and remaining work
 
-Items marked ✅ are done. Items 1–9, 11 and 13 are complete. Items 10 and 12, 14–18 are open. Item numbers
+Items marked ✅ are done. Items 1–9, 11, 13 and 14 are complete. Items 10, 12 and 15–18 are open. Item numbers
 are stable so older references still resolve. §8.1 gives the order in which to implement the open
 items.
 
@@ -295,9 +306,9 @@ items.
     for example `HUB_PRODUCERS=ip:port,ip:port`, keeping the single-endpoint variables as a fallback.
     Acceptance: a hardware-free test runs two producers on different loopback ports and checks that
     `access-client` receives frames with both device IDs.
-14. ❌ Remote control: `device-node` accepts `POST /start`, `POST /stop` and `POST /restart` on the status
-    server. Acceptance: `device-node/tests/status-test.rs` covers each transition and an invalid
-    transition returns an error status.
+14. ✅ Done: remote control. `device-node` accepts `POST /start`, `POST /stop` and `POST /restart` on the
+    status server, with transitions validated against `DeviceStatus` (§7.1). Covered by
+    `device-node/tests/status-test.rs` for each transition and each invalid transition (409).
 15. ⚠️ Python packaging and tests: add a `pyproject.toml` (maturin) to `python-client/` and a pytest that
     runs `python-client/examples/loopback-publisher.rs` through `DeviceSystem`. Acceptance: a clean
     virtualenv installs the package, and the test receives at least one frame.
@@ -313,7 +324,7 @@ items.
 
 ### 8.1 Order of remaining work
 
-Implement the open items in this order: 12 → 13 → 10 → 14 → 15 → 16 → 17 → 18. An item is done only
+Implement the open items in this order: 12 → 10 → 15 → 16 → 17 → 18. An item is done only
 when its acceptance check passes with `cargo test --workspace` (plus the hardware run for item 12), and
 the README TODO and this file are updated in the same change.
 

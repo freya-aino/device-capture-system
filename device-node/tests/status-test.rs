@@ -10,6 +10,7 @@ struct StatusMockDevice {
     info: DeviceInformation,
 }
 
+#[derive(Clone)]
 struct StatusMockConfig;
 impl DeviceConfig for StatusMockConfig {}
 
@@ -36,9 +37,11 @@ impl Device for StatusMockDevice {
         _config: Self::Config,
         _callback: Box<dyn Fn(FramePacket) -> Result<(), Error> + Send + 'static>,
     ) -> Result<std::thread::JoinHandle<Result<(), Error>>, Error> {
-        Err(anyhow::anyhow!("not used in status test"))
+        self.info.device_status = DeviceStatus::Running;
+        Ok(std::thread::spawn(|| -> Result<(), Error> { Ok(()) }))
     }
     fn stop(&mut self) -> Result<(), Error> {
+        self.info.device_status = DeviceStatus::Stopped;
         Ok(())
     }
 }
@@ -181,4 +184,102 @@ fn status_endpoint_returns_500_when_node_lock_is_poisoned() {
         "unexpected body: {}",
         response
     );
+}
+
+fn http_post(port: u16, path: &str) -> String {
+    http_request(port, "POST", path)
+}
+
+fn started_node(id: &str, endpoint: &str) -> Arc<Mutex<DeviceNode<StatusMockDevice>>> {
+    let context = zmq::Context::new();
+    let mut node = DeviceNode::new_endpoint(
+        status_device(id),
+        endpoint.to_string(),
+        10,
+        1024,
+    );
+    node.start(StatusMockConfig, &context).unwrap();
+    Arc::new(Mutex::new(node))
+}
+
+fn serve(
+    node: Arc<Mutex<DeviceNode<StatusMockDevice>>>,
+) -> (u16, std::thread::JoinHandle<Result<(), Error>>) {
+    let server = bind_status_server("127.0.0.1:0").unwrap();
+    let port = server.server_addr().to_ip().unwrap().port();
+    (port, start_status_server(server, node))
+}
+
+#[test]
+fn remote_stop_then_start_then_restart_transition_the_device() {
+    let node = started_node("remote-cycle", "tcp://127.0.0.1:16311");
+    let (port, _handle) = serve(node);
+
+    let stopped = http_post(port, "/stop");
+    assert!(stopped.starts_with("HTTP/1.1 200"), "unexpected response: {}", stopped);
+    assert!(stopped.contains("{\"device\":\"Stopped\",\"connection\":\"Active\"}"), "{}", stopped);
+
+    let started = http_post(port, "/start");
+    assert!(started.starts_with("HTTP/1.1 200"), "unexpected response: {}", started);
+    assert!(started.contains("{\"device\":\"Running\",\"connection\":\"Active\"}"), "{}", started);
+
+    let restarted = http_post(port, "/restart");
+    assert!(restarted.starts_with("HTTP/1.1 200"), "unexpected response: {}", restarted);
+    assert!(restarted.contains("{\"device\":\"Running\",\"connection\":\"Active\"}"), "{}", restarted);
+}
+
+#[test]
+fn remote_start_while_running_returns_409() {
+    let node = started_node("remote-start-running", "tcp://127.0.0.1:16312");
+    let (port, _handle) = serve(node);
+
+    let response = http_post(port, "/start");
+    assert!(response.starts_with("HTTP/1.1 409"), "unexpected response: {}", response);
+    assert!(response.contains("cannot Start while device is Running"), "{}", response);
+}
+
+#[test]
+fn remote_stop_while_stopped_returns_409() {
+    let node = started_node("remote-stop-stopped", "tcp://127.0.0.1:16313");
+    let (port, _handle) = serve(node);
+    assert!(http_post(port, "/stop").starts_with("HTTP/1.1 200"));
+
+    let response = http_post(port, "/stop");
+    assert!(response.starts_with("HTTP/1.1 409"), "unexpected response: {}", response);
+    assert!(response.contains("cannot Stop while device is Stopped"), "{}", response);
+}
+
+#[test]
+fn remote_restart_while_stopped_returns_409() {
+    let node = started_node("remote-restart-stopped", "tcp://127.0.0.1:16314");
+    let (port, _handle) = serve(node);
+    assert!(http_post(port, "/stop").starts_with("HTTP/1.1 200"));
+
+    let response = http_post(port, "/restart");
+    assert!(response.starts_with("HTTP/1.1 409"), "unexpected response: {}", response);
+}
+
+#[test]
+fn remote_start_on_never_started_node_returns_409() {
+    let mut device = status_device("remote-never-started");
+    device.info.device_status = DeviceStatus::Available;
+    let node = Arc::new(Mutex::new(DeviceNode::new_endpoint(
+        device,
+        "tcp://127.0.0.1:16315",
+        10,
+        1024,
+    )));
+    let (port, _handle) = serve(node);
+
+    let response = http_post(port, "/start");
+    assert!(response.starts_with("HTTP/1.1 409"), "unexpected response: {}", response);
+}
+
+#[test]
+fn remote_control_rejects_unknown_post_paths() {
+    let node = started_node("remote-unknown", "tcp://127.0.0.1:16316");
+    let (port, _handle) = serve(node);
+
+    let response = http_post(port, "/shutdown");
+    assert!(response.starts_with("HTTP/1.1 404"), "unexpected response: {}", response);
 }

@@ -105,6 +105,7 @@ fn run_node<T>(
 ) -> Result<(), Error>
 where
     T: Device + Send + 'static,
+    T::Config: Clone + Send + 'static,
 {
     let server = bind_status_server(status_addr)?;
     let mut node = DeviceNode::new(device, hub_ip, hub_port, 128, 1024);
