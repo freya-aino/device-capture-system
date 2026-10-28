@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use anyhow::{Error, Result};
 use networking::Receiver;
-use shared::FramePacket;
+use shared::{AlignedGroup, Aligner, FramePacket, Sample};
 
 /// Consumer-side client: connects a `Receiver` to a `control-hub`'s XPUB endpoint and
 /// exposes the aggregated frame stream through a simple blocking API. This is the
@@ -64,6 +64,62 @@ impl AccessClient {
                     }
                 }
                 None => std::thread::sleep(Duration::from_millis(5)),
+            }
+        }
+    }
+}
+
+/// Wraps an `AccessClient` and groups frames from several producers into aligned sets by capture
+/// time. Each group carries the original `FramePacket`s, so no payload is dropped.
+pub struct AlignedClient {
+    client: AccessClient,
+    aligner: Aligner<FramePacket>,
+}
+
+impl AlignedClient {
+    pub fn new(client: AccessClient, devices: Vec<String>, tolerance: Duration) -> Self {
+        AlignedClient {
+            client,
+            aligner: Aligner::new(devices, tolerance),
+        }
+    }
+
+    pub fn connect(&mut self) -> Result<(), Error> {
+        self.client.connect()
+    }
+
+    pub fn disconnect(&mut self) -> Result<(), Error> {
+        self.client.disconnect()
+    }
+
+    pub fn dropped(&self) -> u64 {
+        self.aligner.dropped()
+    }
+
+    /// Blocks until an aligned group is complete or `timeout` elapses.
+    pub fn next_group(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<Option<AlignedGroup<FramePacket>>, Error> {
+        let start = std::time::Instant::now();
+        loop {
+            if start.elapsed() >= timeout {
+                return Ok(None);
+            }
+            let remaining = timeout.saturating_sub(start.elapsed());
+            let Some(packet) = self.client.next_frame(remaining)? else {
+                return Ok(None);
+            };
+            let Some(time) = packet.frame_info.tx_timestamp else {
+                continue;
+            };
+            let sample = Sample {
+                device_id: packet.frame_info.device_info.id.clone(),
+                time,
+                payload: packet,
+            };
+            if let Some(group) = self.aligner.push(sample) {
+                return Ok(Some(group));
             }
         }
     }

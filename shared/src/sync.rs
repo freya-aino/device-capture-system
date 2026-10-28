@@ -3,15 +3,16 @@ use std::time::{Duration, SystemTime};
 
 /// One frame observed by the hub, identified by its producer device and capture time.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Sample {
+pub struct Sample<T> {
     pub device_id: String,
     pub time: SystemTime,
+    pub payload: T,
 }
 
 /// A set of samples, at most one per device, whose capture times all fall within the tolerance.
 #[derive(Debug, Clone, PartialEq)]
-pub struct AlignedGroup {
-    pub samples: Vec<Sample>,
+pub struct AlignedGroup<T> {
+    pub samples: Vec<Sample<T>>,
     pub skew: Duration,
 }
 
@@ -22,14 +23,14 @@ pub struct AlignedGroup {
 /// longer pair with anything, so they are dropped and counted; a silent device therefore cannot
 /// stall the others.
 #[derive(Debug)]
-pub struct Aligner {
+pub struct Aligner<T> {
     devices: Vec<String>,
     tolerance: Duration,
-    pending: BTreeMap<String, VecDeque<SystemTime>>,
+    pending: BTreeMap<String, VecDeque<(SystemTime, T)>>,
     dropped: u64,
 }
 
-impl Aligner {
+impl<T> Aligner<T> {
     pub fn new(devices: Vec<String>, tolerance: Duration) -> Self {
         let pending = devices
             .iter()
@@ -49,18 +50,23 @@ impl Aligner {
 
     /// Adds one sample and returns the group it completes, if any. Samples from devices that were
     /// not registered are ignored.
-    pub fn push(&mut self, sample: Sample) -> Option<AlignedGroup> {
-        let queue = self.pending.get_mut(&sample.device_id)?;
-        queue.push_back(sample.time);
-        self.drop_stale(sample.time);
+    pub fn push(&mut self, sample: Sample<T>) -> Option<AlignedGroup<T>> {
+        let Sample {
+            device_id,
+            time,
+            payload,
+        } = sample;
+        let queue = self.pending.get_mut(&device_id)?;
+        queue.push_back((time, payload));
+        self.drop_stale(time);
         self.try_emit()
     }
 
-    fn try_emit(&mut self) -> Option<AlignedGroup> {
+    fn try_emit(&mut self) -> Option<AlignedGroup<T>> {
         let anchor = self
             .pending
             .values()
-            .filter_map(|queue| queue.front().copied())
+            .filter_map(|queue| queue.front().map(|entry| entry.0))
             .min()?;
 
         let mut picks = Vec::with_capacity(self.devices.len());
@@ -69,10 +75,10 @@ impl Aligner {
             let best = queue
                 .iter()
                 .enumerate()
-                .filter(|(_, time)| within(**time, anchor, self.tolerance))
-                .min_by_key(|(_, time)| abs_diff(**time, anchor));
+                .filter(|(_, entry)| within(entry.0, anchor, self.tolerance))
+                .min_by_key(|(_, entry)| abs_diff(entry.0, anchor));
             match best {
-                Some((index, time)) => picks.push((device.clone(), index, *time)),
+                Some((index, entry)) => picks.push((device.clone(), index, entry.0)),
                 None => return None,
             }
         }
@@ -81,12 +87,13 @@ impl Aligner {
         let mut earliest = anchor;
         let mut latest = anchor;
         for (device, index, time) in picks {
-            self.pending.get_mut(&device)?.drain(..=index);
+            let (_, payload) = self.pending.get_mut(&device)?.drain(..=index).last()?;
             earliest = earliest.min(time);
             latest = latest.max(time);
             samples.push(Sample {
                 device_id: device,
                 time,
+                payload,
             });
         }
 
@@ -97,8 +104,8 @@ impl Aligner {
     /// Removes samples that trail `newest` by more than the tolerance and counts them as dropped.
     fn drop_stale(&mut self, newest: SystemTime) {
         for queue in self.pending.values_mut() {
-            while let Some(front) = queue.front() {
-                if *front + self.tolerance < newest {
+            while let Some((time, _)) = queue.front() {
+                if *time + self.tolerance < newest {
                     queue.pop_front();
                     self.dropped += 1;
                 } else {
@@ -128,14 +135,15 @@ mod tests {
         SystemTime::UNIX_EPOCH + Duration::from_millis(ms)
     }
 
-    fn sample(device: &str, ms: u64) -> Sample {
+    fn sample(device: &str, ms: u64) -> Sample<()> {
         Sample {
             device_id: device.to_string(),
             time: at(ms),
+            payload: (),
         }
     }
 
-    fn aligner() -> Aligner {
+    fn aligner() -> Aligner<()> {
         Aligner::new(vec!["cam".into(), "mic".into()], Duration::from_millis(20))
     }
 
@@ -198,5 +206,29 @@ mod tests {
         assert!(aligner.push(sample("cam", 1000)).is_none());
         assert!(aligner.push(sample("mic", 2000)).is_none());
         assert_eq!(aligner.dropped(), 1);
+    }
+
+    #[test]
+    fn returns_the_payload_of_each_grouped_sample() {
+        let mut aligner: Aligner<&str> =
+            Aligner::new(vec!["cam".into(), "mic".into()], Duration::from_millis(20));
+        assert!(aligner
+            .push(Sample {
+                device_id: "cam".into(),
+                time: at(1000),
+                payload: "cam-frame",
+            })
+            .is_none());
+        let group = aligner
+            .push(Sample {
+                device_id: "mic".into(),
+                time: at(1005),
+                payload: "mic-frame",
+            })
+            .expect("group should be emitted");
+
+        let payloads: Vec<&str> = group.samples.iter().map(|s| s.payload).collect();
+        assert!(payloads.contains(&"cam-frame"));
+        assert!(payloads.contains(&"mic-frame"));
     }
 }
