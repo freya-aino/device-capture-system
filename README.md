@@ -150,7 +150,7 @@ curl http://127.0.0.1:8080/status
 ```
 
 The values are the `Debug` names of `DeviceStatus` and `ConnectionStatus`. Other paths return 404.
-`POST /start`, `POST /stop` and `POST /restart` change the device state and return the new status in the same JSON format. A transition the device cannot make (for example `/start` while `Running`, or any control of a node that was never started) returns `409` with an `error` message. A device that fails during control returns `500` with `{"error":"device control failed"}`. Other methods or paths return `404`.
+`POST /start`, `POST /stop` and `POST /restart` change the device state and return the new status in the same JSON format. A transition the device cannot make (for example `/start` while `Running`, or `/stop` while `Stopped`) returns `409` with an `error` message. Starting a node that has no stored configuration, or a device that fails during control, returns `500` with `{"error":"device control failed"}`. Other methods or paths return `404`.
 
 ## Tests
 

@@ -292,9 +292,10 @@ items.
 8. ✅ Done: camera buffer count reduced from 128 to 4, and the negotiated v4l2 format is validated.
 9. ✅ Done: rewrite `ConnectionStats` to use `Instant` for interval math and record per-frame latency
    from `tx_timestamp`/`rx_timestamp`.
-10. ❌ Sync: time alignment across producers in `control-hub`, using `tx_timestamp`/`rx_timestamp` and
-    the sequence numbers. Acceptance: a unit test with synthetic multi-producer timestamps groups frames
-    within a stated tolerance and reports the measured skew. Calibration is item 17.
+10. ⚠️ Sync: time alignment across producers. The grouping core `shared::Aligner` exists and is covered
+    by unit tests with synthetic timestamps (groups within a tolerance, reports skew, drops stale
+    samples). It is not yet wired into `control-hub`, so the hub still forwards frames unaligned.
+    Calibration is item 17.
 11. ✅ Done: Python client (§5) as a PyO3 extension in `python-client/`. `DeviceSystem(hub_ip, hub_port)`
     with `get_frame()` / `next_frame()` wraps `AccessClient`, so Python shares the Rust wire decoder.
     Packaging and tests are covered by item 15.
