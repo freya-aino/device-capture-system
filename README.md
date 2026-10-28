@@ -11,7 +11,7 @@ streams, keep them in sync, and expose them to clients.
 > the transport layer (`networking`), a `device-node` that publishes one camera or microphone stream
 > and serves `GET /status` plus remote `POST /start`, `/stop` and `/restart`, a `control-hub` that fans in one or more producer
 > endpoints to any number of consumers (XSUB/XPUB proxy) and serves `GET /status` with live producer and consumer counts, an `access-client`, and installable Python bindings.
-> Not implemented yet: hub-side sync and calibration. See [TODO](#todo).
+> Sync is opt-in on the hub (`HUB_SYNC_PORT`) and not yet validated on real devices. Not implemented yet: calibration. See [TODO](#todo).
 
 ## Architecture
 
@@ -24,8 +24,8 @@ streams, keep them in sync, and expose them to clients.
 ```
 
 Current implementation note: `control-hub` fans in every producer endpoint listed in `HUB_PRODUCERS`
-(or the single `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT` pair) and forwards them to consumers. Sync and
-calibration are planned (see [TODO](#todo) and `SPECS.md`). The hub serves `GET /status` on `HUB_STATUS_ADDR`;
+(or the single `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT` pair) and forwards them to consumers. Opt-in sync (`HUB_SYNC_PORT`) also publishes aligned groups on a separate port, and
+calibration is planned (see [TODO](#todo) and `SPECS.md`). The hub serves `GET /status` on `HUB_STATUS_ADDR`;
 each `device-node` serves `GET /status` and `POST /start`, `/stop` and `/restart`.
 
 ### Crates
@@ -36,7 +36,7 @@ each `device-node` serves `GET /status` and `POST /start`, `/stop` and `/restart
 | `devices`       | lib  | Concrete capture devices: `V4lCameraDevice` (v4l2 mmap streaming) and `AlsaMicrophoneDevice` (ALSA PCM capture). Each runs its capture loop on its own thread and pushes `FramePacket`s into a user callback. |
 | `networking`    | lib  | ZeroMQ transport: `Connection` (socket lifecycle + stats), `Sender` (PUB), `Receiver` (SUB) and `Proxy` (XSUB↔XPUB forwarder). |
 | `device-node`   | bin+lib  | Runs on each capture machine: lists devices and publishes one camera or microphone stream to a hub. Serves `GET /status` and `POST /start`, `/stop`, `/restart` (`DEVICE_NODE_STATUS_ADDR`). |
-| `control-hub`   | bin  | Central process: runs the XSUB/XPUB ZMQ proxy, fanning in the producer endpoints from `HUB_PRODUCERS` (or the single `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT`), configured by `HUB_*` environment variables. Serves `GET /status` with producer and consumer counts. Sync and calibration are planned. |
+| `control-hub`   | bin  | Central process: runs the XSUB/XPUB ZMQ proxy, fanning in the producer endpoints from `HUB_PRODUCERS` (or the single `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT`), configured by `HUB_*` environment variables. Serves `GET /status` with producer and consumer counts. Opt-in sync (`HUB_SYNC_PORT`) publishes aligned groups; calibration is planned. |
 | `access-client` | bin+lib  | Consumer-side client used to subscribe to the hub's aggregated stream (CLI prints received frames; library yields decoded frames). |
 | `python-client` | lib  | Python bindings via PyO3 (`device_system` extension module) that wrap `access-client` to receive frames from a hub. Installable with maturin (`pip install ./python-client`); see [`python-client/README.md`](python-client/README.md). |
 
@@ -136,6 +136,9 @@ Environment variables read by the binaries:
 | `HUB_CONSUMER_IP` / `HUB_CONSUMER_PORT` | `control-hub` | `0.0.0.0` / `5556` | Address the hub's XPUB socket **binds** for consumers |
 | `HUB_QUEUE_SIZE` | `control-hub` | `128` | Queue size passed to the proxy |
 | `HUB_STATUS_ADDR` | `control-hub` | `127.0.0.1:8081` | Bind address of the hub's `GET /status` server |
+| `HUB_SYNC_PORT` | `control-hub` | unset | Enables the aligned relay; it binds a PUB socket on `HUB_CONSUMER_IP`:this port |
+| `HUB_SYNC_DEVICES` | `control-hub` | unset | Comma-separated device ids that must all appear in one aligned group (required with `HUB_SYNC_PORT`) |
+| `HUB_SYNC_TOLERANCE_MS` | `control-hub` | `20` | Maximum capture-time distance between samples in one group |
 | `HUB_DATA_CHUNK_SIZE` | `control-hub` | `1024` | Data chunk size passed to the proxy |
 
 `device-node` uses a queue size of `128` and a chunk size of `1024` (fixed in `device-node/src/main.rs`).

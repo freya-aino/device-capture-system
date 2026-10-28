@@ -83,7 +83,7 @@ Multiple producer hosts (A1, A2, …) are expected to fan in to the same hub —
 
 **Multi-producer fan-in is implemented:** the hub connects its XSUB socket to every endpoint listed in
 `HUB_PRODUCERS` (`ip:port,ip:port`), falling back to `HUB_PRODUCER_IP` / `HUB_PRODUCER_PORT` when unset
-(§8 item 13). Sync across producers is still missing (§8 item 10).
+(§8 item 13). Opt-in hub sync is partial (§8 item 10).
 
 ### 3.4 What's shared across all three
 In every topology the wire protocol and the per-role code are identical; only bind/connect
@@ -165,8 +165,8 @@ crate's broken module re-export, §4.1 there).
 | `devices::microphone_windows` | ❌ Empty file | Producer on Windows |
 | `devices::manager` | ✅ Deleted | n/a |
 | `device-node::DeviceNode` | ✅ Works: generic over `T: Device`, can publish one camera/mic stream, serves `GET /status` and remote `POST /start`, `/stop`, `/restart` with transition checks | Producer |
-| `control-hub` | ⚠️ Works as XSUB/XPUB proxy fanning in every `HUB_PRODUCERS` endpoint (or the single `HUB_PRODUCER_*` pair), configured by `HUB_*` env vars; serves `GET /status` with live producer and consumer counts; the hub itself does not align frames | Syncer (hub side missing) |
-| `shared::Aligner` | ✅ Generic over a payload; groups frames from several devices by capture time, reports skew, and counts dropped stale samples. Covered by unit tests | Consumer (sync) |
+| `control-hub` | ✅ Works as XSUB/XPUB proxy fanning in every `HUB_PRODUCERS` endpoint (or the single `HUB_PRODUCER_*` pair), configured by `HUB_*` env vars; serves `GET /status` with live producer and consumer counts; opt-in `HUB_SYNC_PORT` runs an `AlignedRelay` that publishes aligned groups on a separate PUB port while the raw forwarding stays unchanged | Syncer |
+| `shared::Aligner` | ✅ Generic over a payload; groups frames from several devices by capture time, reports skew, and counts dropped stale samples. Used by the hub's `AlignedRelay` and by `AlignedClient` | Syncer |
 | `access-client` | ✅ `AccessClient` (`connect`, `next_frame`, `run`, `disconnect`) plus a CLI binary; `AlignedClient` wraps it to yield aligned groups of frame packets, covered by end-to-end tests. Used by Python bindings | Consumer |
 | `python-client` | ✅ PyO3 bindings (`device_system`) packaged with maturin and covered by a pytest that runs the loopback example | Consumer |
 | `DeviceStatus` | ✅ Status transitions are implemented and observable via `device-node` | Observability for Producer |
@@ -175,8 +175,7 @@ crate's broken module re-export, §4.1 there).
 The *shape* of the deployment flexibility is real: `Sender::new`/`Receiver::new`/`Proxy::new` take
 `Ipv4Addr` + `u16` with no hardcoded host assumptions, and `device-node`/`control-hub`/`access-client`
 are configured through arguments and environment variables only. Topologies §3.1, §3.2 and §3.3 (with
-several producers via `HUB_PRODUCERS`) are reachable through configuration alone. Sync (§2 Syncer) is
-still missing.
+several producers via `HUB_PRODUCERS`) are reachable through configuration alone. Sync (§2 Syncer) is partial: an opt-in `HUB_SYNC_PORT` relay exists and is covered only by tests.
 
 ### 6.2 What blocks it today
 Resolved: `networking::Proxy` forwards data (`proxy_steerable`) and `control-hub` runs it;
@@ -186,7 +185,7 @@ Resolved since the last review: multi-producer fan-in (§8 item 13), covered by 
 and hub pipeline tests.
 
 Open, in priority order:
-1. ⚠️ Sync and calibration: consumer-side alignment exists (`Aligner`, `AlignedClient`); the hub does not align frames, and calibration is not started (§2 Syncer).
+1. ⚠️ Sync and calibration: the hub runs an opt-in `AlignedRelay` (`HUB_SYNC_PORT`), and consumers can use `AlignedClient`; the relay has not been validated on real devices, and calibration is not started (§2 Syncer).
 2. ⚠️ Hardware validation: the v4l2 and ALSA capture loops compile and have hardware-free tests, but
    have not been run end to end against real devices.
 3. ✅ Remote control: `POST /start`, `/stop` and `/restart` are implemented on the device-node status server (§7.1, item 14).
@@ -273,7 +272,7 @@ The binaries read these variables (see `README.md`, Configuration):
 
 ## 8. Build order and remaining work
 
-Items marked ✅ are done. Items 1–9, 11, and 13–15 are complete. Items 10, 12 and 16–18 are open. Item numbers
+Items marked ✅ are done, including item 16. Items 1–9, 11, and 13–15 are complete. Item 10 is partial; items 12 and 17–18 are open. Item numbers
 are stable so older references still resolve. §8.1 gives the order in which to implement the open
 items.
 
@@ -293,9 +292,11 @@ items.
 8. ✅ Done: camera buffer count reduced from 128 to 4, and the negotiated v4l2 format is validated.
 9. ✅ Done: rewrite `ConnectionStats` to use `Instant` for interval math and record per-frame latency
    from `tx_timestamp`/`rx_timestamp`.
-10. ⚠️ Sync: time alignment across producers. The grouping core `shared::Aligner` exists and is covered
-    by unit tests with synthetic timestamps (groups within a tolerance, reports skew, drops stale
-    samples). It is not yet wired into `control-hub`, so the hub still forwards frames unaligned.
+10. ⚠️ Sync: time alignment across producers. `shared::Aligner` groups frames by capture time, and
+    `control-hub` runs it in an `AlignedRelay` when `HUB_SYNC_PORT` and `HUB_SYNC_DEVICES` are set. Aligned groups
+    are published on that port, and the raw forwarding stays unchanged. Covered by codec unit tests and
+    `networking/tests/aligned-relay-test.rs`. Still open: validation with real devices, and a consumer
+    that reads the aligned port by default.
     Calibration is item 17.
 11. ✅ Done: Python client (§5) as a PyO3 extension in `python-client/`. `DeviceSystem(hub_ip, hub_port)`
     with `get_frame()` / `next_frame()` wraps `AccessClient`, so Python shares the Rust wire decoder.
