@@ -7,31 +7,27 @@ Cameras are captured through **v4l2**, microphones through **ALSA**, and every c
 published as a chunked **ZeroMQ** multipart message. A central hub is intended to collect those
 streams, keep them in sync, and expose them to clients.
 
-> **Status: early development.** The capture layer (`devices`) and transport layer (`networking`)
-> are implemented. `device-node` can list devices and publish either a camera or microphone stream.
-> `control-hub` currently forwards a **single producer endpoint** to any number of consumers
-> (XSUB/XPUB proxy). True multi-producer fan-in, sync/calibration, and HTTP APIs are not
-> implemented yet. `access-client` can subscribe to the hub and print frames. See [TODO](#todo).
+> **Status: early development, no sync yet.** Implemented: the capture layer (`devices`),
+> the transport layer (`networking`), a `device-node` that publishes one camera or microphone stream
+> and serves a read-only `GET /status` endpoint, a `control-hub` that fans in one or more producer
+> endpoints to any number of consumers (XSUB/XPUB proxy), an `access-client`, and Python bindings.
+> Not implemented yet: sync/calibration, remote device control (start/stop/restart), a hub HTTP API,
+> and Python packaging. See [TODO](#todo).
 
 ## Architecture
 
 ```
-  ┌──────────────────────┐        ZMQ PUB        ┌──────────────┐
-  │ device-node (host A) │ ───── frames ───────► │              │
-  │  v4l2 cam + ALSA mic │                       │ control-hub  │ ◄── REST
-  └──────────────────────┘                       │  XSUB ─ XPUB │
-  ┌──────────────────────┐                       │              │
-  │ device-node (host B) │ ───── frames ───────► │              │
-  └──────────────────────┘                       └──────┬───────┘
-                                                        │ ZMQ SUB
-                                                 ┌──────▼───────┐
-                                                 │ access-client│
-                                                 └──────────────┘
+┌──────────────────────┐         ┌──────────────────────┐         ┌──────────────────────┐
+│ device-node (host A) │ ─ PUB ─►│ control-hub          │ ─ SUB ─►│ access-client        │
+│ v4l2 cam / ALSA mic  │         │ XSUB ─► XPUB         │         │ or python-client     │
+│ GET /status (HTTP)   │         │ (N prod, no sync)    │         │                      │
+└──────────────────────┘         └──────────────────────┘         └──────────────────────┘
 ```
 
-Current implementation note: `control-hub` forwards **one** producer endpoint to consumers; true
-multi-producer fan-in is planned (see [TODO](#todo)). The REST API shown in the diagram is planned and
-not implemented yet.
+Current implementation note: `control-hub` fans in every producer endpoint listed in `HUB_PRODUCERS`
+(or the single `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT` pair) and forwards them to consumers. Sync,
+calibration, and a hub HTTP API are planned (see [TODO](#todo) and `SPECS.md`). The only HTTP endpoint
+today is the read-only `GET /status` on each `device-node`.
 
 ### Crates
 
@@ -40,10 +36,10 @@ not implemented yet.
 | `shared`        | lib  | Common data model: the `Device` / `DeviceConfig` traits, `DeviceInformation`, `FramePacket(Information)`, `ConnectionStatus`, `ConnectionStats`. Frame metadata is (de)serialized with `bincode`. |
 | `devices`       | lib  | Concrete capture devices: `V4lCameraDevice` (v4l2 mmap streaming) and `AlsaMicrophoneDevice` (ALSA PCM capture). Each runs its capture loop on its own thread and pushes `FramePacket`s into a user callback. |
 | `networking`    | lib  | ZeroMQ transport: `Connection` (socket lifecycle + stats), `Sender` (PUB), `Receiver` (SUB) and `Proxy` (XSUB↔XPUB forwarder). |
-| `device-node`   | bin+lib  | Runs on each capture machine: lists devices and can publish one camera/mic stream to a hub (HTTP control API is planned). |
-| `control-hub`   | bin  | Central process: currently runs the XSUB/XPUB ZMQ proxy for fan-in/fan-out (HTTP API, sync and calibration are planned). |
+| `device-node`   | bin+lib  | Runs on each capture machine: lists devices and publishes one camera or microphone stream to a hub. Serves a read-only `GET /status` (`DEVICE_NODE_STATUS_ADDR`); start/stop control is planned. |
+| `control-hub`   | bin  | Central process: runs the XSUB/XPUB ZMQ proxy, fanning in the producer endpoints from `HUB_PRODUCERS` (or the single `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT`), configured by `HUB_*` environment variables. Sync, calibration and an HTTP API are planned. |
 | `access-client` | bin+lib  | Consumer-side client used to subscribe to the hub's aggregated stream (CLI prints received frames; library yields decoded frames). |
-| `python-client` | lib  | Python bindings via PyO3 (`device_system` extension module) that wrap `access-client` to receive frames from a hub. |
+| `python-client` | lib  | Python bindings via PyO3 (`device_system` extension module) that wrap `access-client` to receive frames from a hub. Not packaged yet; see [`python-client/README.md`](python-client/README.md). |
 
 ### Frame transport
 
@@ -125,13 +121,43 @@ cargo run -p access-client            # connects to :5556 and prints frames
 For a multi-host setup, the `<hub_ip> <hub_port>` arguments of `device-node run` are the address the
 producer's PUB socket **binds** to, not the hub's address. Bind on a local address (for example
 `0.0.0.0 5555`) on the capture machine, and point the hub at that producer with `HUB_PRODUCER_IP` and
-`HUB_PRODUCER_PORT`. Renaming these arguments is still open.
+`HUB_PRODUCER_PORT`. Renaming these arguments is still open. To fan in several producers, set
+`HUB_PRODUCERS` to a comma-separated list such as `10.0.0.2:5555,10.0.0.3:5555`; it takes precedence
+over `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT`.
+
+### Configuration
+
+Environment variables read by the binaries:
+
+| Variable | Binary | Default | Meaning |
+|---|---|---|---|
+| `DEVICE_NODE_STATUS_ADDR` | `device-node` | `127.0.0.1:8080` | Bind address of the read-only status server |
+| `HUB_PRODUCER_IP` / `HUB_PRODUCER_PORT` | `control-hub` | `127.0.0.1` / `5555` | Producer endpoint the hub's XSUB socket **connects** to |
+| `HUB_PRODUCERS` | `control-hub` | unset | Comma-separated `ip:port` producer endpoints; overrides `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT` when set |
+| `HUB_CONSUMER_IP` / `HUB_CONSUMER_PORT` | `control-hub` | `0.0.0.0` / `5556` | Address the hub's XPUB socket **binds** for consumers |
+| `HUB_QUEUE_SIZE` | `control-hub` | `128` | Queue size passed to the proxy |
+| `HUB_DATA_CHUNK_SIZE` | `control-hub` | `1024` | Data chunk size passed to the proxy |
+
+`device-node` uses a queue size of `128` and a chunk size of `1024` (fixed in `device-node/src/main.rs`).
+
+### Status endpoint
+
+Each `device-node run` serves a read-only status endpoint:
+
+```bash
+DEVICE_NODE_STATUS_ADDR=127.0.0.1:8080 cargo run -p device-node -- run mic 0 127.0.0.1 5555
+curl http://127.0.0.1:8080/status
+# {"device":"Running","connection":"Active"}
+```
+
+The values are the `Debug` names of `DeviceStatus` and `ConnectionStatus`. Other paths return 404.
+There is no remote start, stop or restart yet.
 
 ## Tests
 
 ```bash
 cargo test --workspace
-cargo test -p networking      # send/receive + proxy fan-in/out
+cargo test -p networking      # send/receive + proxy forwarding
 ```
 
 The transport-layer tests are hardware-free and exercise the `Sender`/`Receiver` round trip and
@@ -194,29 +220,50 @@ loop {
 `receive(0)` blocks until a frame arrives. `receive(zmq::DONTWAIT)` returns `None` at once when no
 frame is queued, so it cannot be used as a loop condition.
 
+## Python client
+
+The `python-client` crate builds a PyO3 extension module named `device_system`. See
+[`python-client/README.md`](python-client/README.md) for build steps. Example against a running hub:
+
+```python
+from device_system import DeviceSystem
+
+ds = DeviceSystem("127.0.0.1", 5556)
+for frame in ds.get_frame():
+    print(frame.device_id, frame.device_type, frame.frame_shape, len(frame.data))
+```
+
 ## TODO
+
+The ordered build plan is in `SPECS.md` §8.
 
 - [x] Device Node CLI
   - [x] List devices
   - [x] Run a single device (camera/mic) and publish frames
   - [ ] Generate / Save Config
 - [ ] Device Node HTTP Server
-  - [ ] Device Status
+  - [x] Read-only `GET /status` (device and connection state)
   - [ ] StartDevice / StopDevice / RestartDevice
 - [x] `DeviceNode` support for cameras + microphones
+- [ ] Capture hardware validation
+  - [ ] Exercise the v4l2 camera capture loop on real hardware
+  - [ ] Exercise the ALSA microphone capture loop on real hardware
+  - [ ] Windows microphone support (`devices/src/microphone_windows.rs` is empty)
 - [ ] Control Hub
   - [x] Load bind/connect config from env and run a ZMQ proxy
-  - [ ] Multi-producer fan-in (currently forwards only one producer endpoint)
+  - [x] Multi-producer fan-in (`HUB_PRODUCERS`, comma-separated `ip:port` list)
   - [ ] Sync
   - [ ] Calibrate
     - [ ] choose & implement general reference point detection model
     - [ ] transfer calibration code from python-opencv
+  - [ ] HTTP API (not started)
 - [ ] Client
   - [x] Minimal Rust access client (`access-client`) that receives frames from the hub
   - [x] Python client bindings (PyO3 extension in `python-client/`)
     - [x] `DeviceSystem(hub_ip, hub_port)`
     - [x] `DeviceSystem.get_frame() -> generator`
   - [ ] Package Python bindings (maturin / `pyproject.toml`)
+  - [ ] Automated tests for the Python bindings
 
 ## License
 

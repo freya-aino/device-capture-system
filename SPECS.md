@@ -3,7 +3,8 @@
 This document specifies the intended design of the system: the deployment topologies it must
 support, the roles each component plays, the wire protocol, and the current implementation state
 against that spec. It consolidates the architecture described in `README.md`/`AGENT.md` with the
-findings in `CODE_REVIEW.md` (updated 2026-10-26, reviewed commit `40c8af5`).
+findings in `CODE_REVIEW.md` (historical review at commit `40c8af5`; the status in §6 was revised
+2026-10-28 against commit `7ac4b5a`).
 
 Status markers used throughout: ✅ done · ⚠️ partial/broken · ❌ not implemented.
 
@@ -28,7 +29,7 @@ split across hosts (talking over the LAN) — the transport layer doesn't distin
 |---|---|---|
 | **Producer** | Owns a hardware device (camera or mic), runs its capture loop, publishes `FramePacket`s | `device-node` bin + `devices` crate |
 | **Receiver** | Terminates producer connections, subscribes to their published frames | `control-hub` (via `networking::Connection`/`Proxy`'s XSUB side) |
-| **Accumulator** | Fans in frames from all connected producers into one logical stream | `control-hub` (via `networking::Proxy`'s XSUB→XPUB forwarding) |
+| **Accumulator** | Fans in frames from all connected producers into one logical stream | `control-hub` (via `networking::Proxy`'s XSUB side, one connection per `HUB_PRODUCERS` endpoint) |
 | **Syncer** | Aligns frames from different producers/devices to a common clock/reference | `control-hub` (planned — see §6) |
 | **Consumer** | Subscribes to the hub's aggregated output and does something with the frames | `access-client` bin, and/or third-party clients (e.g. Python) |
 
@@ -41,8 +42,10 @@ that split.
 
 ## 3. Deployment topologies
 
-All topologies below must be reachable by changing only IP/port configuration — never by
-recompiling or forking code paths. This is possible because `Sender`, `Receiver`, and `Proxy`
+The topologies below must be reachable by changing only IP/port configuration — never by
+recompiling or forking code paths. §3.1 and §3.2 (one producer) meet this today; §3.3 with more than
+one producer host also needs multi-producer fan-in, which is not implemented yet. The reason this is
+possible is that `Sender`, `Receiver`, and `Proxy`
 (the three `networking` transport primitives) are parameterized purely by `Ipv4Addr` + `u16` and
 use plain TCP, which works identically over loopback or a real NIC.
 
@@ -78,6 +81,10 @@ Multiple producer hosts (A1, A2, …) are expected to fan in to the same hub —
 `control-hub` exists as a distinct XSUB/XPUB proxy rather than `access-client` connecting to each
 `device-node` directly.
 
+**Multi-producer fan-in is implemented:** the hub connects its XSUB socket to every endpoint listed in
+`HUB_PRODUCERS` (`ip:port,ip:port`), falling back to `HUB_PRODUCER_IP` / `HUB_PRODUCER_PORT` when unset
+(§8 item 13). Sync across producers is still missing (§8 item 10).
+
 ### 3.4 What's shared across all three
 In every topology the wire protocol and the per-role code are identical; only bind/connect
 addresses differ. No topology requires a code fork, a build flag, or a different binary.
@@ -111,9 +118,9 @@ ZMQ's own trade-off — PUB silently drops frames once a subscriber's high-water
 no log or counter (§6, and CODE_REVIEW §3) — is the one real cost of this choice and must be
 instrumented, not papered over by switching transports.
 
-**Conclusion:** ZMQ is architecturally correct for this system's latency goal. The problem today
-is that the fan-in/fan-out proxy built on top of it now works (§6.2). The open problems are
-in sync, device capture and the receive path, not in the transport choice.
+**Conclusion:** ZMQ is architecturally correct for this system's latency goal. Single-producer
+forwarding over it works (§6). The open problems are multi-producer fan-in, sync, hardware validation
+of device capture, and remote control, not the transport choice.
 
 ---
 
@@ -134,29 +141,19 @@ the Rust `access-client` so Python shares the exact wire decoder.
 Packaging/distribution is still missing (no maturin / `pyproject.toml`), and there are no
 dedicated automated tests for the bindings yet.
 
-A pure-Python implementation remains feasible because the wire format is simple and fully
-specified in §7 below: a `pyzmq` `SUB` socket connected to the hub's XPUB port, decoding a small
-bincode header (fixed field set, no dynamic schema) followed by concatenated raw bytes. Two
-implementation paths are viable:
-
-1. **Pure Python** — reimplement the bincode header decode (small, static format) with `pyzmq` +
-   `struct`/a minimal bincode decoder. No Rust toolchain needed by consumers.
-2. **PyO3 bindings** — wrap the real `networking::Receiver` (and `shared::FramePacket` decode) in
-   a `pyo3` extension module, so the Python client shares the exact Rust implementation and never
-   drifts from wire-format changes.
-
-Either path is additive. `access-client` already holds the receive logic (`AccessClient` in
-`access-client/src/lib.rs`), so a binding would wrap existing code. Recommendation: prefer (2),
-since it removes the risk of the Python decoder silently drifting from the Rust wire format after a
-`shared` change.
+The implemented path is PyO3 bindings in `python-client/` (see `python-client/README.md`):
+`DeviceSystem` wraps `access-client::AccessClient`, so Python uses the same Rust wire decoder and
+cannot drift from it when `shared` changes. A pure-Python decoder (a `pyzmq` `SUB` socket plus a small
+bincode header decoder, specified in §7) remains a fallback only if consumers must avoid a Rust-built
+extension. It is not planned.
 
 ---
 
 ## 6. Current implementation state
 
-Condensed from `CODE_REVIEW.md` (updated against commit `40c8af5`); see that file for full detail,
-line numbers, and the fix the review already applied (the `devices` crate's broken module
-re-export, §4.1 there).
+Revised against the current workspace (`7ac4b5a`). `CODE_REVIEW.md` is a historical review at commit
+`40c8af5`; see it for line numbers and the findings it already applied (for example the `devices`
+crate's broken module re-export, §4.1 there).
 
 | Component | State | Blocks which role(s) |
 |---|---|---|
@@ -168,25 +165,32 @@ re-export, §4.1 there).
 | `devices::microphone_windows` | ❌ Empty file | Producer on Windows |
 | `devices::manager` | ✅ Deleted | n/a |
 | `device-node::DeviceNode` | ⚠️ Works: generic over `T: Device`, can publish one camera/mic stream, serves `GET /status`; remote start/stop control is still planned | Producer (remote control missing) |
-| `control-hub` | ⚠️ Works as XSUB/XPUB proxy from `HUB_*` env config; sync/calibration are not implemented | Syncer (missing) |
+| `control-hub` | ⚠️ Works as XSUB/XPUB proxy fanning in every `HUB_PRODUCERS` endpoint (or the single `HUB_PRODUCER_*` pair), configured by `HUB_*` env vars; sync and calibration are not implemented | Syncer (missing) |
 | `access-client` | ✅ `AccessClient` (`connect`, `next_frame`, `run`, `disconnect`) plus a CLI binary; used by Python bindings | Consumer |
 | `python-client` | ⚠️ PyO3 bindings (`device_system`) exist, but are not packaged and have no dedicated automated tests | Consumer (packaging) |
 | `DeviceStatus` | ✅ Status transitions are implemented and observable via `device-node` | Observability for Producer |
 
 ### 6.1 What already satisfies the topology requirement (§3)
-The *shape* of the deployment flexibility is already real: `Sender::new`/`Receiver::new`/
-`Proxy::new` take `Ipv4Addr` + `u16` with no hardcoded host assumptions, and nothing in
-`device-node`/`control-hub`/`access-client` assumes colocation or separation. Once the stubs in
-§6.2 are wired up, the transport path of every topology in §3 is reachable through config alone.
-Sync (§2 Syncer) is still missing.
+The *shape* of the deployment flexibility is real: `Sender::new`/`Receiver::new`/`Proxy::new` take
+`Ipv4Addr` + `u16` with no hardcoded host assumptions, and `device-node`/`control-hub`/`access-client`
+are configured through arguments and environment variables only. Topologies §3.1, §3.2 and §3.3 (with
+several producers via `HUB_PRODUCERS`) are reachable through configuration alone. Sync (§2 Syncer) is
+still missing.
 
 ### 6.2 What blocks it today
-1. ✅ Resolved: `networking::Proxy` forwards data (`proxy_steerable`), and `control-hub` runs it.
-2. ✅ Resolved for the transport path: `control-hub` loads config and runs `Proxy`. Sync and
-   calibration (per the README TODO) are still missing.
-3. ⚠️ Partly resolved: Python bindings exist (§5), but packaging/distribution is still missing.
-4. ✅ Resolved: `DeviceNode` is generic over `T: Device`, device status transitions are implemented,
-   and `/status` is served.
+Resolved: `networking::Proxy` forwards data (`proxy_steerable`) and `control-hub` runs it;
+`DeviceNode` is generic over `T: Device`, status transitions are implemented, and `/status` is served.
+
+Resolved since the last review: multi-producer fan-in (§8 item 13), covered by the two-producer proxy
+and hub pipeline tests.
+
+Open, in priority order:
+1. ❌ Sync and calibration: no code exists (§2 Syncer).
+2. ⚠️ Hardware validation: the v4l2 and ALSA capture loops compile and have hardware-free tests, but
+   have not been run end to end against real devices.
+3. ❌ Remote control: no start/stop/restart; only the read-only `/status` exists.
+4. ⚠️ Python packaging and tests: bindings exist (§5) but are not packaged and have no automated tests.
+5. ❌ Windows microphone: `devices/src/microphone_windows.rs` is empty.
 
 ---
 
@@ -228,12 +232,38 @@ Defaults (`device-node/src/helper.rs`):
 | Camera | 1920×1080, 30fps, `YUYV` |
 | Microphone | 16kHz, 1 channel, 512-sample buffer, `S16LE` |
 
+### 7.1 Device-node status endpoint
+
+`GET /status` on `DEVICE_NODE_STATUS_ADDR` (default `127.0.0.1:8080`) returns `200` with
+`Content-Type: application/json`:
+
+```json
+{"device":"Running","connection":"Active"}
+```
+
+The values are the `Debug` names of `DeviceStatus` and `ConnectionStatus`. Other paths return `404`.
+A failed state read returns `500` with `{"error":"status unavailable"}`. The endpoint is read-only;
+remote control is item 14 in §8.
+
+### 7.2 Environment configuration
+
+The binaries read these variables (see `README.md`, Configuration):
+
+| Variable | Binary | Default |
+|---|---|---|
+| `DEVICE_NODE_STATUS_ADDR` | `device-node` | `127.0.0.1:8080` |
+| `HUB_PRODUCER_IP` / `HUB_PRODUCER_PORT` | `control-hub` | `127.0.0.1` / `5555` |
+| `HUB_CONSUMER_IP` / `HUB_CONSUMER_PORT` | `control-hub` | `0.0.0.0` / `5556` |
+| `HUB_QUEUE_SIZE` | `control-hub` | `128` |
+| `HUB_DATA_CHUNK_SIZE` | `control-hub` | `1024` |
+
 ---
 
-## 8. Recommended build order
+## 8. Build order and remaining work
 
-Carried over from `CODE_REVIEW.md` §6, reframed against the topology goal. Items 1–3 and 7 are
-done; the remaining work is the capture and receive-path fixes.
+Items marked ✅ are done. Items 1–9, 11 and 13 are complete. Items 10 and 12, 14–18 are open. Item numbers
+are stable so older references still resolve. §8.1 gives the order in which to implement the open
+items.
 
 1. ✅ Done: fix `Proxy` and add loopback proxy tests (`proxy-test.rs`, hub pipeline test).
 2. ✅ Done: minimal `control-hub` `main()` loads config and runs `Proxy`.
@@ -251,11 +281,41 @@ done; the remaining work is the capture and receive-path fixes.
 8. ✅ Done: camera buffer count reduced from 128 to 4, and the negotiated v4l2 format is validated.
 9. ✅ Done: rewrite `ConnectionStats` to use `Instant` for interval math and record per-frame latency
    from `tx_timestamp`/`rx_timestamp`.
-10. Add sync (time alignment across producers) and calibration to `control-hub`, per the README
-    TODO — this is the one piece of §2's "Syncer" role with no code today.
+10. ❌ Sync: time alignment across producers in `control-hub`, using `tx_timestamp`/`rx_timestamp` and
+    the sequence numbers. Acceptance: a unit test with synthetic multi-producer timestamps groups frames
+    within a stated tolerance and reports the measured skew. Calibration is item 17.
 11. ✅ Done: Python client (§5) as a PyO3 extension in `python-client/`. `DeviceSystem(hub_ip, hub_port)`
     with `get_frame()` / `next_frame()` wraps `AccessClient`, so Python shares the Rust wire decoder.
     Not packaged yet (no maturin config / `pyproject.toml`) and has no dedicated automated tests.
+12. ❌ Hardware validation: run the `V4lCameraDevice` and `AlsaMicrophoneDevice` capture loops against
+    real devices, end to end through `device-node` → `control-hub` → `access-client`. Acceptance: frames
+    arrive at the configured rate (30 fps camera, 16 kHz microphone) for at least 60 s, and the dropped
+    frame count and latency are recorded in a dated results note. Tests stay hardware-free.
+13. ✅ Done: multi-producer fan-in. `control-hub` connects its XSUB socket to several producer endpoints,
+    for example `HUB_PRODUCERS=ip:port,ip:port`, keeping the single-endpoint variables as a fallback.
+    Acceptance: a hardware-free test runs two producers on different loopback ports and checks that
+    `access-client` receives frames with both device IDs.
+14. ❌ Remote control: `device-node` accepts `POST /start`, `POST /stop` and `POST /restart` on the status
+    server. Acceptance: `device-node/tests/status-test.rs` covers each transition and an invalid
+    transition returns an error status.
+15. ⚠️ Python packaging and tests: add a `pyproject.toml` (maturin) to `python-client/` and a pytest that
+    runs `python-client/examples/loopback-publisher.rs` through `DeviceSystem`. Acceptance: a clean
+    virtualenv installs the package, and the test receives at least one frame.
+16. ❌ Hub status endpoint: `control-hub` serves `GET /status` with producer and consumer counts. This is
+    the planned hub HTTP API from the README diagram. Acceptance: a test queries it while one producer
+    and one consumer are connected.
+17. ❌ Calibration: choose a general reference-point detection model, then port the python-opencv
+    calibration code. Acceptance: a deterministic test on a checked-in fixture image returns the expected
+    reference points.
+18. ❌ Windows microphone: implement `devices/src/microphone_windows.rs`, or record in the README
+    Requirements that Windows is unsupported. Acceptance: one of the two is written down, and if
+    implemented, the device tests pass on Windows. Lowest priority.
+
+### 8.1 Order of remaining work
+
+Implement the open items in this order: 12 → 13 → 10 → 14 → 15 → 16 → 17 → 18. An item is done only
+when its acceptance check passes with `cargo test --workspace` (plus the hardware run for item 12), and
+the README TODO and this file are updated in the same change.
 
 ---
 

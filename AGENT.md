@@ -13,7 +13,7 @@ shared/         data model shared by everything (traits, FramePacket, stats) —
 networking/     ZeroMQ transport: Connection, Sender (PUB), Receiver (SUB), Proxy (XSUB/XPUB)
 devices/        V4lCameraDevice, AlsaMicrophoneDevice — implement shared::Device
 device-node/    bin: runs on a capture machine (lib part: DeviceNode + helpers)
-control-hub/    bin: central aggregator (XSUB/XPUB proxy; sync/calibration planned)
+control-hub/    bin: central hub (XSUB/XPUB proxy fanning in every `HUB_PRODUCERS` endpoint; sync, calibration planned)
 access-client/  bin+lib: consumer client that subscribes to the hub and yields decoded frames
 python-client/  PyO3 extension module (`device_system`): `DeviceSystem` + `Frame` for Python consumers
 ```
@@ -72,14 +72,15 @@ incompatible `libclang` build available and picked the wrong one.
 
 ## Known rough edges
 
-Worth knowing before you debug something — fix only if the task asks for it. `CODE_REVIEW.md` is the
-living, authoritative list; this is only the two items that still require real hardware to close out.
+Worth knowing before you debug something — fix only if the task asks for it. The current status is in
+`SPECS.md` §6 and the README TODO; `CODE_REVIEW.md` is a historical review at commit `40c8af5` and its
+line numbers may be stale. This is only the two items that still require real hardware to close out.
 
 - `devices/src/microphone_windows.rs` is empty; only Linux is supported today.
 - Camera and microphone capture (opening a real device and reading frames) has never been exercised
   against real hardware on this machine — it compiles and is covered by hardware-free tests
   (enumeration, status transitions, error paths), but the actual capture loop is unverified. See
-  `CODE_REVIEW.md` §7 readiness scores.
+  `SPECS.md` §8 item 12 for the hardware validation plan.
 
 ## Working rules
 
