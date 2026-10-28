@@ -7,12 +7,16 @@ use std::time::Duration;
 use anyhow::{Error, Result, anyhow};
 use networking::Proxy;
 
+mod status;
+use status::DEFAULT_HUB_STATUS_ADDR;
+
 struct HubConfig {
     producers: Vec<SocketAddrV4>,
     consumer_ip: Ipv4Addr,
     consumer_port: u16,
     queue_size: u32,
     data_chunk_size: u32,
+    status_addr: String,
 }
 
 fn env_or<T: FromStr>(key: &str, default: T) -> T {
@@ -61,6 +65,7 @@ impl HubConfig {
             consumer_port: env_or("HUB_CONSUMER_PORT", 5556),
             queue_size: env_or("HUB_QUEUE_SIZE", 128),
             data_chunk_size: env_or("HUB_DATA_CHUNK_SIZE", 1024),
+            status_addr: env_or("HUB_STATUS_ADDR", DEFAULT_HUB_STATUS_ADDR.to_string()),
         })
     }
 }
@@ -101,7 +106,12 @@ fn main() -> Result<(), Error> {
     }
 
     proxy.start(&context)?;
-    println!("control-hub: proxy running, press Ctrl+C to stop");
+    let status_server = status::bind_status_server(&config.status_addr)?;
+    let _status_thread = status::start_status_server(status_server, proxy.peer_counts());
+    println!(
+        "control-hub: proxy running, status on http://{}/status, press Ctrl+C to stop",
+        config.status_addr
+    );
 
     let running = Arc::new(AtomicBool::new(true));
     let running_handler = running.clone();

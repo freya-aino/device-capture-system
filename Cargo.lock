@@ -199,6 +199,8 @@ dependencies = [
  "ctrlc",
  "networking",
  "shared",
+ "tiny_http",
+ "tracing",
  "tracing-subscriber",
  "zmq",
 ]
