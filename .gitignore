@@ -4,6 +4,12 @@
 /.venv/
 /.zed/
 
+# Python build and test artifacts
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
 # Rust build directory
 /target/
 
