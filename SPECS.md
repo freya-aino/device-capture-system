@@ -165,8 +165,9 @@ crate's broken module re-export, §4.1 there).
 | `devices::microphone_windows` | ❌ Empty file | Producer on Windows |
 | `devices::manager` | ✅ Deleted | n/a |
 | `device-node::DeviceNode` | ✅ Works: generic over `T: Device`, can publish one camera/mic stream, serves `GET /status` and remote `POST /start`, `/stop`, `/restart` with transition checks | Producer |
-| `control-hub` | ⚠️ Works as XSUB/XPUB proxy fanning in every `HUB_PRODUCERS` endpoint (or the single `HUB_PRODUCER_*` pair), configured by `HUB_*` env vars; sync and calibration are not implemented | Syncer (missing) |
-| `access-client` | ✅ `AccessClient` (`connect`, `next_frame`, `run`, `disconnect`) plus a CLI binary; used by Python bindings | Consumer |
+| `control-hub` | ⚠️ Works as XSUB/XPUB proxy fanning in every `HUB_PRODUCERS` endpoint (or the single `HUB_PRODUCER_*` pair), configured by `HUB_*` env vars; the hub itself does not align frames | Syncer (hub side missing) |
+| `shared::Aligner` | ✅ Generic over a payload; groups frames from several devices by capture time, reports skew, and counts dropped stale samples. Covered by unit tests | Consumer (sync) |
+| `access-client` | ✅ `AccessClient` (`connect`, `next_frame`, `run`, `disconnect`) plus a CLI binary; `AlignedClient` wraps it to yield aligned groups of frame packets, covered by end-to-end tests. Used by Python bindings | Consumer |
 | `python-client` | ✅ PyO3 bindings (`device_system`) packaged with maturin and covered by a pytest that runs the loopback example | Consumer |
 | `DeviceStatus` | ✅ Status transitions are implemented and observable via `device-node` | Observability for Producer |
 
@@ -185,7 +186,7 @@ Resolved since the last review: multi-producer fan-in (§8 item 13), covered by 
 and hub pipeline tests.
 
 Open, in priority order:
-1. ❌ Sync and calibration: no code exists (§2 Syncer).
+1. ⚠️ Sync and calibration: consumer-side alignment exists (`Aligner`, `AlignedClient`); the hub does not align frames, and calibration is not started (§2 Syncer).
 2. ⚠️ Hardware validation: the v4l2 and ALSA capture loops compile and have hardware-free tests, but
    have not been run end to end against real devices.
 3. ✅ Remote control: `POST /start`, `/stop` and `/restart` are implemented on the device-node status server (§7.1, item 14).

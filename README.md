@@ -251,7 +251,7 @@ The ordered build plan is in `SPECS.md` §8.
 - [ ] Control Hub
   - [x] Load bind/connect config from env and run a ZMQ proxy
   - [x] Multi-producer fan-in (`HUB_PRODUCERS`, comma-separated `ip:port` list)
-  - [ ] Sync
+  - [~] Sync: `shared::Aligner` and `access-client::AlignedClient` group frames by capture time on the consumer side; the hub still forwards frames unaligned
   - [ ] Calibrate
     - [ ] choose & implement general reference point detection model
     - [ ] transfer calibration code from python-opencv
