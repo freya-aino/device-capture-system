@@ -17,6 +17,7 @@ static CONTROL_ENDPOINT_ID: AtomicUsize = AtomicUsize::new(0);
 pub struct Proxy {
     from: Connection,
     to: Connection,
+    extra_from_endpoints: Vec<String>,
     control_endpoint: String,
     control: Option<Socket>,
     handle: Option<JoinHandle<Result<(), Error>>>,
@@ -34,6 +35,7 @@ impl Proxy {
         Proxy {
             from: Connection::new(from_ip, from_port, queue_size, data_chunk_size),
             to: Connection::new(to_ip, to_port, queue_size, data_chunk_size),
+            extra_from_endpoints: Vec::new(),
             control_endpoint: format!("inproc://proxy-control-{}-{}", from_port, to_port),
             control: None,
             handle: None,
@@ -50,10 +52,16 @@ impl Proxy {
         Proxy {
             from: Connection::new_endpoint(from_endpoint, queue_size, data_chunk_size),
             to: Connection::new_endpoint(to_endpoint, queue_size, data_chunk_size),
+            extra_from_endpoints: Vec::new(),
             control_endpoint: format!("inproc://proxy-control-{}", id),
             control: None,
             handle: None,
         }
+    }
+
+    /// Connects the XSUB side to an additional producer endpoint. Must be called before `start()`.
+    pub fn add_from_endpoint(&mut self, endpoint: impl Into<String>) {
+        self.extra_from_endpoints.push(endpoint.into());
     }
 
     pub fn connection_status(&self) -> (&ConnectionStatus, &ConnectionStatus) {
@@ -67,6 +75,12 @@ impl Proxy {
     pub fn start(&mut self, context: &Context) -> Result<(), Error> {
         self.from.open(context, XSUB)?;
         self.to.open(context, XPUB)?;
+
+        if let Some(socket) = self.from.socket.as_ref() {
+            for endpoint in &self.extra_from_endpoints {
+                socket.connect(endpoint)?;
+            }
+        }
 
         // The control socket pair lets `stop()` signal the forwarding thread to
         // terminate. It must be bound before the connecting side is created.
