@@ -10,8 +10,8 @@ streams, keep them in sync, and expose them to clients.
 > **Status: early development, no sync yet.** Implemented: the capture layer (`devices`),
 > the transport layer (`networking`), a `device-node` that publishes one camera or microphone stream
 > and serves `GET /status` plus remote `POST /start`, `/stop` and `/restart`, a `control-hub` that fans in one or more producer
-> endpoints to any number of consumers (XSUB/XPUB proxy), an `access-client`, and installable Python bindings.
-> Not implemented yet: sync/calibration and a hub HTTP API. See [TODO](#todo).
+> endpoints to any number of consumers (XSUB/XPUB proxy) and serves `GET /status` with live producer and consumer counts, an `access-client`, and installable Python bindings.
+> Not implemented yet: hub-side sync and calibration. See [TODO](#todo).
 
 ## Architecture
 
@@ -24,9 +24,9 @@ streams, keep them in sync, and expose them to clients.
 ```
 
 Current implementation note: `control-hub` fans in every producer endpoint listed in `HUB_PRODUCERS`
-(or the single `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT` pair) and forwards them to consumers. Sync,
-calibration, and a hub HTTP API are planned (see [TODO](#todo) and `SPECS.md`). The only HTTP endpoints
-today are on each `device-node`: `GET /status` and `POST /start`, `/stop` and `/restart`.
+(or the single `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT` pair) and forwards them to consumers. Sync and
+calibration are planned (see [TODO](#todo) and `SPECS.md`). The hub serves `GET /status` on `HUB_STATUS_ADDR`;
+each `device-node` serves `GET /status` and `POST /start`, `/stop` and `/restart`.
 
 ### Crates
 
@@ -36,7 +36,7 @@ today are on each `device-node`: `GET /status` and `POST /start`, `/stop` and `/
 | `devices`       | lib  | Concrete capture devices: `V4lCameraDevice` (v4l2 mmap streaming) and `AlsaMicrophoneDevice` (ALSA PCM capture). Each runs its capture loop on its own thread and pushes `FramePacket`s into a user callback. |
 | `networking`    | lib  | ZeroMQ transport: `Connection` (socket lifecycle + stats), `Sender` (PUB), `Receiver` (SUB) and `Proxy` (XSUB↔XPUB forwarder). |
 | `device-node`   | bin+lib  | Runs on each capture machine: lists devices and publishes one camera or microphone stream to a hub. Serves `GET /status` and `POST /start`, `/stop`, `/restart` (`DEVICE_NODE_STATUS_ADDR`). |
-| `control-hub`   | bin  | Central process: runs the XSUB/XPUB ZMQ proxy, fanning in the producer endpoints from `HUB_PRODUCERS` (or the single `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT`), configured by `HUB_*` environment variables. Sync, calibration and an HTTP API are planned. |
+| `control-hub`   | bin  | Central process: runs the XSUB/XPUB ZMQ proxy, fanning in the producer endpoints from `HUB_PRODUCERS` (or the single `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT`), configured by `HUB_*` environment variables. Serves `GET /status` with producer and consumer counts. Sync and calibration are planned. |
 | `access-client` | bin+lib  | Consumer-side client used to subscribe to the hub's aggregated stream (CLI prints received frames; library yields decoded frames). |
 | `python-client` | lib  | Python bindings via PyO3 (`device_system` extension module) that wrap `access-client` to receive frames from a hub. Installable with maturin (`pip install ./python-client`); see [`python-client/README.md`](python-client/README.md). |
 
@@ -135,6 +135,7 @@ Environment variables read by the binaries:
 | `HUB_PRODUCERS` | `control-hub` | unset | Comma-separated `ip:port` producer endpoints; overrides `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT` when set |
 | `HUB_CONSUMER_IP` / `HUB_CONSUMER_PORT` | `control-hub` | `0.0.0.0` / `5556` | Address the hub's XPUB socket **binds** for consumers |
 | `HUB_QUEUE_SIZE` | `control-hub` | `128` | Queue size passed to the proxy |
+| `HUB_STATUS_ADDR` | `control-hub` | `127.0.0.1:8081` | Bind address of the hub's `GET /status` server |
 | `HUB_DATA_CHUNK_SIZE` | `control-hub` | `1024` | Data chunk size passed to the proxy |
 
 `device-node` uses a queue size of `128` and a chunk size of `1024` (fixed in `device-node/src/main.rs`).
@@ -151,6 +152,15 @@ curl http://127.0.0.1:8080/status
 
 The values are the `Debug` names of `DeviceStatus` and `ConnectionStatus`. Other paths return 404.
 `POST /start`, `POST /stop` and `POST /restart` change the device state and return the new status in the same JSON format. A transition the device cannot make (for example `/start` while `Running`, or `/stop` while `Stopped`) returns `409` with an `error` message. Starting a node that has no stored configuration, or a device that fails during control, returns `500` with `{"error":"device control failed"}`. Other methods or paths return `404`.
+
+The control hub serves a read-only endpoint on `HUB_STATUS_ADDR`:
+
+```bash
+curl http://127.0.0.1:8081/status
+# {"producers":2,"consumers":1}
+```
+
+`producers` counts the producer connections on the hub's XSUB side, and `consumers` counts the consumer connections on its XPUB side.
 
 ## Tests
 
@@ -255,7 +265,7 @@ The ordered build plan is in `SPECS.md` §8.
   - [ ] Calibrate
     - [ ] choose & implement general reference point detection model
     - [ ] transfer calibration code from python-opencv
-  - [ ] HTTP API (not started)
+  - [x] `GET /status` with live producer and consumer counts (`HUB_STATUS_ADDR`)
 - [ ] Client
   - [x] Minimal Rust access client (`access-client`) that receives frames from the hub
   - [x] Python client bindings (PyO3 extension in `python-client/`)

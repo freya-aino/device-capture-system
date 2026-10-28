@@ -165,7 +165,7 @@ crate's broken module re-export, §4.1 there).
 | `devices::microphone_windows` | ❌ Empty file | Producer on Windows |
 | `devices::manager` | ✅ Deleted | n/a |
 | `device-node::DeviceNode` | ✅ Works: generic over `T: Device`, can publish one camera/mic stream, serves `GET /status` and remote `POST /start`, `/stop`, `/restart` with transition checks | Producer |
-| `control-hub` | ⚠️ Works as XSUB/XPUB proxy fanning in every `HUB_PRODUCERS` endpoint (or the single `HUB_PRODUCER_*` pair), configured by `HUB_*` env vars; the hub itself does not align frames | Syncer (hub side missing) |
+| `control-hub` | ⚠️ Works as XSUB/XPUB proxy fanning in every `HUB_PRODUCERS` endpoint (or the single `HUB_PRODUCER_*` pair), configured by `HUB_*` env vars; serves `GET /status` with live producer and consumer counts; the hub itself does not align frames | Syncer (hub side missing) |
 | `shared::Aligner` | ✅ Generic over a payload; groups frames from several devices by capture time, reports skew, and counts dropped stale samples. Covered by unit tests | Consumer (sync) |
 | `access-client` | ✅ `AccessClient` (`connect`, `next_frame`, `run`, `disconnect`) plus a CLI binary; `AlignedClient` wraps it to yield aligned groups of frame packets, covered by end-to-end tests. Used by Python bindings | Consumer |
 | `python-client` | ✅ PyO3 bindings (`device_system`) packaged with maturin and covered by a pytest that runs the loopback example | Consumer |
@@ -314,9 +314,10 @@ items.
 15. ✅ Done: Python packaging and tests. `python-client/pyproject.toml` builds the extension with maturin, and
     `python-client/tests/test_loopback.py` runs `examples/loopback-publisher.rs` and receives frames through
     `DeviceSystem`. Verified: a clean virtualenv installed the package and the pytest passed.
-16. ❌ Hub status endpoint: `control-hub` serves `GET /status` with producer and consumer counts. This is
-    the planned hub HTTP API from the README diagram. Acceptance: a test queries it while one producer
-    and one consumer are connected.
+16. ✅ Hub status endpoint: `control-hub` serves `GET /status` with producer and consumer counts, read from
+    ZMQ socket monitor events (`networking::PeerCounts`). Set the bind address with `HUB_STATUS_ADDR`
+    (default `127.0.0.1:8081`). Covered by `networking/tests/peer-count-test.rs` and the status unit test in
+    `control-hub/src/status.rs`, which queries it while one producer and one consumer are connected.
 17. ❌ Calibration: choose a general reference-point detection model, then port the python-opencv
     calibration code. Acceptance: a deterministic test on a checked-in fixture image returns the expected
     reference points.
