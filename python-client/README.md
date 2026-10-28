@@ -4,8 +4,8 @@ PyO3 bindings that let Python consumers receive frames from a `control-hub`. The
 `device-system-py` and produces the extension module `device_system` (`src/lib.rs`). The bindings
 wrap `access-client::AccessClient`, so Python uses the same wire decoder as the Rust client.
 
-> **Status:** the bindings are implemented but not packaged (no `pyproject.toml` or maturin config),
-> and there are no automated Python tests yet. See `SPECS.md` §5 and §8.
+> **Status:** the bindings are implemented, packaged with maturin (`pyproject.toml`), and covered by
+> a pytest that runs the loopback example. See `SPECS.md` §5 and §8.
 
 ## Build
 
@@ -69,8 +69,7 @@ Microphone `data` is interleaved little-endian signed 16-bit samples, which `arr
 
 ## Limitations
 
-- Packaging is manual: no wheel, no `pyproject.toml`, and no version pinning against a Python
-  release.
-- No automated tests cover the bindings yet.
+- The package is built from source with maturin; no prebuilt wheels are published yet.
+- The pytest needs `cargo` on the path and runs the loopback example, so it is a local integration test.
 - Frames from several producers arrive interleaved. Use `device_id` to tell them apart; the bindings
   do not sync them.

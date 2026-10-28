@@ -138,8 +138,8 @@ This API exists today as PyO3 bindings in `python-client/`, exporting a `device_
 module with `DeviceSystem` (hub connection + iterator) and `Frame` (header + raw bytes). It wraps
 the Rust `access-client` so Python shares the exact wire decoder.
 
-Packaging/distribution is still missing (no maturin / `pyproject.toml`), and there are no
-dedicated automated tests for the bindings yet.
+Packaging is in place: `python-client/pyproject.toml` builds the extension with maturin, and
+`python-client/tests/test_loopback.py` checks it end to end (item 15).
 
 The implemented path is PyO3 bindings in `python-client/` (see `python-client/README.md`):
 `DeviceSystem` wraps `access-client::AccessClient`, so Python uses the same Rust wire decoder and
@@ -167,7 +167,7 @@ crate's broken module re-export, §4.1 there).
 | `device-node::DeviceNode` | ✅ Works: generic over `T: Device`, can publish one camera/mic stream, serves `GET /status` and remote `POST /start`, `/stop`, `/restart` with transition checks | Producer |
 | `control-hub` | ⚠️ Works as XSUB/XPUB proxy fanning in every `HUB_PRODUCERS` endpoint (or the single `HUB_PRODUCER_*` pair), configured by `HUB_*` env vars; sync and calibration are not implemented | Syncer (missing) |
 | `access-client` | ✅ `AccessClient` (`connect`, `next_frame`, `run`, `disconnect`) plus a CLI binary; used by Python bindings | Consumer |
-| `python-client` | ⚠️ PyO3 bindings (`device_system`) exist, but are not packaged and have no dedicated automated tests | Consumer (packaging) |
+| `python-client` | ✅ PyO3 bindings (`device_system`) packaged with maturin and covered by a pytest that runs the loopback example | Consumer |
 | `DeviceStatus` | ✅ Status transitions are implemented and observable via `device-node` | Observability for Producer |
 
 ### 6.1 What already satisfies the topology requirement (§3)
@@ -189,7 +189,7 @@ Open, in priority order:
 2. ⚠️ Hardware validation: the v4l2 and ALSA capture loops compile and have hardware-free tests, but
    have not been run end to end against real devices.
 3. ✅ Remote control: `POST /start`, `/stop` and `/restart` are implemented on the device-node status server (§7.1, item 14).
-4. ⚠️ Python packaging and tests: bindings exist (§5) but are not packaged and have no automated tests.
+4. ✅ Python packaging and tests: maturin `pyproject.toml` and a loopback pytest (§5, item 15).
 5. ❌ Windows microphone: `devices/src/microphone_windows.rs` is empty.
 
 ---
@@ -272,7 +272,7 @@ The binaries read these variables (see `README.md`, Configuration):
 
 ## 8. Build order and remaining work
 
-Items marked ✅ are done. Items 1–9, 11, 13 and 14 are complete. Items 10, 12 and 15–18 are open. Item numbers
+Items marked ✅ are done. Items 1–9, 11, and 13–15 are complete. Items 10, 12 and 16–18 are open. Item numbers
 are stable so older references still resolve. §8.1 gives the order in which to implement the open
 items.
 
@@ -297,7 +297,7 @@ items.
     within a stated tolerance and reports the measured skew. Calibration is item 17.
 11. ✅ Done: Python client (§5) as a PyO3 extension in `python-client/`. `DeviceSystem(hub_ip, hub_port)`
     with `get_frame()` / `next_frame()` wraps `AccessClient`, so Python shares the Rust wire decoder.
-    Not packaged yet (no maturin config / `pyproject.toml`) and has no dedicated automated tests.
+    Packaging and tests are covered by item 15.
 12. ❌ Hardware validation: run the `V4lCameraDevice` and `AlsaMicrophoneDevice` capture loops against
     real devices, end to end through `device-node` → `control-hub` → `access-client`. Acceptance: frames
     arrive at the configured rate (30 fps camera, 16 kHz microphone) for at least 60 s, and the dropped
@@ -309,9 +309,9 @@ items.
 14. ✅ Done: remote control. `device-node` accepts `POST /start`, `POST /stop` and `POST /restart` on the
     status server, with transitions validated against `DeviceStatus` (§7.1). Covered by
     `device-node/tests/status-test.rs` for each transition and each invalid transition (409).
-15. ⚠️ Python packaging and tests: add a `pyproject.toml` (maturin) to `python-client/` and a pytest that
-    runs `python-client/examples/loopback-publisher.rs` through `DeviceSystem`. Acceptance: a clean
-    virtualenv installs the package, and the test receives at least one frame.
+15. ✅ Done: Python packaging and tests. `python-client/pyproject.toml` builds the extension with maturin, and
+    `python-client/tests/test_loopback.py` runs `examples/loopback-publisher.rs` and receives frames through
+    `DeviceSystem`. Verified: a clean virtualenv installed the package and the pytest passed.
 16. ❌ Hub status endpoint: `control-hub` serves `GET /status` with producer and consumer counts. This is
     the planned hub HTTP API from the README diagram. Acceptance: a test queries it while one producer
     and one consumer are connected.

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "device-system"
+version = "0.1.0"
+description = "Python client for the device-capture-system hub"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.maturin]
+manifest-path = "Cargo.toml"
+module-name = "device_system"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

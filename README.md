@@ -10,9 +10,8 @@ streams, keep them in sync, and expose them to clients.
 > **Status: early development, no sync yet.** Implemented: the capture layer (`devices`),
 > the transport layer (`networking`), a `device-node` that publishes one camera or microphone stream
 > and serves `GET /status` plus remote `POST /start`, `/stop` and `/restart`, a `control-hub` that fans in one or more producer
-> endpoints to any number of consumers (XSUB/XPUB proxy), an `access-client`, and Python bindings.
-> Not implemented yet: sync/calibration, a hub HTTP API,
-> and Python packaging. See [TODO](#todo).
+> endpoints to any number of consumers (XSUB/XPUB proxy), an `access-client`, and installable Python bindings.
+> Not implemented yet: sync/calibration and a hub HTTP API. See [TODO](#todo).
 
 ## Architecture
 
@@ -39,7 +38,7 @@ today are on each `device-node`: `GET /status` and `POST /start`, `/stop` and `/
 | `device-node`   | bin+lib  | Runs on each capture machine: lists devices and publishes one camera or microphone stream to a hub. Serves `GET /status` and `POST /start`, `/stop`, `/restart` (`DEVICE_NODE_STATUS_ADDR`). |
 | `control-hub`   | bin  | Central process: runs the XSUB/XPUB ZMQ proxy, fanning in the producer endpoints from `HUB_PRODUCERS` (or the single `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT`), configured by `HUB_*` environment variables. Sync, calibration and an HTTP API are planned. |
 | `access-client` | bin+lib  | Consumer-side client used to subscribe to the hub's aggregated stream (CLI prints received frames; library yields decoded frames). |
-| `python-client` | lib  | Python bindings via PyO3 (`device_system` extension module) that wrap `access-client` to receive frames from a hub. Not packaged yet; see [`python-client/README.md`](python-client/README.md). |
+| `python-client` | lib  | Python bindings via PyO3 (`device_system` extension module) that wrap `access-client` to receive frames from a hub. Installable with maturin (`pip install ./python-client`); see [`python-client/README.md`](python-client/README.md). |
 
 ### Frame transport
 
@@ -262,8 +261,8 @@ The ordered build plan is in `SPECS.md` §8.
   - [x] Python client bindings (PyO3 extension in `python-client/`)
     - [x] `DeviceSystem(hub_ip, hub_port)`
     - [x] `DeviceSystem.get_frame() -> generator`
-  - [ ] Package Python bindings (maturin / `pyproject.toml`)
-  - [ ] Automated tests for the Python bindings
+  - [x] Package Python bindings (maturin / `pyproject.toml`)
+  - [x] Automated tests for the Python bindings (`python-client/tests/test_loopback.py`)
 
 ## License
 
