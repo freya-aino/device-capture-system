@@ -6,6 +6,7 @@ use std::thread::JoinHandle;
 use zmq::{Context, PAIR, Socket, XPUB, XSUB};
 
 use super::Connection;
+use super::monitor::{PeerCounts, watch_peers};
 
 static CONTROL_ENDPOINT_ID: AtomicUsize = AtomicUsize::new(0);
 
@@ -21,6 +22,7 @@ pub struct Proxy {
     control_endpoint: String,
     control: Option<Socket>,
     handle: Option<JoinHandle<Result<(), Error>>>,
+    peers: PeerCounts,
 }
 
 impl Proxy {
@@ -39,6 +41,7 @@ impl Proxy {
             control_endpoint: format!("inproc://proxy-control-{}-{}", from_port, to_port),
             control: None,
             handle: None,
+            peers: PeerCounts::default(),
         }
     }
 
@@ -56,12 +59,18 @@ impl Proxy {
             control_endpoint: format!("inproc://proxy-control-{}", id),
             control: None,
             handle: None,
+            peers: PeerCounts::default(),
         }
     }
 
     /// Connects the XSUB side to an additional producer endpoint. Must be called before `start()`.
     pub fn add_from_endpoint(&mut self, endpoint: impl Into<String>) {
         self.extra_from_endpoints.push(endpoint.into());
+    }
+
+    /// Live counts of connected producers (XSUB side) and consumers (XPUB side). Valid after `start()`.
+    pub fn peer_counts(&self) -> PeerCounts {
+        self.peers.clone()
     }
 
     pub fn connection_status(&self) -> (&ConnectionStatus, &ConnectionStatus) {
@@ -73,8 +82,12 @@ impl Proxy {
     }
 
     pub fn start(&mut self, context: &Context) -> Result<(), Error> {
-        self.from.open(context, XSUB)?;
-        self.to.open(context, XPUB)?;
+        let producers = self.peers.producers.clone();
+        let consumers = self.peers.consumers.clone();
+        self.from
+            .open_with(context, XSUB, |socket| watch_peers(context, socket, producers))?;
+        self.to
+            .open_with(context, XPUB, |socket| watch_peers(context, socket, consumers))?;
 
         if let Some(socket) = self.from.socket.as_ref() {
             for endpoint in &self.extra_from_endpoints {

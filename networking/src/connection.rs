@@ -61,10 +61,25 @@ impl Connection {
     }
 
     pub fn open(&mut self, context: &Context, socket_type: zmq::SocketType) -> Result<(), Error> {
+        self.open_with(context, socket_type, |_| Ok(()))
+    }
+
+    /// Like `open`, but runs `prepare` on the new socket before it connects or binds, so that
+    /// socket monitors attached there observe every event.
+    pub fn open_with<F>(
+        &mut self,
+        context: &Context,
+        socket_type: zmq::SocketType,
+        prepare: F,
+    ) -> Result<(), Error>
+    where
+        F: FnOnce(&Socket) -> Result<(), Error>,
+    {
         let socket = context.socket(socket_type)?;
         socket.set_linger(0)?;
         socket.set_sndhwm(self.queue_size as i32)?;
         socket.set_rcvhwm(self.queue_size as i32)?;
+        prepare(&socket)?;
 
         match socket_type {
             zmq::PUB | zmq::XPUB => {
