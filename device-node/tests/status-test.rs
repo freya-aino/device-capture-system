@@ -85,3 +85,100 @@ fn status_endpoint_reports_device_and_connection_state() {
     let missing = http_get(port, "/other");
     assert!(missing.starts_with("HTTP/1.1 404"), "unexpected response: {}", missing);
 }
+
+fn http_request(port: u16, method: &str, path: &str) -> String {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    write!(
+        stream,
+        "{} {} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
+        method, path
+    )
+    .unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).unwrap();
+    response
+}
+
+fn status_device(id: &str) -> StatusMockDevice {
+    StatusMockDevice {
+        info: DeviceInformation {
+            id: id.to_string(),
+            name: id.to_string(),
+            device_type: DeviceType::Microphone,
+            device_status: DeviceStatus::Stopped,
+        },
+    }
+}
+
+#[test]
+fn status_endpoint_rejects_non_get_methods() {
+    let node = DeviceNode::new_endpoint(
+        status_device("status-method"),
+        "inproc://status-test-method",
+        10,
+        1024,
+    );
+    let node = Arc::new(Mutex::new(node));
+
+    let server = bind_status_server("127.0.0.1:0").unwrap();
+    let port = server.server_addr().to_ip().unwrap().port();
+    let _handle = start_status_server(server, node);
+
+    let response = http_request(port, "POST", "/status");
+    assert!(response.starts_with("HTTP/1.1 404"), "unexpected response: {}", response);
+}
+
+#[test]
+fn status_endpoint_reports_reflect_device_status_changes() {
+    let node = DeviceNode::new_endpoint(
+        status_device("status-stopped"),
+        "inproc://status-test-stopped",
+        10,
+        1024,
+    );
+    let node = Arc::new(Mutex::new(node));
+
+    let server = bind_status_server("127.0.0.1:0").unwrap();
+    let port = server.server_addr().to_ip().unwrap().port();
+    let _handle = start_status_server(server, node);
+
+    let response = http_get(port, "/status");
+    assert!(response.starts_with("HTTP/1.1 200"), "unexpected response: {}", response);
+    assert!(
+        response.contains("{\"device\":\"Stopped\",\"connection\":\"Available\"}"),
+        "unexpected body: {}",
+        response
+    );
+}
+
+#[test]
+fn status_endpoint_returns_500_when_node_lock_is_poisoned() {
+    let node = DeviceNode::new_endpoint(
+        status_device("status-poisoned"),
+        "inproc://status-test-poisoned",
+        10,
+        1024,
+    );
+    let node = Arc::new(Mutex::new(node));
+
+    let poisoner = node.clone();
+    let join = std::thread::spawn(move || {
+        let _guard = poisoner.lock().unwrap();
+        panic!("poison the node lock for the test");
+    })
+    .join();
+    assert!(join.is_err());
+    assert!(node.is_poisoned());
+
+    let server = bind_status_server("127.0.0.1:0").unwrap();
+    let port = server.server_addr().to_ip().unwrap().port();
+    let _handle = start_status_server(server, node);
+
+    let response = http_get(port, "/status");
+    assert!(response.starts_with("HTTP/1.1 500"), "unexpected response: {}", response);
+    assert!(
+        response.contains("{\"error\":\"status unavailable\"}"),
+        "unexpected body: {}",
+        response
+    );
+}
