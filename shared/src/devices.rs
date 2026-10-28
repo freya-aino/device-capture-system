@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::thread::JoinHandle;
 
 use anyhow::{Error, Result};
@@ -88,6 +89,67 @@ impl CameraConfig {
         }
         self.fps.1 as f64 / self.fps.0 as f64
     }
+
+    pub fn area(&self) -> f64 {
+        self.width as f64 * self.height as f64
+    }
+}
+
+/// Ranking rule used by `select_camera_config_by_policy`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CameraSelectionPolicy {
+    /// Highest frame rate; the larger resolution breaks ties.
+    BestFps,
+    /// Largest resolution; the higher frame rate breaks ties.
+    BestResolution,
+    /// Highest mean of the resolution and frame rate, each scaled to the best value in the list.
+    BestAverage,
+}
+
+/// Picks one advertised config according to `policy`. When two configs rank equally,
+/// the one listed first wins.
+pub fn select_camera_config_by_policy(
+    configs: &[CameraConfig],
+    policy: CameraSelectionPolicy,
+) -> Option<CameraConfig> {
+    let max_area = configs.iter().map(CameraConfig::area).fold(0.0, f64::max);
+    let max_fps = configs
+        .iter()
+        .map(CameraConfig::frames_per_second)
+        .fold(0.0, f64::max);
+    let scale = |value: f64, max: f64| if max > 0.0 { value / max } else { 0.0 };
+
+    let rank = |config: &CameraConfig| {
+        let area = config.area();
+        let fps = config.frames_per_second();
+        match policy {
+            CameraSelectionPolicy::BestFps => [fps, area, 0.0],
+            CameraSelectionPolicy::BestResolution => [area, fps, 0.0],
+            CameraSelectionPolicy::BestAverage => {
+                let score = (scale(area, max_area) + scale(fps, max_fps)) / 2.0;
+                [score, fps, area]
+            }
+        }
+    };
+
+    configs
+        .iter()
+        .reduce(|best, candidate| {
+            if compare_ranks(&rank(candidate), &rank(best)) == Ordering::Greater {
+                candidate
+            } else {
+                best
+            }
+        })
+        .cloned()
+}
+
+fn compare_ranks(a: &[f64; 3], b: &[f64; 3]) -> Ordering {
+    a.iter()
+        .zip(b)
+        .map(|(x, y)| x.total_cmp(y))
+        .find(|ordering| ordering.is_ne())
+        .unwrap_or(Ordering::Equal)
 }
 
 /// Picks the advertised config closest to the requested resolution, then closest to the
@@ -188,6 +250,93 @@ mod tests {
     fn frames_per_second_handles_zero_numerator() {
         assert_eq!(camera_config(640, 480, (1, 30)).frames_per_second(), 30.0);
         assert_eq!(camera_config(640, 480, (0, 30)).frames_per_second(), 0.0);
+    }
+
+    #[test]
+    fn policy_best_fps_prefers_highest_frame_rate() {
+        let configs = vec![
+            camera_config(1920, 1080, (1, 5)),
+            camera_config(1280, 720, (1, 60)),
+            camera_config(640, 480, (1, 30)),
+        ];
+
+        let picked =
+            select_camera_config_by_policy(&configs, CameraSelectionPolicy::BestFps).unwrap();
+        assert_eq!((picked.width, picked.height), (1280, 720));
+    }
+
+    #[test]
+    fn policy_best_fps_uses_resolution_to_break_ties() {
+        let configs = vec![
+            camera_config(640, 480, (1, 30)),
+            camera_config(1920, 1080, (1, 30)),
+        ];
+
+        let picked =
+            select_camera_config_by_policy(&configs, CameraSelectionPolicy::BestFps).unwrap();
+        assert_eq!((picked.width, picked.height), (1920, 1080));
+    }
+
+    #[test]
+    fn policy_best_resolution_prefers_largest_area() {
+        let configs = vec![
+            camera_config(1920, 1080, (1, 5)),
+            camera_config(1280, 720, (1, 60)),
+            camera_config(640, 480, (1, 30)),
+        ];
+
+        let picked =
+            select_camera_config_by_policy(&configs, CameraSelectionPolicy::BestResolution)
+                .unwrap();
+        assert_eq!((picked.width, picked.height), (1920, 1080));
+        assert_eq!(picked.fps, (1, 5));
+    }
+
+    #[test]
+    fn policy_best_resolution_uses_fps_to_break_ties() {
+        let configs = vec![
+            camera_config(1920, 1080, (1, 15)),
+            camera_config(1920, 1080, (1, 30)),
+        ];
+
+        let picked =
+            select_camera_config_by_policy(&configs, CameraSelectionPolicy::BestResolution)
+                .unwrap();
+        assert_eq!(picked.fps, (1, 30));
+    }
+
+    #[test]
+    fn policy_best_average_balances_resolution_and_fps() {
+        let configs = vec![
+            camera_config(1920, 1080, (1, 10)),
+            camera_config(1280, 720, (1, 45)),
+            camera_config(640, 480, (1, 60)),
+        ];
+
+        let picked =
+            select_camera_config_by_policy(&configs, CameraSelectionPolicy::BestAverage).unwrap();
+        assert_eq!((picked.width, picked.height), (1280, 720));
+        assert_eq!(picked.fps, (1, 45));
+    }
+
+    #[test]
+    fn policy_best_average_handles_zero_frame_rate() {
+        let configs = vec![camera_config(640, 480, (0, 30))];
+
+        let picked =
+            select_camera_config_by_policy(&configs, CameraSelectionPolicy::BestAverage).unwrap();
+        assert_eq!((picked.width, picked.height), (640, 480));
+    }
+
+    #[test]
+    fn policy_selection_returns_none_for_empty_list() {
+        for policy in [
+            CameraSelectionPolicy::BestFps,
+            CameraSelectionPolicy::BestResolution,
+            CameraSelectionPolicy::BestAverage,
+        ] {
+            assert!(select_camera_config_by_policy(&[], policy).is_none());
+        }
     }
 
     #[test]
