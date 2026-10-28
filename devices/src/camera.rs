@@ -151,7 +151,19 @@ impl Device for V4lCameraDevice {
             self.device_info.name, params, format
         );
 
-        self.device.set_params(&params)?;
+        let requested_interval = (params.interval.numerator, params.interval.denominator);
+        let granted_interval = self.device.set_params(&params)?.interval;
+        if granted_interval.numerator as u64 * requested_interval.1 as u64
+            != requested_interval.0 as u64 * granted_interval.denominator as u64
+        {
+            return Err(anyhow!(
+                "Camera granted frame interval {}/{} instead of requested {}/{}",
+                granted_interval.numerator,
+                granted_interval.denominator,
+                requested_interval.0,
+                requested_interval.1
+            ));
+        }
 
         let negotiated = self.device.set_format(&format)?;
         if negotiated.width != format.width
