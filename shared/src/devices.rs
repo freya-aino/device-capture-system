@@ -81,6 +81,40 @@ pub struct CameraConfig {
 impl DeviceConfig for MicrophoneConfig {}
 impl DeviceConfig for CameraConfig {}
 
+impl CameraConfig {
+    pub fn frames_per_second(&self) -> f64 {
+        if self.fps.0 == 0 {
+            return 0.0;
+        }
+        self.fps.1 as f64 / self.fps.0 as f64
+    }
+}
+
+/// Picks the advertised config closest to the requested resolution, then closest to the
+/// requested frames per second. Exact resolution matches win over nearer frame rates at other sizes.
+pub fn select_camera_config(
+    configs: &[CameraConfig],
+    width: u32,
+    height: u32,
+    fps: f64,
+) -> Option<CameraConfig> {
+    let target_area = width as i64 * height as i64;
+    let distance = |c: &CameraConfig| {
+        let area = (c.width as i64 * c.height as i64 - target_area).abs();
+        let rate = (c.frames_per_second() - fps).abs();
+        (area, rate)
+    };
+
+    configs
+        .iter()
+        .min_by(|a, b| {
+            let (a_area, a_rate) = distance(a);
+            let (b_area, b_rate) = distance(b);
+            a_area.cmp(&b_area).then(a_rate.total_cmp(&b_rate))
+        })
+        .cloned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -104,6 +138,56 @@ mod tests {
         let mut different_type = base.clone();
         different_type.device_type = DeviceType::Microphone;
         assert_ne!(base, different_type);
+    }
+
+    fn camera_config(width: u32, height: u32, fps: (u32, u32)) -> CameraConfig {
+        CameraConfig {
+            width,
+            height,
+            fps,
+            fourcc: ['Y', 'U', 'Y', 'V'],
+        }
+    }
+
+    #[test]
+    fn select_camera_config_matches_resolution_and_fps() {
+        let configs = vec![
+            camera_config(1920, 1080, (1, 5)),
+            camera_config(1920, 1080, (1, 30)),
+            camera_config(1920, 1080, (1, 60)),
+            camera_config(1280, 720, (1, 30)),
+        ];
+
+        let picked = select_camera_config(&configs, 1920, 1080, 30.0).unwrap();
+        assert_eq!((picked.width, picked.height, picked.fps), (1920, 1080, (1, 30)));
+
+        let picked = select_camera_config(&configs, 1920, 1080, 60.0).unwrap();
+        assert_eq!(picked.fps, (1, 60));
+
+        let picked = select_camera_config(&configs, 1920, 1080, 4.0).unwrap();
+        assert_eq!(picked.fps, (1, 5));
+    }
+
+    #[test]
+    fn select_camera_config_falls_back_to_nearest_resolution() {
+        let configs = vec![
+            camera_config(1920, 1080, (1, 30)),
+            camera_config(1280, 720, (1, 30)),
+        ];
+
+        let picked = select_camera_config(&configs, 1600, 900, 30.0).unwrap();
+        assert_eq!((picked.width, picked.height), (1280, 720));
+    }
+
+    #[test]
+    fn select_camera_config_returns_none_for_empty_list() {
+        assert!(select_camera_config(&[], 1920, 1080, 30.0).is_none());
+    }
+
+    #[test]
+    fn frames_per_second_handles_zero_numerator() {
+        assert_eq!(camera_config(640, 480, (1, 30)).frames_per_second(), 30.0);
+        assert_eq!(camera_config(640, 480, (0, 30)).frames_per_second(), 0.0);
     }
 
     #[test]
