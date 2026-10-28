@@ -4,18 +4,25 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 use devices::V4lCameraDevice;
-use shared::{Device, DeviceCommand};
+use shared::{Device, DeviceCommand, select_camera_config};
 
 #[test]
 #[ignore = "requires a real V4L2 capture device at /dev/video0"]
 fn real_camera_streams_frames_for_a_few_seconds() {
     let mut camera = V4lCameraDevice::new("/dev/video0".to_string())
         .expect("a V4L2 capture device should be present at /dev/video0");
-    let config = camera
-        .get_configs()
-        .unwrap()
-        .into_iter()
-        .next()
+    let configs = camera.get_configs().unwrap();
+    for config in configs.iter() {
+        println!(
+            "advertised {}x{} {:?} interval {:?} ({:.1} fps)",
+            config.width,
+            config.height,
+            config.fourcc.iter().collect::<String>(),
+            config.fps,
+            config.frames_per_second()
+        );
+    }
+    let config = select_camera_config(&configs, 1920, 1080, 30.0)
         .expect("camera should advertise at least one config");
     println!(
         "streaming {}x{} at {:?} fps",
