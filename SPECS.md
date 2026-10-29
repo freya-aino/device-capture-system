@@ -160,7 +160,7 @@ crate's broken module re-export, §4.1 there).
 | `shared` (data model) | ✅ Works: `ConnectionStats` uses `Instant` for interval math and records per-frame latency | Observability for all roles |
 | `networking::Connection`/`Sender`/`Receiver` | ✅ Works: receive path validates peer input and drops malformed frames; a sequence part enables gap-based dropped-frame counts | Producer, Consumer |
 | `networking::Proxy` | ✅ Works: `start()` runs `zmq::proxy_steerable` on a forwarding thread; `stop()` terminates it cleanly through a control socket. Covered by `proxy-test.rs` and the hub pipeline test | Receiver + Accumulator |
-| `devices::V4lCameraDevice` | ⚠️ Streams on a real webcam through the ignored test (2026-10-30, 1920×1080 MJPG, 14 fps delivered against a granted 1/30 interval), but `device-node` cannot start it: the fixed default 1920×1080 YUYV is not advertised and the node never selects from `get_configs()` (item 19) | Producer (camera) |
+| `devices::V4lCameraDevice` | ✅ Streams on a real webcam at the granted rate in every advertised mode (2026-10-30 survey, `docs/hardware/`): `start()` disables exposure auto-priority, sets format before interval and reads both back; `device-node` selects the mode from `get_configs()` (§7.3). End-to-end 60 s run still open (item 12) | Producer (camera) |
 | `devices::AlsaMicrophoneDevice` | ⚠️ Compiles; on a PipeWire host the enumeration filters drop every hardware hint (`DEV` substring), so `device-node list` finds no microphone and the capture path is untested (item 20) | Producer (mic) |
 | `devices::microphone_windows` | ❌ Empty file | Producer on Windows |
 | `devices::manager` | ✅ Deleted | n/a |
@@ -186,9 +186,8 @@ Resolved since the last review: multi-producer fan-in (§8 item 13), covered by 
 and hub pipeline tests.
 
 Open, in priority order:
-0. ❌ Producers on real hardware (items 19, 20): the camera node must pick its config from the advertised list and
-   put the FourCC on the wire, and the microphone filter must keep hardware hints. Found by the 2026-10-30 run
-   (`docs/hardware/`); both block item 12.
+0. ⚠️ Producers on real hardware: item 19 (camera selection, FourCC on the wire, frame-rate fixes) is done;
+   item 20 (microphone filter keeps hardware hints) is open and blocks the microphone half of item 12.
 1. ⚠️ Sync and calibration: the hub runs an opt-in `AlignedRelay` (`HUB_SYNC_PORT`), and consumers can use `AlignedClient`; the relay has not been validated on real devices, and calibration is not started (§2 Syncer).
 2. ⚠️ Hardware validation: the v4l2 loop streams on a real webcam in the ignored `devices` test; the ALSA loop
    is untested because enumeration finds nothing; the end-to-end path has not been run (item 12, blocked by 19 and 20).
@@ -217,14 +216,18 @@ pub struct FramePacketInformation {
     pub rx_timestamp: Option<SystemTime>, // set by receiver on arrival
     pub tx_timestamp: Option<SystemTime>, // set by sender just before send
     pub frame_shape: Vec<u32>,
+    pub pixel_format: Option<String>,     // camera: negotiated FourCC ("YUYV", "MJPG", ...); microphone: None
 }
 ```
 
+`pixel_format` was added 2026-10-30 (item 19). Every peer in a deployment must be built from the same revision;
+there is no protocol version negotiation, and a pre-item-19 peer cannot decode frames from a post-item-19 peer.
+
 Payload formats by device type:
 
-- **Camera** — raw v4l2 buffer in the negotiated FourCC (default `YUYV`), `frame_shape = [width, height]`.
-  **Gap (item 19):** the header carries no pixel format, so a consumer cannot tell YUYV from MJPG, and real UVC
-  webcams offer 1080p only as MJPG. Item 19 adds the format to the header and decides whether MJPG is allowed.
+- **Camera** — the v4l2 buffer exactly as the camera delivered it, in the FourCC named by `pixel_format`,
+  `frame_shape = [width, height]`. The format is whichever advertised mode the device node selected (§7.3), so
+  consumers must branch on `pixel_format`: `YUYV` is 2 bytes per pixel, `MJPG` is one JPEG image per frame.
 - **Microphone** — interleaved `S16LE` samples as bytes, `frame_shape = [buffer_size, channels]`
   (channel count is included).
 
@@ -235,7 +238,7 @@ Defaults (`device-node/src/helper.rs`):
 
 | Device | Default config |
 |---|---|
-| Camera | 1920×1080, 30fps, `YUYV` (fixed; the node does not select from the advertised configs yet, so it fails on cameras without that exact mode — item 19) |
+| Camera | Selected from the camera's advertised modes (§7.3); the default request is 1920×1080 at 30 fps, uncompressed preferred on ties |
 | Microphone | 16kHz, 1 channel, 512-sample buffer, `S16LE` |
 
 ### 7.1 Device-node status endpoint
@@ -262,6 +265,21 @@ Remote control on the same server (§8 item 14):
 The server validates transitions before calling the device, so a bad request cannot trigger the device's
 own start/stop assertions.
 
+### 7.3 Camera config selection
+
+`device-node run camera` never streams a fixed config. It enumerates the camera's advertised modes
+(`Device::get_configs`) and picks one with `device_node::CameraSelection`:
+
+| `DEVICE_NODE_CAMERA_POLICY` | Rule | Extra variables |
+|---|---|---|
+| `nearest` (default) | `shared::select_camera_config`: closest resolution, then closest frame rate; an uncompressed FourCC wins an exact tie | `DEVICE_NODE_CAMERA_WIDTH`, `_HEIGHT`, `_FPS` (defaults 1920, 1080, 30) |
+| `best-fps` | `shared::select_camera_config_by_policy(BestFps)` | none |
+| `best-resolution` | `…(BestResolution)` | none |
+| `best-average` | `…(BestAverage)` | none |
+
+The node prints the selection and the chosen config at start. `V4lCameraDevice::start` still refuses to run if
+the driver negotiates anything other than the chosen config, so a mismatch is an error, never a silent change.
+
 ### 7.2 Environment configuration
 
 The binaries read these variables (see `README.md`, Configuration):
@@ -269,6 +287,8 @@ The binaries read these variables (see `README.md`, Configuration):
 | Variable | Binary | Default |
 |---|---|---|
 | `DEVICE_NODE_STATUS_ADDR` | `device-node` | `127.0.0.1:8080` |
+| `DEVICE_NODE_CAMERA_POLICY` | `device-node` | `nearest` (§7.3) |
+| `DEVICE_NODE_CAMERA_WIDTH` / `_HEIGHT` / `_FPS` | `device-node` | `1920` / `1080` / `30`, used by `nearest` |
 | `HUB_PRODUCER_IP` / `HUB_PRODUCER_PORT` | `control-hub` | `127.0.0.1` / `5555` |
 | `HUB_CONSUMER_IP` / `HUB_CONSUMER_PORT` | `control-hub` | `0.0.0.0` / `5556` |
 | `HUB_QUEUE_SIZE` | `control-hub` | `128` |
@@ -282,8 +302,8 @@ The binaries read these variables (see `README.md`, Configuration):
 
 ## 8. Build order and remaining work
 
-Items 1–3, 5–9, 11, and 13–16 are complete. Items 4, 10 and 12 are partial; items 17–20 are open. Items 19 and
-20 were added 2026-10-30 from the first hardware run. Item numbers
+Items 1–3, 5–9, 11, 13–16 and 19 are complete. Items 4, 10 and 12 are partial; items 17, 18 and 20 are open.
+Items 19 and 20 were added 2026-10-30 from the first hardware run. Item numbers
 are stable so older references still resolve. Each item's spec, acceptance criteria and checklist is in its
 own file under [`docs/specs/`](docs/specs/README.md), grouped into stages. §8.1 gives the order in which to
 implement the open items.
@@ -308,13 +328,13 @@ implement the open items.
 | 16 | 3 — Hub fan-in and hub status | ✅ | [step-16](docs/specs/03-hub-fan-in-and-status/step-16-hub-status-endpoint.md) |
 | 17 | 7 — Calibration | ❌ | [step-17](docs/specs/07-calibration/step-17-calibration.md) |
 | 18 | 8 — Windows microphone | ❌ | [step-18](docs/specs/08-windows-microphone/step-18-windows-microphone.md) |
-| 19 | 2 — Producers | ❌ | [step-19](docs/specs/02-producers/step-19-camera-config-negotiation.md) |
+| 19 | 2 — Producers | ✅ | [step-19](docs/specs/02-producers/step-19-camera-config-negotiation.md) |
 | 20 | 2 — Producers | ❌ | [step-20](docs/specs/02-producers/step-20-microphone-enumeration-pipewire.md) |
 
 ### 8.1 Order of remaining work
 
-Implement the open items in this order: 19 → 20 → 12 → 10 → 17 → 18. Items 19 and 20 come first because item 12's
-end-to-end run cannot start a producer without them. An item is done only
+Implement the open items in this order: 20 → 12 → 10 → 17 → 18. Item 20 comes first because item 12's
+microphone run cannot start a producer without it. An item is done only
 when its acceptance check passes with `cargo test --workspace` (plus the hardware run for item 12), and
 the README TODO and this file are updated in the same change.
 
@@ -326,5 +346,9 @@ the README TODO and this file are updated in the same change.
 - NAT traversal / cross-internet deployment — the system assumes a trusted LAN.
 - Per-frame encryption by default — not required on a trusted LAN; revisit only if a specific
   threat model demands it, and prefer a transport-level option (CurveZMQ) over switching protocols.
-- Video/audio codecs in the hot path — frames are transported raw to avoid encode/decode latency
-  and to keep frame-accurate sync tractable.
+- Video/audio codecs in the hot path — this system never encodes: frames are transported exactly as the device
+  delivered them, to avoid added encode latency and to keep frame-accurate sync tractable. A camera that only
+  offers a mode as MJPG (every UVC webcam does at 1080p, see `docs/hardware/`) is still streamed in that mode, with
+  `pixel_format = "MJPG"` on the wire; decoding is the consumer's choice. Consumers that need uncompressed frames
+  ask for a mode the camera offers uncompressed (`DEVICE_NODE_CAMERA_WIDTH=640 …`), they do not get a transcode
+  from the node. Decided 2026-10-30 (item 19).

@@ -49,7 +49,7 @@ A frame is sent as a single ZMQ multipart message:
 
 | Part    | Content                                                            |
 |---------|--------------------------------------------------------------------|
-| `0`     | `bincode`-encoded `FramePacketInformation` (device info, frame shape, tx timestamp) |
+| `0`     | `bincode`-encoded `FramePacketInformation` (device info, frame shape, pixel format, tx timestamp) |
 | `1`     | Sender-local `u64` sequence number (little-endian)                  |
 | `2..n`  | The raw frame bytes, split into `data_chunk_size` chunks            |
 
@@ -62,9 +62,10 @@ silent drops caused by PUB high-water marks (drops are only observable once a la
 
 Payload formats:
 
-- **Camera** – raw v4l2 buffer in the FourCC of the requested config (default `YUYV`),
-  `frame_shape = [width, height]` from that config. If the driver negotiates a different width,
-  height or FourCC than requested, `start()` returns an error instead of silently using the
+- **Camera** – the v4l2 buffer as the camera delivered it, in the FourCC named by the header's
+  `pixel_format` (`"YUYV"`, `"MJPG"`, ...), `frame_shape = [width, height]`. `device-node` picks the
+  mode from what the camera advertises (see Configuration); if the driver then negotiates a
+  different width, height or FourCC, `start()` returns an error instead of silently using the
   negotiated format (see `CODE_REVIEW.md` §4.7).
 - **Microphone** – interleaved `S16LE` samples as bytes, `frame_shape = [buffer_size, channels]`.
   Use `FramePacket::decode_to_i16_le` to get `i16` samples back.
@@ -134,6 +135,8 @@ Environment variables read by the binaries:
 | Variable | Binary | Default | Meaning |
 |---|---|---|---|
 | `DEVICE_NODE_STATUS_ADDR` | `device-node` | `127.0.0.1:8080` | Bind address of the status and control server |
+| `DEVICE_NODE_CAMERA_POLICY` | `device-node` | `nearest` | How to pick one of the camera's advertised modes: `nearest` (closest to the requested size and rate, uncompressed wins ties), `best-fps`, `best-resolution`, `best-average` |
+| `DEVICE_NODE_CAMERA_WIDTH` / `_HEIGHT` / `_FPS` | `device-node` | `1920` / `1080` / `30` | Target for `nearest`. Pick a size the camera offers as `YUYV` (often 640x480) to get uncompressed frames |
 | `HUB_PRODUCER_IP` / `HUB_PRODUCER_PORT` | `control-hub` | `127.0.0.1` / `5555` | Producer endpoint the hub's XSUB socket **connects** to |
 | `HUB_PRODUCERS` | `control-hub` | unset | Comma-separated `ip:port` producer endpoints; overrides `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT` when set |
 | `HUB_CONSUMER_IP` / `HUB_CONSUMER_PORT` | `control-hub` | `0.0.0.0` / `5556` | Address the hub's XPUB socket **binds** for consumers |
@@ -207,7 +210,7 @@ Defaults used by `device-node` (see `device-node/src/helper.rs`):
 
 | Device     | Default configuration                                   |
 |------------|----------------------------------------------------------|
-| Camera     | 1920x1080, 30 fps (`1/30`), FourCC `YUYV`                 |
+| Camera     | Requested 1920x1080 at 30 fps; the actual mode is the nearest the camera advertises, often `MJPG` at that size (`DEVICE_NODE_CAMERA_*`) |
 | Microphone | 16 kHz, 1 channel, 512-sample buffer, `S16LE`             |
 
 ## Usage
@@ -256,7 +259,9 @@ Runs on each capture machine. Device indices are the positions reported by `devi
 
 ```bash
 cargo run -p device-node -- list
-cargo run -p device-node -- run camera 0 0.0.0.0 5555   # publish camera 0 on :5555
+cargo run -p device-node -- run camera 0 0.0.0.0 5555   # publish camera 0 on :5555, nearest to 1920x1080@30
+DEVICE_NODE_CAMERA_WIDTH=640 DEVICE_NODE_CAMERA_HEIGHT=480 cargo run -p device-node -- run camera 0 0.0.0.0 5555  # uncompressed YUYV on most webcams
+DEVICE_NODE_CAMERA_POLICY=best-fps cargo run -p device-node -- run camera 0 0.0.0.0 5555
 DEVICE_NODE_STATUS_ADDR=127.0.0.1:8080 cargo run -p device-node -- run mic 0 0.0.0.0 5555
 ```
 
@@ -391,8 +396,8 @@ The ordered build plan is in `SPECS.md` §8, and each build item's spec and chec
   - [x] StartDevice / StopDevice / RestartDevice (`POST /start`, `/stop`, `/restart`)
 - [x] `DeviceNode` support for cameras + microphones
 - [ ] Capture hardware validation (first run 2026-10-30, see [`docs/hardware/`](docs/hardware/))
-  - [~] Exercise the v4l2 camera capture loop on real hardware (streams in the ignored `devices` test; `device-node` cannot start it with the fixed default config)
-  - [ ] Camera config selected from the advertised list, FourCC carried on the wire (`docs/specs` step 19)
+  - [~] Exercise the v4l2 camera capture loop on real hardware (every advertised mode streams at its granted rate in the ignored `devices` tests and `device-node` starts on the webcam; the 60 s end-to-end run is still open)
+  - [x] Camera config selected from the advertised list, FourCC carried on the wire (`docs/specs` step 19)
   - [ ] Microphone enumeration keeps hardware hints on PipeWire hosts (`docs/specs` step 20)
   - [ ] Exercise the ALSA microphone capture loop on real hardware
   - [ ] Windows microphone support (`devices/src/microphone_windows.rs` is empty)

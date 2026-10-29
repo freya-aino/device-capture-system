@@ -1,6 +1,6 @@
 # Step 19: Camera config negotiation and FourCC on the wire
 
-- **Status:** ❌ Open
+- **Status:** ✅ Done (2026-10-30; the end-to-end 60 s run stays with step 12)
 - **Stage:** 2 — Producers (devices and device-node)
 - **Spec item:** [`SPECS.md`](../../../SPECS.md) §8 item 19
 
@@ -18,7 +18,7 @@ implementation the specs proposed for the camera producer does not start on a re
   (`FramePacketInformation`) has no pixel-format field, and `SPECS.md` §7 says only "raw v4l2 buffer in the negotiated
   FourCC". A consumer receiving MJPG and YUYV frames cannot tell them apart.
 
-## Scope
+## Scope (as implemented)
 
 1. `device-node` selects the camera config from `get_configs()` instead of a fixed default. The requested
    resolution and frame rate (default 1920×1080 at 30 fps) and the selection policy come from CLI arguments or
@@ -37,12 +37,13 @@ Python `Frame` exposes the format.
 
 ## Step checklist
 
-- [ ] `device-node` picks the camera config from the advertised list (policy and target from CLI/env)
-- [ ] `FramePacketInformation` carries the pixel format; `SPECS.md` §7 updated
-- [ ] Python `Frame` exposes the pixel format
-- [ ] MJPG decision recorded in `SPECS.md` §9
-- [ ] Delivered-rate shortfall diagnosed and recorded
-- [ ] `device-node run camera` starts on the Framework webcam
+- [x] `device-node` picks the camera config from the advertised list (`device_node::CameraSelection`, `DEVICE_NODE_CAMERA_POLICY` / `_WIDTH` / `_HEIGHT` / `_FPS`; unit tests use the Framework webcam's advertised list)
+- [x] `FramePacketInformation` carries the pixel format (`pixel_format: Option<String>`); `SPECS.md` §7 and §7.3 updated
+- [x] Python `Frame` exposes `pixel_format`; the loopback pytest asserts it
+- [x] MJPG decision recorded in `SPECS.md` §9: stream camera-native formats as delivered, never transcode
+- [x] Delivered-rate shortfall diagnosed and recorded: exposure auto-priority (now disabled at start) and interval set before format (order fixed, parameters read back); every mode then delivers its granted rate ([results](../../hardware/2026-10-30-framework-12-webcam.md))
+- [x] `device-node run camera` starts on the Framework webcam (default selection → 1920×1080 MJPG 30 fps; 640×480 request → YUYV)
+- [x] `Device::stop()` marks the device `Stopped` even when the capture thread had already exited (found by the survey harness)
 
 ## Stage 2 definition of done (extended)
 
@@ -50,7 +51,7 @@ Python `Frame` exposes the format.
 - [x] Camera and microphone report `Running`/`Stopped`, and `device-node` serves `GET /status`
 - [x] `DeviceNode` is generic over `T: Device`
 - [x] Remote `/start`, `/stop`, `/restart` return `409` on invalid transitions
-- [ ] `device-node` starts a real camera without hand-editing the default config (this step)
+- [x] `device-node` starts a real camera without hand-editing the default config (this step)
 - [ ] `device-node list` finds a real microphone (step 20)
 - [ ] Capture loops exercised on real hardware (hardware validation stage)
 - [x] `cargo test --workspace` passes (run 2026-10-30 at `3c3d183`, 13 test binaries, all passing)
