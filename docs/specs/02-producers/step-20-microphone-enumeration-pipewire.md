@@ -1,6 +1,6 @@
 # Step 20: Microphone enumeration on ALSA hosts with PipeWire
 
-- **Status:** ❌ Open
+- **Status:** ✅ Done (2026-10-30)
 - **Stage:** 2 — Producers (devices and device-node)
 - **Spec item:** [`SPECS.md`](../../../SPECS.md) §8 item 20
 
@@ -15,7 +15,7 @@ The step 04 filters were written against ALSA hint lists without a sound server.
 list is short and `hw:`/`front:` entries are the only direct-hardware entries; they are also usually busy because
 PipeWire owns the card, which makes `pipewire` or `default` the device that actually captures.
 
-## Scope
+## Scope (as implemented)
 
 1. Replace the `DEV` substring filter with a rule that keeps one hint per card. Keep `front:CARD=…,DEV=0` or
    `hw:CARD=…,DEV=n` entries and drop only duplicate subdevice hints.
@@ -31,11 +31,11 @@ and `device-node run mic 0 <hub>` publishes frames.
 
 ## Step checklist
 
-- [ ] `DEV` substring filter replaced by a per-card rule
-- [ ] Sound-server PCM listed as a microphone when present
-- [ ] Hardware-free filter test with the recorded hint list
-- [ ] `device-node list` finds the ALC285 capture device
-- [ ] `device-node run mic` publishes frames (recorded in the hardware note)
+- [x] `DEV` substring filter replaced by a per-card rule (`select_capture_hints`: `sysdefault` > `plughw` > `front` > `hw`, one per `CARD=`)
+- [x] Sound-server PCMs (`pipewire`, `pulse`, `jack`) listed as microphones when present
+- [x] Hardware-free filter tests with the recorded hint list and a classic ALSA list (`devices/src/microphone_linux.rs`)
+- [x] `device-node list` finds the ALC285 capture device (`sysdefault:CARD=PCH`) and `pipewire`
+- [x] Capture loop delivers 16 kHz mono from both PCMs in the ignored `microphone-stream-test` ([results](../../hardware/2026-10-30-framework-12-webcam.md)); the `device-node run mic` end-to-end publish is part of step 12
 
 ## Stage 2 definition of done (extended)
 

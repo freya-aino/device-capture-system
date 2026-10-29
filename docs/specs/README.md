@@ -10,7 +10,7 @@ Status markers: ✅ done · ⚠️ partial · ❌ open.
 | Stage | Folder | Steps | Status |
 |---|---|---|---|
 | 1 — Transport and hub foundation | [01-transport-and-hub](01-transport-and-hub/) | 1 ✅, 2 ✅, 5 ✅, 9 ✅ | Done |
-| 2 — Producers (devices and device-node) | [02-producers](02-producers/) | 4 ⚠️, 6 ✅, 7 ✅, 8 ✅, 14 ✅, 19 ✅, 20 ❌ | Camera starts and holds its granted rate on real hardware (19); microphone filter still blocks real devices (20) |
+| 2 — Producers (devices and device-node) | [02-producers](02-producers/) | 4 ✅, 6 ✅, 7 ✅, 8 ✅, 14 ✅, 19 ✅, 20 ✅, 21 ❌ | Camera and microphone both start and stream on real hardware; sample rate not yet on the wire (21) |
 | 3 — Hub fan-in and hub status | [03-hub-fan-in-and-status](03-hub-fan-in-and-status/) | 13 ✅, 16 ✅ | Done |
 | 4 — Consumers and Python | [04-consumers-and-python](04-consumers-and-python/) | 3 ✅, 11 ✅, 15 ✅ | Done; clean-virtualenv pytest re-run 2026-10-30 |
 | 5 — Sync | [05-sync](05-sync/) | 10 ⚠️ | Partial |
@@ -18,11 +18,11 @@ Status markers: ✅ done · ⚠️ partial · ❌ open.
 | 7 — Calibration | [07-calibration](07-calibration/) | 17 ❌ | Open |
 | 8 — Windows microphone | [08-windows-microphone](08-windows-microphone/) | 18 ❌ | Open |
 
-Totals: 14 done, 3 partial (items 4, 10, 12), 3 open (items 17, 18, 20).
+Totals: 16 done, 2 partial (items 10, 12), 3 open (items 17, 18, 21).
 
 ### Order of remaining work
 
-Implement the open items in this order: 20 → 12 → 10 → 17 → 18 (`SPECS.md` §8.1). An item is done only when its
+Implement the open items in this order: 12 → 21 → 10 → 17 → 18 (`SPECS.md` §8.1). An item is done only when its
 acceptance check passes with `cargo test --workspace` (plus the hardware run for item 12), and the README
 TODO and the step file are updated in the same change.
 

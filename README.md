@@ -398,8 +398,9 @@ The ordered build plan is in `SPECS.md` §8, and each build item's spec and chec
 - [ ] Capture hardware validation (first run 2026-10-30, see [`docs/hardware/`](docs/hardware/))
   - [~] Exercise the v4l2 camera capture loop on real hardware (every advertised mode streams at its granted rate in the ignored `devices` tests and `device-node` starts on the webcam; the 60 s end-to-end run is still open)
   - [x] Camera config selected from the advertised list, FourCC carried on the wire (`docs/specs` step 19)
-  - [ ] Microphone enumeration keeps hardware hints on PipeWire hosts (`docs/specs` step 20)
-  - [ ] Exercise the ALSA microphone capture loop on real hardware
+  - [x] Microphone enumeration keeps hardware hints on PipeWire hosts (`docs/specs` step 20)
+  - [~] Exercise the ALSA microphone capture loop on real hardware (16 kHz mono from `sysdefault:CARD=PCH` and `pipewire` in the ignored `devices` test; end-to-end run still open)
+  - [ ] Microphone sample rate carried on the wire (`docs/specs` step 21)
   - [ ] Windows microphone support (`devices/src/microphone_windows.rs` is empty)
 - [ ] Control Hub
   - [x] Load bind/connect config from env and run a ZMQ proxy

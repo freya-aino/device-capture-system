@@ -52,6 +52,6 @@ Python `Frame` exposes the format.
 - [x] `DeviceNode` is generic over `T: Device`
 - [x] Remote `/start`, `/stop`, `/restart` return `409` on invalid transitions
 - [x] `device-node` starts a real camera without hand-editing the default config (this step)
-- [ ] `device-node list` finds a real microphone (step 20)
+- [x] `device-node list` finds a real microphone (step 20)
 - [ ] Capture loops exercised on real hardware (hardware validation stage)
 - [x] `cargo test --workspace` passes (run 2026-10-30 at `3c3d183`, 13 test binaries, all passing)

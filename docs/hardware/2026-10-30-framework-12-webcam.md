@@ -81,9 +81,31 @@ sysdefault:CARD=PCH
 front:CARD=PCH,DEV=0
 ```
 
-`AlsaMicrophoneDevice::get_all_alsa_microphones` drops `default`, `null`, `pipewire` and `sysdefault` by base name
-and then drops every hint containing `DEV`, which removes `front:CARD=PCH,DEV=0` too. On a PipeWire desktop that
-leaves nothing. The ALSA capture loop was therefore not exercised. Tracked as step 20.
+`AlsaMicrophoneDevice::get_all_alsa_microphones` dropped `default`, `null`, `pipewire` and `sysdefault` by base
+name and then dropped every hint containing `DEV`, which removed `front:CARD=PCH,DEV=0` too. On a PipeWire desktop
+that left nothing. Fixed in step 20 (`select_capture_hints`: one converting plugin per card, plus sound-server PCMs).
+`device-node list` now reports:
+
+```
+num microphones: 2
+Microphone: "sysdefault:CARD=PCH" -- HDA Intel PCH, ALC285 Analog
+Microphone: "pipewire" -- PipeWire Sound Server
+```
+
+Ignored capture test (`cargo test -p devices --test microphone-stream-test -- --ignored --nocapture`), 3 s each at
+16 kHz mono, 512-sample packets:
+
+| PCM | First packet | Packets | Delivered rate | Notes |
+|---|---|---|---|---|
+| `sysdefault:CARD=PCH` | 126 ms | 91 | 15 999 Hz | `shape [512, 1]`; may be busy while another client holds the card |
+| `pipewire` | 205 ms | 90 | 16 179 Hz | works while PipeWire owns the card |
+
+The samples are heavily clipped (RMS 0.89 of full scale, 40–70 % of samples at ±32767). This is the machine, not the
+capture code: `arecord -D pipewire -f S16_LE -r 16000 -c 1` records the same clipping (RMS 0.82), and `amixer`
+shows `Capture` at 100 % (+30 dB) with `Internal Mic Boost` at 100 % (+30 dB). The capture loop itself is faithful.
+
+Found on the way: the microphone header carries `frame_shape = [buffer_size, channels]` but not the sample rate,
+and `start()` asks ALSA for the nearest rate. A consumer has to assume the node's configured rate. Tracked as step 21.
 
 ## Python client
 

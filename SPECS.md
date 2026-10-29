@@ -161,7 +161,7 @@ crate's broken module re-export, §4.1 there).
 | `networking::Connection`/`Sender`/`Receiver` | ✅ Works: receive path validates peer input and drops malformed frames; a sequence part enables gap-based dropped-frame counts | Producer, Consumer |
 | `networking::Proxy` | ✅ Works: `start()` runs `zmq::proxy_steerable` on a forwarding thread; `stop()` terminates it cleanly through a control socket. Covered by `proxy-test.rs` and the hub pipeline test | Receiver + Accumulator |
 | `devices::V4lCameraDevice` | ✅ Streams on a real webcam at the granted rate in every advertised mode (2026-10-30 survey, `docs/hardware/`): `start()` disables exposure auto-priority, sets format before interval and reads both back; `device-node` selects the mode from `get_configs()` (§7.3). End-to-end 60 s run still open (item 12) | Producer (camera) |
-| `devices::AlsaMicrophoneDevice` | ⚠️ Compiles; on a PipeWire host the enumeration filters drop every hardware hint (`DEV` substring), so `device-node list` finds no microphone and the capture path is untested (item 20) | Producer (mic) |
+| `devices::AlsaMicrophoneDevice` | ✅ Enumerates one converting PCM per card plus sound-server PCMs (`select_capture_hints`, item 20) and captures 16 kHz mono from both on real hardware (2026-10-30, `docs/hardware/`). Sample rate is not yet on the wire (item 21) | Producer (mic) |
 | `devices::microphone_windows` | ❌ Empty file | Producer on Windows |
 | `devices::manager` | ✅ Deleted | n/a |
 | `device-node::DeviceNode` | ✅ Works: generic over `T: Device`, can publish one camera/mic stream, serves `GET /status` and remote `POST /start`, `/stop`, `/restart` with transition checks | Producer |
@@ -186,8 +186,8 @@ Resolved since the last review: multi-producer fan-in (§8 item 13), covered by 
 and hub pipeline tests.
 
 Open, in priority order:
-0. ⚠️ Producers on real hardware: item 19 (camera selection, FourCC on the wire, frame-rate fixes) is done;
-   item 20 (microphone filter keeps hardware hints) is open and blocks the microphone half of item 12.
+0. ✅ Producers on real hardware: item 19 (camera selection, FourCC on the wire, frame-rate fixes) and item 20
+   (microphone enumeration on PipeWire hosts) are done; item 21 (sample rate on the wire) is a small follow-up.
 1. ⚠️ Sync and calibration: the hub runs an opt-in `AlignedRelay` (`HUB_SYNC_PORT`), and consumers can use `AlignedClient`; the relay has not been validated on real devices, and calibration is not started (§2 Syncer).
 2. ⚠️ Hardware validation: the v4l2 loop streams on a real webcam in the ignored `devices` test; the ALSA loop
    is untested because enumeration finds nothing; the end-to-end path has not been run (item 12, blocked by 19 and 20).
@@ -229,7 +229,8 @@ Payload formats by device type:
   `frame_shape = [width, height]`. The format is whichever advertised mode the device node selected (§7.3), so
   consumers must branch on `pixel_format`: `YUYV` is 2 bytes per pixel, `MJPG` is one JPEG image per frame.
 - **Microphone** — interleaved `S16LE` samples as bytes, `frame_shape = [buffer_size, channels]`
-  (channel count is included).
+  (channel count is included). **Gap (item 21):** the sample rate is not on the wire; consumers assume the node's
+  configured rate (default 16 kHz).
 
 Per-frame latency is measurable today as `rx_timestamp - tx_timestamp`. The receive path records
 this into `ConnectionStats` (best-effort; frames without a `tx_timestamp` are dropped).
@@ -302,8 +303,8 @@ The binaries read these variables (see `README.md`, Configuration):
 
 ## 8. Build order and remaining work
 
-Items 1–3, 5–9, 11, 13–16 and 19 are complete. Items 4, 10 and 12 are partial; items 17, 18 and 20 are open.
-Items 19 and 20 were added 2026-10-30 from the first hardware run. Item numbers
+Items 1–9, 11, 13–16, 19 and 20 are complete. Items 10 and 12 are partial; items 17, 18 and 21 are open.
+Items 19–21 were added 2026-10-30 from the first hardware run. Item numbers
 are stable so older references still resolve. Each item's spec, acceptance criteria and checklist is in its
 own file under [`docs/specs/`](docs/specs/README.md), grouped into stages. §8.1 gives the order in which to
 implement the open items.
@@ -313,7 +314,7 @@ implement the open items.
 | 1 | 1 — Transport and hub foundation | ✅ | [step-01](docs/specs/01-transport-and-hub/step-01-fix-proxy.md) |
 | 2 | 1 — Transport and hub foundation | ✅ | [step-02](docs/specs/01-transport-and-hub/step-02-control-hub-main.md) |
 | 3 | 4 — Consumers and Python | ✅ | [step-03](docs/specs/04-consumers-and-python/step-03-access-client-frames.md) |
-| 4 | 2 — Producers | ⚠️ | [step-04](docs/specs/02-producers/step-04-device-enumeration-filters.md) |
+| 4 | 2 — Producers | ✅ | [step-04](docs/specs/02-producers/step-04-device-enumeration-filters.md) |
 | 5 | 1 — Transport and hub foundation | ✅ | [step-05](docs/specs/01-transport-and-hub/step-05-receive-path-panics.md) |
 | 6 | 2 — Producers | ✅ | [step-06](docs/specs/02-producers/step-06-device-status-endpoint.md) |
 | 7 | 2 — Producers | ✅ | [step-07](docs/specs/02-producers/step-07-generic-device-node.md) |
@@ -329,12 +330,13 @@ implement the open items.
 | 17 | 7 — Calibration | ❌ | [step-17](docs/specs/07-calibration/step-17-calibration.md) |
 | 18 | 8 — Windows microphone | ❌ | [step-18](docs/specs/08-windows-microphone/step-18-windows-microphone.md) |
 | 19 | 2 — Producers | ✅ | [step-19](docs/specs/02-producers/step-19-camera-config-negotiation.md) |
-| 20 | 2 — Producers | ❌ | [step-20](docs/specs/02-producers/step-20-microphone-enumeration-pipewire.md) |
+| 20 | 2 — Producers | ✅ | [step-20](docs/specs/02-producers/step-20-microphone-enumeration-pipewire.md) |
+| 21 | 2 — Producers | ❌ | [step-21](docs/specs/02-producers/step-21-microphone-sample-rate-on-the-wire.md) |
 
 ### 8.1 Order of remaining work
 
-Implement the open items in this order: 20 → 12 → 10 → 17 → 18. Item 20 comes first because item 12's
-microphone run cannot start a producer without it. An item is done only
+Implement the open items in this order: 12 → 21 → 10 → 17 → 18. Item 21 is a small wire-format follow-up and
+should land before any external consumer depends on the header. An item is done only
 when its acceptance check passes with `cargo test --workspace` (plus the hardware run for item 12), and
 the README TODO and this file are updated in the same change.
 
