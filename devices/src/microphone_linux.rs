@@ -130,7 +130,10 @@ impl Device for AlsaMicrophoneDevice {
 
                 // capture buffer (i16 little-endian --> u8 byte level representation)
                 let mut buffer = Vec::<u8>::new();
-                buffer.resize(config.buffer_size as usize * config.channels as usize * 2, 0);
+                buffer.resize(
+                    config.buffer_size as usize * config.channels as usize * 2,
+                    0,
+                );
                 io.read_exact(&mut buffer)?;
 
                 let fp = FramePacket::new(
@@ -139,6 +142,7 @@ impl Device for AlsaMicrophoneDevice {
                         rx_timestamp: None,
                         tx_timestamp: None,
                         frame_shape: vec![config.buffer_size, config.channels as u32],
+                        pixel_format: None,
                     },
                     buffer.into_boxed_slice(),
                 );
@@ -155,8 +159,12 @@ impl Device for AlsaMicrophoneDevice {
     fn stop(&mut self) -> Result<(), Error> {
         match self.command_tx.take() {
             Some(tx) => {
-                tx.send(DeviceCommand::Stop)
-                    .map_err(|_| anyhow!("capture thread already stopped"))?;
+                // A failed send means the capture thread has already exited (it dropped the
+                // receiver, e.g. after a read error). The device is stopped either way, so the
+                // status must say so or the node could never restart it.
+                if tx.send(DeviceCommand::Stop).is_err() {
+                    tracing::warn!("capture thread had already exited before stop()");
+                }
                 self.device_info.device_status = DeviceStatus::Stopped;
                 Ok(())
             }

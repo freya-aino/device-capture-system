@@ -77,8 +77,16 @@ fn status_endpoint_reports_device_and_connection_state() {
     let _handle = start_status_server(server, node);
 
     let ok = http_get(port, "/status");
-    assert!(ok.starts_with("HTTP/1.1 200"), "unexpected response: {}", ok);
-    assert!(ok.contains("application/json"), "missing content type: {}", ok);
+    assert!(
+        ok.starts_with("HTTP/1.1 200"),
+        "unexpected response: {}",
+        ok
+    );
+    assert!(
+        ok.contains("application/json"),
+        "missing content type: {}",
+        ok
+    );
     assert!(
         ok.contains("{\"device\":\"Available\",\"connection\":\"Available\"}"),
         "unexpected body: {}",
@@ -86,7 +94,11 @@ fn status_endpoint_reports_device_and_connection_state() {
     );
 
     let missing = http_get(port, "/other");
-    assert!(missing.starts_with("HTTP/1.1 404"), "unexpected response: {}", missing);
+    assert!(
+        missing.starts_with("HTTP/1.1 404"),
+        "unexpected response: {}",
+        missing
+    );
 }
 
 fn http_request(port: u16, method: &str, path: &str) -> String {
@@ -128,7 +140,11 @@ fn status_endpoint_rejects_non_get_methods() {
     let _handle = start_status_server(server, node);
 
     let response = http_request(port, "POST", "/status");
-    assert!(response.starts_with("HTTP/1.1 404"), "unexpected response: {}", response);
+    assert!(
+        response.starts_with("HTTP/1.1 404"),
+        "unexpected response: {}",
+        response
+    );
 }
 
 #[test]
@@ -146,7 +162,11 @@ fn status_endpoint_reports_reflect_device_status_changes() {
     let _handle = start_status_server(server, node);
 
     let response = http_get(port, "/status");
-    assert!(response.starts_with("HTTP/1.1 200"), "unexpected response: {}", response);
+    assert!(
+        response.starts_with("HTTP/1.1 200"),
+        "unexpected response: {}",
+        response
+    );
     assert!(
         response.contains("{\"device\":\"Stopped\",\"connection\":\"Available\"}"),
         "unexpected body: {}",
@@ -178,7 +198,11 @@ fn status_endpoint_returns_500_when_node_lock_is_poisoned() {
     let _handle = start_status_server(server, node);
 
     let response = http_get(port, "/status");
-    assert!(response.starts_with("HTTP/1.1 500"), "unexpected response: {}", response);
+    assert!(
+        response.starts_with("HTTP/1.1 500"),
+        "unexpected response: {}",
+        response
+    );
     assert!(
         response.contains("{\"error\":\"status unavailable\"}"),
         "unexpected body: {}",
@@ -192,12 +216,7 @@ fn http_post(port: u16, path: &str) -> String {
 
 fn started_node(id: &str, endpoint: &str) -> Arc<Mutex<DeviceNode<StatusMockDevice>>> {
     let context = zmq::Context::new();
-    let mut node = DeviceNode::new_endpoint(
-        status_device(id),
-        endpoint.to_string(),
-        10,
-        1024,
-    );
+    let mut node = DeviceNode::new_endpoint(status_device(id), endpoint.to_string(), 10, 1024);
     node.start(StatusMockConfig, &context).unwrap();
     Arc::new(Mutex::new(node))
 }
@@ -216,16 +235,40 @@ fn remote_stop_then_start_then_restart_transition_the_device() {
     let (port, _handle) = serve(node);
 
     let stopped = http_post(port, "/stop");
-    assert!(stopped.starts_with("HTTP/1.1 200"), "unexpected response: {}", stopped);
-    assert!(stopped.contains("{\"device\":\"Stopped\",\"connection\":\"Active\"}"), "{}", stopped);
+    assert!(
+        stopped.starts_with("HTTP/1.1 200"),
+        "unexpected response: {}",
+        stopped
+    );
+    assert!(
+        stopped.contains("{\"device\":\"Stopped\",\"connection\":\"Active\"}"),
+        "{}",
+        stopped
+    );
 
     let started = http_post(port, "/start");
-    assert!(started.starts_with("HTTP/1.1 200"), "unexpected response: {}", started);
-    assert!(started.contains("{\"device\":\"Running\",\"connection\":\"Active\"}"), "{}", started);
+    assert!(
+        started.starts_with("HTTP/1.1 200"),
+        "unexpected response: {}",
+        started
+    );
+    assert!(
+        started.contains("{\"device\":\"Running\",\"connection\":\"Active\"}"),
+        "{}",
+        started
+    );
 
     let restarted = http_post(port, "/restart");
-    assert!(restarted.starts_with("HTTP/1.1 200"), "unexpected response: {}", restarted);
-    assert!(restarted.contains("{\"device\":\"Running\",\"connection\":\"Active\"}"), "{}", restarted);
+    assert!(
+        restarted.starts_with("HTTP/1.1 200"),
+        "unexpected response: {}",
+        restarted
+    );
+    assert!(
+        restarted.contains("{\"device\":\"Running\",\"connection\":\"Active\"}"),
+        "{}",
+        restarted
+    );
 }
 
 #[test]
@@ -234,8 +277,16 @@ fn remote_start_while_running_returns_409() {
     let (port, _handle) = serve(node);
 
     let response = http_post(port, "/start");
-    assert!(response.starts_with("HTTP/1.1 409"), "unexpected response: {}", response);
-    assert!(response.contains("cannot Start while device is Running"), "{}", response);
+    assert!(
+        response.starts_with("HTTP/1.1 409"),
+        "unexpected response: {}",
+        response
+    );
+    assert!(
+        response.contains("cannot Start while device is Running"),
+        "{}",
+        response
+    );
 }
 
 #[test]
@@ -245,8 +296,16 @@ fn remote_stop_while_stopped_returns_409() {
     assert!(http_post(port, "/stop").starts_with("HTTP/1.1 200"));
 
     let response = http_post(port, "/stop");
-    assert!(response.starts_with("HTTP/1.1 409"), "unexpected response: {}", response);
-    assert!(response.contains("cannot Stop while device is Stopped"), "{}", response);
+    assert!(
+        response.starts_with("HTTP/1.1 409"),
+        "unexpected response: {}",
+        response
+    );
+    assert!(
+        response.contains("cannot Stop while device is Stopped"),
+        "{}",
+        response
+    );
 }
 
 #[test]
@@ -256,7 +315,11 @@ fn remote_restart_while_stopped_returns_409() {
     assert!(http_post(port, "/stop").starts_with("HTTP/1.1 200"));
 
     let response = http_post(port, "/restart");
-    assert!(response.starts_with("HTTP/1.1 409"), "unexpected response: {}", response);
+    assert!(
+        response.starts_with("HTTP/1.1 409"),
+        "unexpected response: {}",
+        response
+    );
 }
 
 #[test]
@@ -272,7 +335,11 @@ fn remote_start_on_never_started_node_returns_409() {
     let (port, _handle) = serve(node);
 
     let response = http_post(port, "/start");
-    assert!(response.starts_with("HTTP/1.1 409"), "unexpected response: {}", response);
+    assert!(
+        response.starts_with("HTTP/1.1 409"),
+        "unexpected response: {}",
+        response
+    );
 }
 
 #[test]
@@ -281,5 +348,9 @@ fn remote_control_rejects_unknown_post_paths() {
     let (port, _handle) = serve(node);
 
     let response = http_post(port, "/shutdown");
-    assert!(response.starts_with("HTTP/1.1 404"), "unexpected response: {}", response);
+    assert!(
+        response.starts_with("HTTP/1.1 404"),
+        "unexpected response: {}",
+        response
+    );
 }

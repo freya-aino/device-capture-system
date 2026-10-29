@@ -78,6 +78,9 @@ pub struct FramePacketInformation {
     pub rx_timestamp: Option<SystemTime>,
     pub tx_timestamp: Option<SystemTime>,
     pub frame_shape: Vec<u32>,
+    /// Camera frames: the FourCC the camera negotiated (`"YUYV"`, `"MJPG"`, ...), so a consumer
+    /// knows how to interpret `data`. Microphone frames: `None` (samples are always `S16LE`).
+    pub pixel_format: Option<String>,
 }
 
 impl FramePacketInformation {
@@ -139,12 +142,14 @@ mod tests {
             rx_timestamp: None,
             tx_timestamp: Some(SystemTime::now()),
             frame_shape: vec![1920, 1080],
+            pixel_format: Some("MJPG".to_string()),
         };
 
         let bytes = info.serialize().unwrap();
         let decoded = FramePacketInformation::deserialize(&bytes).unwrap();
 
         assert_eq!(info, decoded);
+        assert_eq!(decoded.pixel_format.as_deref(), Some("MJPG"));
     }
 
     #[test]

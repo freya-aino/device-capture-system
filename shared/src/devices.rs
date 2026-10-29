@@ -67,17 +67,20 @@ pub struct CameraConfig {
     pub fourcc: [char; 4],
 }
 
-// impl std::fmt::Debug for CameraConfig {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         let parsed = String::from_utf8(self.fourcc.to_vec()).unwrap();
-
-//         write!(
-//             f,
-//             "CameraConfig {{ width: {}, height: {}, fps: {}/{}, fourcc: {} }}",
-//             self.width, self.height, self.fps.0, self.fps.1, parsed
-//         )
-//     }
-// }
+impl std::fmt::Debug for CameraConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "CameraConfig {{ {}x{} @ {}/{} s/frame ({:.1} fps) {} }}",
+            self.width,
+            self.height,
+            self.fps.0,
+            self.fps.1,
+            self.frames_per_second(),
+            self.fourcc_string()
+        )
+    }
+}
 
 impl DeviceConfig for MicrophoneConfig {}
 impl DeviceConfig for CameraConfig {}
@@ -92,6 +95,36 @@ impl CameraConfig {
 
     pub fn area(&self) -> f64 {
         self.width as f64 * self.height as f64
+    }
+
+    /// The FourCC as a 4-character string, e.g. `"YUYV"` or `"MJPG"`. This is the value a
+    /// camera frame carries in `FramePacketInformation::pixel_format`.
+    pub fn fourcc_string(&self) -> String {
+        self.fourcc.iter().collect()
+    }
+
+    /// Whether the FourCC names an uncompressed pixel format the consumer can use without a decoder.
+    pub fn is_uncompressed(&self) -> bool {
+        !matches!(
+            self.fourcc_string().as_str(),
+            "MJPG" | "JPEG" | "H264" | "HEVC" | "H265" | "VP80" | "VP90" | "AV01"
+        )
+    }
+}
+
+impl std::str::FromStr for CameraSelectionPolicy {
+    type Err = String;
+
+    /// Accepts `best-fps`, `best-resolution` and `best-average` (case-insensitive, `_` also allowed).
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().replace('_', "-").as_str() {
+            "best-fps" => Ok(CameraSelectionPolicy::BestFps),
+            "best-resolution" => Ok(CameraSelectionPolicy::BestResolution),
+            "best-average" => Ok(CameraSelectionPolicy::BestAverage),
+            other => Err(format!(
+                "unknown camera selection policy {other:?}; expected best-fps, best-resolution or best-average"
+            )),
+        }
     }
 }
 
@@ -154,6 +187,8 @@ fn compare_ranks(a: &[f64; 3], b: &[f64; 3]) -> Ordering {
 
 /// Picks the advertised config closest to the requested resolution, then closest to the
 /// requested frames per second. Exact resolution matches win over nearer frame rates at other sizes.
+/// When two configs tie on both, an uncompressed FourCC (for example `YUYV`) wins over a
+/// compressed one (for example `MJPG`); after that the one listed first wins.
 pub fn select_camera_config(
     configs: &[CameraConfig],
     width: u32,
@@ -164,15 +199,20 @@ pub fn select_camera_config(
     let distance = |c: &CameraConfig| {
         let area = (c.width as i64 * c.height as i64 - target_area).abs();
         let rate = (c.frames_per_second() - fps).abs();
-        (area, rate)
+        // `false < true`, so uncompressed formats sort first.
+        let compressed = !c.is_uncompressed();
+        (area, rate, compressed)
     };
 
     configs
         .iter()
         .min_by(|a, b| {
-            let (a_area, a_rate) = distance(a);
-            let (b_area, b_rate) = distance(b);
-            a_area.cmp(&b_area).then(a_rate.total_cmp(&b_rate))
+            let (a_area, a_rate, a_compressed) = distance(a);
+            let (b_area, b_rate, b_compressed) = distance(b);
+            a_area
+                .cmp(&b_area)
+                .then(a_rate.total_cmp(&b_rate))
+                .then(a_compressed.cmp(&b_compressed))
         })
         .cloned()
 }
@@ -202,6 +242,16 @@ mod tests {
         assert_ne!(base, different_type);
     }
 
+    fn config(width: u32, height: u32, fps: (u32, u32), fourcc: &str) -> CameraConfig {
+        let mut chars = fourcc.chars();
+        CameraConfig {
+            width,
+            height,
+            fps,
+            fourcc: std::array::from_fn(|_| chars.next().unwrap()),
+        }
+    }
+
     fn camera_config(width: u32, height: u32, fps: (u32, u32)) -> CameraConfig {
         CameraConfig {
             width,
@@ -221,7 +271,10 @@ mod tests {
         ];
 
         let picked = select_camera_config(&configs, 1920, 1080, 30.0).unwrap();
-        assert_eq!((picked.width, picked.height, picked.fps), (1920, 1080, (1, 30)));
+        assert_eq!(
+            (picked.width, picked.height, picked.fps),
+            (1920, 1080, (1, 30))
+        );
 
         let picked = select_camera_config(&configs, 1920, 1080, 60.0).unwrap();
         assert_eq!(picked.fps, (1, 60));
@@ -239,6 +292,55 @@ mod tests {
 
         let picked = select_camera_config(&configs, 1600, 900, 30.0).unwrap();
         assert_eq!((picked.width, picked.height), (1280, 720));
+    }
+
+    #[test]
+    fn select_camera_config_prefers_uncompressed_on_exact_tie() {
+        let configs = vec![
+            config(640, 480, (1, 30), "MJPG"),
+            config(640, 480, (1, 30), "YUYV"),
+        ];
+        let picked = select_camera_config(&configs, 640, 480, 30.0).unwrap();
+        assert_eq!(picked.fourcc_string(), "YUYV");
+
+        // Resolution still wins over format: 1080p is only MJPG here, and it is what was asked for.
+        let framework = vec![
+            config(1920, 1080, (1, 60), "MJPG"),
+            config(1920, 1080, (1, 30), "MJPG"),
+            config(640, 480, (1, 30), "YUYV"),
+        ];
+        let picked = select_camera_config(&framework, 1920, 1080, 30.0).unwrap();
+        assert_eq!(
+            (picked.width, picked.height, picked.fps),
+            (1920, 1080, (1, 30))
+        );
+        assert_eq!(picked.fourcc_string(), "MJPG");
+    }
+
+    #[test]
+    fn camera_selection_policy_parses_from_str() {
+        assert_eq!("best-fps".parse(), Ok(CameraSelectionPolicy::BestFps));
+        assert_eq!(
+            "BEST_RESOLUTION".parse(),
+            Ok(CameraSelectionPolicy::BestResolution)
+        );
+        assert_eq!(
+            "best-average".parse(),
+            Ok(CameraSelectionPolicy::BestAverage)
+        );
+        assert!("nearest".parse::<CameraSelectionPolicy>().is_err());
+    }
+
+    #[test]
+    fn camera_config_fourcc_string_and_compression() {
+        let yuyv = config(640, 480, (1, 30), "YUYV");
+        assert_eq!(yuyv.fourcc_string(), "YUYV");
+        assert!(yuyv.is_uncompressed());
+        assert!(!config(640, 480, (1, 30), "MJPG").is_uncompressed());
+        assert_eq!(
+            format!("{:?}", yuyv),
+            "CameraConfig { 640x480 @ 1/30 s/frame (30.0 fps) YUYV }"
+        );
     }
 
     #[test]

@@ -10,11 +10,18 @@ use shared::{
 };
 use v4l::buffer::Type;
 use v4l::capability::Flags;
+use v4l::control::{Control, Value};
 use v4l::frameinterval::FrameIntervalEnum;
 use v4l::{FourCC, Fraction};
 // use v4l::video::capture::Parameters;
 // use v4l::io::traits::{CaptureStream, OutputStream};
 use v4l::video::Capture;
+
+/// `V4L2_CID_EXPOSURE_AUTO_PRIORITY` (`exposure_dynamic_framerate` in `v4l2-ctl`). When set, a UVC
+/// camera in auto-exposure mode may lengthen the exposure past the frame interval and deliver fewer
+/// frames than granted (the Framework 12 webcam fell to 20 fps in indoor light with every mode,
+/// `docs/hardware/`). The capture path turns it off so the granted interval is honoured.
+const V4L2_CID_EXPOSURE_AUTO_PRIORITY: u32 = 0x009a0903;
 
 pub struct V4lCameraDevice {
     pub device_info: DeviceInformation,
@@ -143,28 +150,22 @@ impl Device for V4lCameraDevice {
         format.height = config.height;
         format.fourcc = FourCC::new(&config.fourcc.map(|a| a as u8));
 
-        let mut params = self.device.params()?;
-        params.interval = Fraction::new(config.fps.0, config.fps.1);
-
-        tracing::debug!(
-            "Desired camera configurations - {:?}\n{:?}\n{:?}\n",
-            self.device_info.name, params, format
-        );
-
-        let requested_interval = (params.interval.numerator, params.interval.denominator);
-        let granted_interval = self.device.set_params(&params)?.interval;
-        if granted_interval.numerator as u64 * requested_interval.1 as u64
-            != requested_interval.0 as u64 * granted_interval.denominator as u64
-        {
-            return Err(anyhow!(
-                "Camera granted frame interval {}/{} instead of requested {}/{}",
-                granted_interval.numerator,
-                granted_interval.denominator,
-                requested_interval.0,
-                requested_interval.1
-            ));
+        // Best effort: not every driver exposes this control, and a missing control must not stop
+        // capture. A camera that keeps it on may deliver fewer frames than the granted interval.
+        match self.device.set_control(Control {
+            id: V4L2_CID_EXPOSURE_AUTO_PRIORITY,
+            value: Value::Boolean(false),
+        }) {
+            Ok(()) => tracing::debug!("disabled exposure auto-priority (dynamic frame rate)"),
+            Err(e) => tracing::warn!(
+                "could not disable exposure auto-priority on {:?}: {e}; the delivered frame rate may fall below the granted interval in low light",
+                self.device_info.name
+            ),
         }
 
+        // Order matters: VIDIOC_S_FMT resets the streaming parameters, so the format goes first
+        // and the frame interval second. Both are read back and compared, because drivers may
+        // silently substitute the nearest supported value.
         let negotiated = self.device.set_format(&format)?;
         if negotiated.width != format.width
             || negotiated.height != format.height
@@ -178,6 +179,28 @@ impl Device for V4lCameraDevice {
                 format.width,
                 format.height,
                 format.fourcc
+            ));
+        }
+
+        let mut params = self.device.params()?;
+        params.interval = Fraction::new(config.fps.0, config.fps.1);
+        tracing::debug!(
+            "Desired camera configuration - {:?}\n{:?}\n{:?}\n",
+            self.device_info.name,
+            params,
+            format
+        );
+        self.device.set_params(&params)?;
+        let granted_interval = self.device.params()?.interval;
+        if granted_interval.numerator as u64 * config.fps.1 as u64
+            != config.fps.0 as u64 * granted_interval.denominator as u64
+        {
+            return Err(anyhow!(
+                "Camera granted frame interval {}/{} instead of requested {}/{}",
+                granted_interval.numerator,
+                granted_interval.denominator,
+                config.fps.0,
+                config.fps.1
             ));
         }
 
@@ -224,7 +247,8 @@ impl Device for V4lCameraDevice {
                         device_info: device_information.clone(),
                         rx_timestamp: None,
                         tx_timestamp: None,
-                        frame_shape: frame_shape,
+                        frame_shape,
+                        pixel_format: Some(config.fourcc_string()),
                     },
                     buf.to_vec().into_boxed_slice(),
                 );
@@ -243,8 +267,12 @@ impl Device for V4lCameraDevice {
     fn stop(&mut self) -> Result<(), Error> {
         match self.command_tx.take() {
             Some(tx) => {
-                tx.send(DeviceCommand::Stop)
-                    .map_err(|_| anyhow!("capture thread already stopped"))?;
+                // A failed send means the capture thread has already exited (it dropped the
+                // receiver, e.g. after a read error). The device is stopped either way, so the
+                // status must say so or the node could never restart it.
+                if tx.send(DeviceCommand::Stop).is_err() {
+                    tracing::warn!("capture thread had already exited before stop()");
+                }
                 self.device_info.device_status = DeviceStatus::Stopped;
                 Ok(())
             }

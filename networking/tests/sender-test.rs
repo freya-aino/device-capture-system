@@ -19,6 +19,7 @@ fn frame_packet(payload: Vec<u8>) -> FramePacket {
         rx_timestamp: None,
         tx_timestamp: None,
         frame_shape: vec![payload.len() as u32],
+        pixel_format: None,
     };
     FramePacket::new(frame_info, payload.into_boxed_slice())
 }
@@ -47,7 +48,11 @@ fn sender_reports_available_before_start_and_closed_after_stop() {
 #[test]
 fn send_before_start_returns_error() {
     let mut sender = Sender::new_endpoint("inproc://sender-not-started", 10, 1024);
-    assert!(sender.send(frame_packet(vec![1, 2, 3]), zmq::DONTWAIT).is_err());
+    assert!(
+        sender
+            .send(frame_packet(vec![1, 2, 3]), zmq::DONTWAIT)
+            .is_err()
+    );
 }
 
 #[test]
@@ -80,7 +85,9 @@ fn send_numbers_frames_with_increasing_sequence() {
     sleep(Duration::from_millis(100));
 
     for _ in 0..3 {
-        sender.send(frame_packet(vec![7; 4]), zmq::DONTWAIT).unwrap();
+        sender
+            .send(frame_packet(vec![7; 4]), zmq::DONTWAIT)
+            .unwrap();
     }
 
     for expected in 0u64..3 {
@@ -101,7 +108,9 @@ fn send_splits_payload_into_data_chunk_size_parts() {
     let subscriber = raw_subscriber(&context, endpoint);
     sleep(Duration::from_millis(100));
 
-    sender.send(frame_packet(vec![0u8; 3000]), zmq::DONTWAIT).unwrap();
+    sender
+        .send(frame_packet(vec![0u8; 3000]), zmq::DONTWAIT)
+        .unwrap();
 
     let parts = subscriber.recv_multipart(0).unwrap();
     assert_eq!(parts.len(), 2 + 3, "header, sequence and three data chunks");
@@ -120,7 +129,9 @@ fn send_stamps_tx_timestamp_on_the_wire() {
     let subscriber = raw_subscriber(&context, endpoint);
     sleep(Duration::from_millis(100));
 
-    sender.send(frame_packet(vec![1, 2]), zmq::DONTWAIT).unwrap();
+    sender
+        .send(frame_packet(vec![1, 2]), zmq::DONTWAIT)
+        .unwrap();
 
     let parts = subscriber.recv_multipart(0).unwrap();
     let info = FramePacketInformation::deserialize(&parts[0]).unwrap();

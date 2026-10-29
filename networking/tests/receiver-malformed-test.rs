@@ -2,7 +2,9 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
 use networking::Receiver;
-use shared::{ConnectionStatus, DeviceInformation, DeviceStatus, DeviceType, FramePacketInformation};
+use shared::{
+    ConnectionStatus, DeviceInformation, DeviceStatus, DeviceType, FramePacketInformation,
+};
 
 fn valid_parts(payload: &[u8]) -> Vec<Vec<u8>> {
     let info = FramePacketInformation {
@@ -15,6 +17,7 @@ fn valid_parts(payload: &[u8]) -> Vec<Vec<u8>> {
         rx_timestamp: None,
         tx_timestamp: Some(SystemTime::now()),
         frame_shape: vec![2, 2],
+        pixel_format: None,
     };
     vec![
         info.serialize().unwrap(),
@@ -38,7 +41,9 @@ fn receiver_skips_malformed_frames_and_returns_valid_ones() {
     let mut received = None;
 
     while received.is_none() && Instant::now() < deadline {
-        publisher.send_multipart([b"garbage".as_slice()], 0).unwrap();
+        publisher
+            .send_multipart([b"garbage".as_slice()], 0)
+            .unwrap();
         publisher
             .send_multipart(valid_parts(&[1, 2, 3, 4]), 0)
             .unwrap();

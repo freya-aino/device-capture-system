@@ -121,9 +121,8 @@ where
         let handle = self.device.start(
             config,
             Box::new(move |fp| -> Result<(), Error> {
-                let mut locked_sender = sender
-                    .lock()
-                    .map_err(|_| anyhow!("sender lock poisoned"))?;
+                let mut locked_sender =
+                    sender.lock().map_err(|_| anyhow!("sender lock poisoned"))?;
                 locked_sender.send(fp, zmq::DONTWAIT)?;
                 Ok(())
             }),

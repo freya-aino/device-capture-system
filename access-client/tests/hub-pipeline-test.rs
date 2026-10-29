@@ -22,6 +22,7 @@ fn generate_dummy_frame_packet_with_id(device_id: &str) -> FramePacket {
         rx_timestamp: None,
         tx_timestamp: None,
         frame_shape: vec![2, 2],
+        pixel_format: None,
     };
     FramePacket::new(frame_info, vec![9u8, 8, 7, 6].into_boxed_slice())
 }
@@ -98,10 +99,16 @@ fn frames_from_two_producers_reach_access_client() {
     sleep(Duration::from_millis(500));
 
     producer_a
-        .send(generate_dummy_frame_packet_with_id("producer-a"), zmq::DONTWAIT)
+        .send(
+            generate_dummy_frame_packet_with_id("producer-a"),
+            zmq::DONTWAIT,
+        )
         .unwrap();
     producer_b
-        .send(generate_dummy_frame_packet_with_id("producer-b"), zmq::DONTWAIT)
+        .send(
+            generate_dummy_frame_packet_with_id("producer-b"),
+            zmq::DONTWAIT,
+        )
         .unwrap();
 
     let mut received_ids = HashSet::new();

@@ -1,6 +1,6 @@
 use anyhow::{Error, Result, anyhow};
 use device_node::{
-    DEFAULT_CAMERA_CONFIG, DEFAULT_MICROPHONE_CONFIG, DEFAULT_STATUS_ADDR, DeviceNode,
+    CameraSelection, DEFAULT_MICROPHONE_CONFIG, DEFAULT_STATUS_ADDR, DeviceNode,
     bind_status_server, get_all_devices, print_all_devices, start_status_server,
 };
 use shared::Device;
@@ -15,7 +15,16 @@ fn print_usage() {
     println!("Usage:");
     println!("  device-node list");
     println!("  device-node run <camera|mic> <device_index> <hub_ip> <hub_port>");
-    println!("Set DEVICE_NODE_STATUS_ADDR to change the status endpoint (default {DEFAULT_STATUS_ADDR}).");
+    println!(
+        "Set DEVICE_NODE_STATUS_ADDR to change the status endpoint (default {DEFAULT_STATUS_ADDR})."
+    );
+    println!("Camera config selection (from the modes the camera advertises):");
+    println!(
+        "  DEVICE_NODE_CAMERA_POLICY=nearest|best-fps|best-resolution|best-average (default nearest)"
+    );
+    println!(
+        "  DEVICE_NODE_CAMERA_WIDTH / _HEIGHT / _FPS   targets for `nearest` (default 1920 1080 30)"
+    );
 }
 
 fn main() -> Result<(), Error> {
@@ -51,20 +60,24 @@ fn main() -> Result<(), Error> {
                         .into_iter()
                         .nth(index)
                         .ok_or_else(|| anyhow!("No camera at index {}", index))?;
+                    let selection = CameraSelection::from_env()?;
+                    let configs = cam.get_configs()?;
+                    let config = selection.choose(&configs).ok_or_else(|| {
+                        anyhow!("Camera '{}' advertises no capture configs", cam.name())
+                    })?;
                     println!(
                         "Starting camera '{}' -> tcp://{}:{}",
                         cam.name(),
                         hub_ip,
                         hub_port
                     );
-                    run_node(
-                        cam,
-                        DEFAULT_CAMERA_CONFIG.clone(),
-                        hub_ip,
-                        hub_port,
-                        &context,
-                        &status_addr,
-                    )?;
+                    println!(
+                        "Selection {:?} picked {:?} out of {} advertised configs",
+                        selection,
+                        config,
+                        configs.len()
+                    );
+                    run_node(cam, config, hub_ip, hub_port, &context, &status_addr)?;
                 }
                 "mic" => {
                     let mic = all_mics

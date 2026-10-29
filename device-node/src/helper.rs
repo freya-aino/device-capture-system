@@ -2,7 +2,10 @@ use std::{thread, time::Duration};
 
 use anyhow::{Error, Result, anyhow};
 use devices::{AlsaMicrophoneDevice, V4lCameraDevice};
-use shared::{CameraConfig, Device, FramePacket, MicrophoneConfig};
+use shared::{
+    CameraConfig, CameraSelectionPolicy, Device, FramePacket, MicrophoneConfig,
+    select_camera_config, select_camera_config_by_policy,
+};
 
 pub static DEFAULT_MICROPHONE_CONFIG: MicrophoneConfig = MicrophoneConfig {
     sample_rate: 16000,
@@ -10,12 +13,101 @@ pub static DEFAULT_MICROPHONE_CONFIG: MicrophoneConfig = MicrophoneConfig {
     buffer_size: 512,
 };
 
+/// Requested camera config. The node does not stream this as-is: it picks the advertised config
+/// nearest to it with `select_camera_config` (see `CameraSelection::Nearest`). Only the ignored
+/// hardware helpers and tests use it directly.
 pub static DEFAULT_CAMERA_CONFIG: CameraConfig = CameraConfig {
     width: 1920,
     height: 1080,
     fps: (1, 30),
     fourcc: ['Y', 'U', 'Y', 'V'],
 };
+
+/// How `device-node run camera` picks one of the configs the camera advertises.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CameraSelection {
+    /// Closest advertised resolution, then closest frame rate, uncompressed formats winning ties.
+    Nearest { width: u32, height: u32, fps: f64 },
+    /// One of the ranking policies in `shared::CameraSelectionPolicy`.
+    Policy(CameraSelectionPolicy),
+}
+
+impl Default for CameraSelection {
+    fn default() -> Self {
+        CameraSelection::Nearest {
+            width: DEFAULT_CAMERA_CONFIG.width,
+            height: DEFAULT_CAMERA_CONFIG.height,
+            fps: DEFAULT_CAMERA_CONFIG.frames_per_second(),
+        }
+    }
+}
+
+impl CameraSelection {
+    /// Reads `DEVICE_NODE_CAMERA_POLICY` (`nearest`, `best-fps`, `best-resolution`, `best-average`;
+    /// default `nearest`) and, for `nearest`, `DEVICE_NODE_CAMERA_WIDTH`, `_HEIGHT` and `_FPS`
+    /// (defaults 1920, 1080, 30).
+    pub fn from_env() -> Result<Self, Error> {
+        let var = |name: &str| std::env::var(name).ok().filter(|v| !v.trim().is_empty());
+        Self::from_values(
+            var("DEVICE_NODE_CAMERA_POLICY").as_deref(),
+            var("DEVICE_NODE_CAMERA_WIDTH").as_deref(),
+            var("DEVICE_NODE_CAMERA_HEIGHT").as_deref(),
+            var("DEVICE_NODE_CAMERA_FPS").as_deref(),
+        )
+    }
+
+    pub fn from_values(
+        policy: Option<&str>,
+        width: Option<&str>,
+        height: Option<&str>,
+        fps: Option<&str>,
+    ) -> Result<Self, Error> {
+        match policy.map(|p| p.trim().to_ascii_lowercase()).as_deref() {
+            None | Some("nearest") => {
+                let CameraSelection::Nearest {
+                    width: dw,
+                    height: dh,
+                    fps: dfps,
+                } = CameraSelection::default()
+                else {
+                    unreachable!("default selection is Nearest")
+                };
+                let parse_u32 =
+                    |name: &str, value: Option<&str>, default: u32| -> Result<u32, Error> {
+                        value.map_or(Ok(default), |v| {
+                            v.trim().parse::<u32>().map_err(|e| {
+                                anyhow!("{name} must be a positive integer, got {v:?}: {e}")
+                            })
+                        })
+                    };
+                let fps = fps.map_or(Ok(dfps), |v| {
+                    v.trim().parse::<f64>().map_err(|e| {
+                        anyhow!("DEVICE_NODE_CAMERA_FPS must be a number, got {v:?}: {e}")
+                    })
+                })?;
+                Ok(CameraSelection::Nearest {
+                    width: parse_u32("DEVICE_NODE_CAMERA_WIDTH", width, dw)?,
+                    height: parse_u32("DEVICE_NODE_CAMERA_HEIGHT", height, dh)?,
+                    fps,
+                })
+            }
+            Some(other) => other
+                .parse::<CameraSelectionPolicy>()
+                .map(CameraSelection::Policy)
+                .map_err(|e| anyhow!("DEVICE_NODE_CAMERA_POLICY: {e}")),
+        }
+    }
+
+    /// Applies the selection to the advertised list. `None` when the camera advertises nothing.
+    pub fn choose(&self, configs: &[CameraConfig]) -> Option<CameraConfig> {
+        match *self {
+            CameraSelection::Nearest { width, height, fps } => {
+                select_camera_config(configs, width, height, fps)
+            }
+            CameraSelection::Policy(policy) => select_camera_config_by_policy(configs, policy),
+        }
+    }
+}
 
 // Calculates RMS (root mean square) as a way to determine volume
 pub fn volume_from_audio_frame(buf: &[i16]) -> f64 {
@@ -104,6 +196,98 @@ pub fn test_v4l_cameras(cam: &mut V4lCameraDevice, seconds: u64) -> Result<(), E
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn config(width: u32, height: u32, fps: (u32, u32), fourcc: &str) -> CameraConfig {
+        let mut chars = fourcc.chars();
+        CameraConfig {
+            width,
+            height,
+            fps,
+            fourcc: std::array::from_fn(|_| chars.next().unwrap()),
+        }
+    }
+
+    /// The list the Framework Laptop 12 webcam advertises (docs/hardware/2026-10-30-framework-12-webcam.md).
+    fn framework_webcam() -> Vec<CameraConfig> {
+        vec![
+            config(1920, 1080, (1, 60), "MJPG"),
+            config(1920, 1080, (1, 30), "MJPG"),
+            config(1280, 720, (1, 60), "MJPG"),
+            config(1280, 720, (1, 30), "MJPG"),
+            config(640, 480, (1, 60), "MJPG"),
+            config(640, 480, (1, 30), "MJPG"),
+            config(640, 360, (1, 60), "MJPG"),
+            config(640, 360, (1, 30), "MJPG"),
+            config(640, 480, (1, 30), "YUYV"),
+            config(640, 360, (1, 30), "YUYV"),
+        ]
+    }
+
+    #[test]
+    fn camera_selection_default_is_nearest_to_the_default_config() {
+        assert_eq!(
+            CameraSelection::default(),
+            CameraSelection::Nearest {
+                width: 1920,
+                height: 1080,
+                fps: 30.0
+            }
+        );
+        let picked = CameraSelection::default()
+            .choose(&framework_webcam())
+            .unwrap();
+        assert_eq!(
+            (picked.width, picked.height, picked.fps),
+            (1920, 1080, (1, 30))
+        );
+        assert_eq!(picked.fourcc_string(), "MJPG");
+    }
+
+    #[test]
+    fn camera_selection_nearest_reads_overrides() {
+        let selection =
+            CameraSelection::from_values(Some("nearest"), Some("640"), Some("480"), Some("30"))
+                .unwrap();
+        assert_eq!(
+            selection,
+            CameraSelection::Nearest {
+                width: 640,
+                height: 480,
+                fps: 30.0
+            }
+        );
+        let picked = selection.choose(&framework_webcam()).unwrap();
+        assert_eq!((picked.width, picked.height), (640, 480));
+        assert_eq!(
+            picked.fourcc_string(),
+            "YUYV",
+            "uncompressed wins the exact tie"
+        );
+    }
+
+    #[test]
+    fn camera_selection_parses_policies_and_rejects_bad_values() {
+        assert_eq!(
+            CameraSelection::from_values(Some("best-fps"), None, None, None).unwrap(),
+            CameraSelection::Policy(CameraSelectionPolicy::BestFps)
+        );
+        let picked = CameraSelection::Policy(CameraSelectionPolicy::BestFps)
+            .choose(&framework_webcam())
+            .unwrap();
+        assert_eq!(
+            (picked.width, picked.height, picked.fps),
+            (1920, 1080, (1, 60))
+        );
+
+        assert!(CameraSelection::from_values(Some("fastest"), None, None, None).is_err());
+        assert!(CameraSelection::from_values(None, Some("wide"), None, None).is_err());
+        assert!(CameraSelection::from_values(None, None, None, Some("many")).is_err());
+    }
+
+    #[test]
+    fn camera_selection_returns_none_for_empty_list() {
+        assert!(CameraSelection::default().choose(&[]).is_none());
+    }
 
     #[test]
     fn volume_from_audio_frame_silence_is_zero() {

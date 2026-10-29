@@ -12,6 +12,7 @@ fn generate_dummy_frame_packet() -> FramePacket {
         rx_timestamp: None,
         tx_timestamp: None,
         frame_shape: vec![1920, 1080],
+        pixel_format: None,
     };
     FramePacket::new(frame_info, vec![1u8, 2, 3, 4].into_boxed_slice())
 }
@@ -86,7 +87,8 @@ mod tests {
         let producer_b = format!("inproc://proxy-fan-in-b-{}", id);
         let consumer_endpoint = format!("inproc://proxy-fan-in-consumer-{}", id);
 
-        let mut proxy = Proxy::new_endpoints(producer_a.clone(), consumer_endpoint.clone(), 10, 1024);
+        let mut proxy =
+            Proxy::new_endpoints(producer_a.clone(), consumer_endpoint.clone(), 10, 1024);
         proxy.add_from_endpoint(producer_b.clone());
         proxy.start(&context).unwrap();
 
@@ -101,10 +103,16 @@ mod tests {
         sleep(Duration::from_millis(500));
 
         sender_a
-            .send(generate_dummy_frame_packet_with_id("producer-a"), zmq::DONTWAIT)
+            .send(
+                generate_dummy_frame_packet_with_id("producer-a"),
+                zmq::DONTWAIT,
+            )
             .unwrap();
         sender_b
-            .send(generate_dummy_frame_packet_with_id("producer-b"), zmq::DONTWAIT)
+            .send(
+                generate_dummy_frame_packet_with_id("producer-b"),
+                zmq::DONTWAIT,
+            )
             .unwrap();
 
         sleep(Duration::from_millis(500));
@@ -120,8 +128,16 @@ mod tests {
             sleep(Duration::from_millis(20));
         }
 
-        assert!(received_ids.contains("producer-a"), "missing frames from producer-a: {:?}", received_ids);
-        assert!(received_ids.contains("producer-b"), "missing frames from producer-b: {:?}", received_ids);
+        assert!(
+            received_ids.contains("producer-a"),
+            "missing frames from producer-a: {:?}",
+            received_ids
+        );
+        assert!(
+            received_ids.contains("producer-b"),
+            "missing frames from producer-b: {:?}",
+            received_ids
+        );
 
         sender_a.stop().unwrap();
         sender_b.stop().unwrap();

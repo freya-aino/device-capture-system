@@ -24,6 +24,7 @@ pub struct Frame {
     device_name: String,
     device_type: String,
     frame_shape: Vec<u32>,
+    pixel_format: Option<String>,
     rx_timestamp: Option<f64>,
     tx_timestamp: Option<f64>,
     data: Vec<u8>,
@@ -41,6 +42,7 @@ impl From<FramePacket> for Frame {
             device_name: info.device_info.name,
             device_type: device_type.to_string(),
             frame_shape: info.frame_shape,
+            pixel_format: info.pixel_format,
             rx_timestamp: timestamp_secs(info.rx_timestamp),
             tx_timestamp: timestamp_secs(info.tx_timestamp),
             data: packet.data.into_vec(),
@@ -70,6 +72,12 @@ impl Frame {
         self.frame_shape.clone()
     }
 
+    /// FourCC of a camera frame (`"YUYV"`, `"MJPG"`, ...); `None` for microphone frames.
+    #[getter]
+    fn pixel_format(&self) -> Option<&str> {
+        self.pixel_format.as_deref()
+    }
+
     #[getter]
     fn rx_timestamp(&self) -> Option<f64> {
         self.rx_timestamp
@@ -87,10 +95,11 @@ impl Frame {
 
     fn __repr__(&self) -> String {
         format!(
-            "Frame(device_id={:?}, device_type={:?}, frame_shape={:?}, bytes={})",
+            "Frame(device_id={:?}, device_type={:?}, frame_shape={:?}, pixel_format={:?}, bytes={})",
             self.device_id,
             self.device_type,
             self.frame_shape,
+            self.pixel_format,
             self.data.len()
         )
     }

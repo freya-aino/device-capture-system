@@ -212,13 +212,15 @@ mod tests {
     fn returns_the_payload_of_each_grouped_sample() {
         let mut aligner: Aligner<&str> =
             Aligner::new(vec!["cam".into(), "mic".into()], Duration::from_millis(20));
-        assert!(aligner
-            .push(Sample {
-                device_id: "cam".into(),
-                time: at(1000),
-                payload: "cam-frame",
-            })
-            .is_none());
+        assert!(
+            aligner
+                .push(Sample {
+                    device_id: "cam".into(),
+                    time: at(1000),
+                    payload: "cam-frame",
+                })
+                .is_none()
+        );
         let group = aligner
             .push(Sample {
                 device_id: "mic".into(),

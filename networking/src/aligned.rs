@@ -49,7 +49,9 @@ pub fn decode_group(parts: &[Vec<u8>]) -> Result<FrameGroup, Error> {
     let skew = Duration::from_nanos(u64::from_le_bytes(skew_bytes));
     let count = u32::from_le_bytes(count_bytes) as usize;
     if header.len() != 12 + 4 * count {
-        return Err(anyhow!("aligned group header does not match its sample count"));
+        return Err(anyhow!(
+            "aligned group header does not match its sample count"
+        ));
     }
 
     let mut part_counts = Vec::with_capacity(count);
@@ -74,10 +76,7 @@ pub fn decode_group(parts: &[Vec<u8>]) -> Result<FrameGroup, Error> {
 
 fn decode_frame(parts: &[Vec<u8>]) -> Result<FramePacket, Error> {
     if parts.len() < 3 {
-        return Err(anyhow!(
-            "frame needs at least 3 parts, got {}",
-            parts.len()
-        ));
+        return Err(anyhow!("frame needs at least 3 parts, got {}", parts.len()));
     }
     let mut frame_info = FramePacketInformation::deserialize(&parts[0])?;
     frame_info.rx_timestamp = Some(SystemTime::now());
@@ -219,13 +218,19 @@ fn run_relay(
 /// Reads the device and capture time from a raw frame message without decoding its payload.
 fn sample_of(parts: Vec<Vec<u8>>) -> Option<Sample<Vec<Vec<u8>>>> {
     if parts.len() < 3 {
-        tracing::warn!("Dropping frame with {} parts in aligned relay.", parts.len());
+        tracing::warn!(
+            "Dropping frame with {} parts in aligned relay.",
+            parts.len()
+        );
         return None;
     }
     let info = match FramePacketInformation::deserialize(&parts[0]) {
         Ok(info) => info,
         Err(e) => {
-            tracing::warn!("Dropping frame with undecodable header in aligned relay: {}", e);
+            tracing::warn!(
+                "Dropping frame with undecodable header in aligned relay: {}",
+                e
+            );
             return None;
         }
     };
@@ -253,8 +258,13 @@ mod tests {
             rx_timestamp: None,
             tx_timestamp: Some(SystemTime::UNIX_EPOCH + Duration::from_millis(tx_ms)),
             frame_shape: vec![2, 2],
+            pixel_format: None,
         };
-        vec![info.serialize().unwrap(), 0u64.to_le_bytes().to_vec(), data.to_vec()]
+        vec![
+            info.serialize().unwrap(),
+            0u64.to_le_bytes().to_vec(),
+            data.to_vec(),
+        ]
     }
 
     fn group_of(samples: Vec<(&str, u64, &[u8])>, skew_ms: u64) -> AlignedGroup<Vec<Vec<u8>>> {

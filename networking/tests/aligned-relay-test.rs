@@ -15,6 +15,7 @@ fn frame_packet(device_id: &str) -> FramePacket {
         rx_timestamp: None,
         tx_timestamp: None,
         frame_shape: vec![2, 2],
+        pixel_format: None,
     };
     FramePacket::new(frame_info, vec![9u8, 8, 7, 6].into_boxed_slice())
 }

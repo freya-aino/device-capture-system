@@ -15,6 +15,7 @@ fn parts_with_sequence(sequence: u64) -> Vec<Vec<u8>> {
         rx_timestamp: None,
         tx_timestamp: Some(SystemTime::now()),
         frame_shape: vec![2, 2],
+        pixel_format: None,
     };
     vec![
         info.serialize().unwrap(),

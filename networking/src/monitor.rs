@@ -52,8 +52,7 @@ pub(crate) fn watch_peers(
             if event == SocketEvent::MONITOR_STOPPED.to_raw() {
                 break;
             }
-            if event == SocketEvent::ACCEPTED.to_raw() || event == SocketEvent::CONNECTED.to_raw()
-            {
+            if event == SocketEvent::ACCEPTED.to_raw() || event == SocketEvent::CONNECTED.to_raw() {
                 count.fetch_add(1, Ordering::SeqCst);
             } else if event == SocketEvent::DISCONNECTED.to_raw() {
                 decrement(&count);

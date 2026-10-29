@@ -84,10 +84,12 @@ impl Proxy {
     pub fn start(&mut self, context: &Context) -> Result<(), Error> {
         let producers = self.peers.producers.clone();
         let consumers = self.peers.consumers.clone();
-        self.from
-            .open_with(context, XSUB, |socket| watch_peers(context, socket, producers))?;
-        self.to
-            .open_with(context, XPUB, |socket| watch_peers(context, socket, consumers))?;
+        self.from.open_with(context, XSUB, |socket| {
+            watch_peers(context, socket, producers)
+        })?;
+        self.to.open_with(context, XPUB, |socket| {
+            watch_peers(context, socket, consumers)
+        })?;
 
         if let Some(socket) = self.from.socket.as_ref() {
             for endpoint in &self.extra_from_endpoints {
