@@ -4,7 +4,7 @@ This document specifies the intended design of the system: the deployment topolo
 support, the roles each component plays, the wire protocol, and the current implementation state
 against that spec. It consolidates the architecture described in `README.md`/`AGENT.md` with the
 findings in `CODE_REVIEW.md` (historical review at commit `40c8af5`; the status in §6 and §8 was revised
-2026-10-29 against commit `e367b77`).
+2026-10-30 against commit `3c3d183`, with `cargo test --workspace`, the Python pytest and a device-side hardware run).
 
 Status markers used throughout: ✅ done · ⚠️ partial/broken · ❌ not implemented.
 
@@ -160,8 +160,8 @@ crate's broken module re-export, §4.1 there).
 | `shared` (data model) | ✅ Works: `ConnectionStats` uses `Instant` for interval math and records per-frame latency | Observability for all roles |
 | `networking::Connection`/`Sender`/`Receiver` | ✅ Works: receive path validates peer input and drops malformed frames; a sequence part enables gap-based dropped-frame counts | Producer, Consumer |
 | `networking::Proxy` | ✅ Works: `start()` runs `zmq::proxy_steerable` on a forwarding thread; `stop()` terminates it cleanly through a control socket. Covered by `proxy-test.rs` and the hub pipeline test | Receiver + Accumulator |
-| `devices::V4lCameraDevice` | ⚠️ Compiles, enumerates: capability filtering is in place, buffer count reduced, negotiated-format validation added; capture path still needs real-hardware exercise | Producer (camera) |
-| `devices::AlsaMicrophoneDevice` | ⚠️ Compiles, enumerates: enumeration filters fixed and buffer sizing accounts for channels; capture path still needs real-hardware exercise | Producer (mic) |
+| `devices::V4lCameraDevice` | ⚠️ Streams on a real webcam through the ignored test (2026-10-30, 1920×1080 MJPG, 14 fps delivered against a granted 1/30 interval), but `device-node` cannot start it: the fixed default 1920×1080 YUYV is not advertised and the node never selects from `get_configs()` (item 19) | Producer (camera) |
+| `devices::AlsaMicrophoneDevice` | ⚠️ Compiles; on a PipeWire host the enumeration filters drop every hardware hint (`DEV` substring), so `device-node list` finds no microphone and the capture path is untested (item 20) | Producer (mic) |
 | `devices::microphone_windows` | ❌ Empty file | Producer on Windows |
 | `devices::manager` | ✅ Deleted | n/a |
 | `device-node::DeviceNode` | ✅ Works: generic over `T: Device`, can publish one camera/mic stream, serves `GET /status` and remote `POST /start`, `/stop`, `/restart` with transition checks | Producer |
@@ -180,14 +180,18 @@ several producers via `HUB_PRODUCERS`) are reachable through configuration alone
 ### 6.2 What blocks it today
 Resolved: `networking::Proxy` forwards data (`proxy_steerable`) and `control-hub` runs it;
 `DeviceNode` is generic over `T: Device`, status transitions are implemented, and `/status` is served.
+`cargo test --workspace` and the Python loopback pytest pass at `3c3d183` (2026-10-30).
 
 Resolved since the last review: multi-producer fan-in (§8 item 13), covered by the two-producer proxy
 and hub pipeline tests.
 
 Open, in priority order:
+0. ❌ Producers on real hardware (items 19, 20): the camera node must pick its config from the advertised list and
+   put the FourCC on the wire, and the microphone filter must keep hardware hints. Found by the 2026-10-30 run
+   (`docs/hardware/`); both block item 12.
 1. ⚠️ Sync and calibration: the hub runs an opt-in `AlignedRelay` (`HUB_SYNC_PORT`), and consumers can use `AlignedClient`; the relay has not been validated on real devices, and calibration is not started (§2 Syncer).
-2. ⚠️ Hardware validation: the v4l2 and ALSA capture loops compile and have hardware-free tests, but
-   have not been run end to end against real devices.
+2. ⚠️ Hardware validation: the v4l2 loop streams on a real webcam in the ignored `devices` test; the ALSA loop
+   is untested because enumeration finds nothing; the end-to-end path has not been run (item 12, blocked by 19 and 20).
 3. ✅ Remote control: `POST /start`, `/stop` and `/restart` are implemented on the device-node status server (§7.1, item 14).
 4. ✅ Python packaging and tests: maturin `pyproject.toml` and a loopback pytest (§5, item 15).
 5. ❌ Windows microphone: `devices/src/microphone_windows.rs` is empty.
@@ -219,6 +223,8 @@ pub struct FramePacketInformation {
 Payload formats by device type:
 
 - **Camera** — raw v4l2 buffer in the negotiated FourCC (default `YUYV`), `frame_shape = [width, height]`.
+  **Gap (item 19):** the header carries no pixel format, so a consumer cannot tell YUYV from MJPG, and real UVC
+  webcams offer 1080p only as MJPG. Item 19 adds the format to the header and decides whether MJPG is allowed.
 - **Microphone** — interleaved `S16LE` samples as bytes, `frame_shape = [buffer_size, channels]`
   (channel count is included).
 
@@ -229,7 +235,7 @@ Defaults (`device-node/src/helper.rs`):
 
 | Device | Default config |
 |---|---|
-| Camera | 1920×1080, 30fps, `YUYV` |
+| Camera | 1920×1080, 30fps, `YUYV` (fixed; the node does not select from the advertised configs yet, so it fails on cameras without that exact mode — item 19) |
 | Microphone | 16kHz, 1 channel, 512-sample buffer, `S16LE` |
 
 ### 7.1 Device-node status endpoint
@@ -276,7 +282,8 @@ The binaries read these variables (see `README.md`, Configuration):
 
 ## 8. Build order and remaining work
 
-Items 1–9, 11, and 13–16 are complete. Item 10 is partial; items 12 and 17–18 are open. Item numbers
+Items 1–3, 5–9, 11, and 13–16 are complete. Items 4, 10 and 12 are partial; items 17–20 are open. Items 19 and
+20 were added 2026-10-30 from the first hardware run. Item numbers
 are stable so older references still resolve. Each item's spec, acceptance criteria and checklist is in its
 own file under [`docs/specs/`](docs/specs/README.md), grouped into stages. §8.1 gives the order in which to
 implement the open items.
@@ -286,7 +293,7 @@ implement the open items.
 | 1 | 1 — Transport and hub foundation | ✅ | [step-01](docs/specs/01-transport-and-hub/step-01-fix-proxy.md) |
 | 2 | 1 — Transport and hub foundation | ✅ | [step-02](docs/specs/01-transport-and-hub/step-02-control-hub-main.md) |
 | 3 | 4 — Consumers and Python | ✅ | [step-03](docs/specs/04-consumers-and-python/step-03-access-client-frames.md) |
-| 4 | 2 — Producers | ✅ | [step-04](docs/specs/02-producers/step-04-device-enumeration-filters.md) |
+| 4 | 2 — Producers | ⚠️ | [step-04](docs/specs/02-producers/step-04-device-enumeration-filters.md) |
 | 5 | 1 — Transport and hub foundation | ✅ | [step-05](docs/specs/01-transport-and-hub/step-05-receive-path-panics.md) |
 | 6 | 2 — Producers | ✅ | [step-06](docs/specs/02-producers/step-06-device-status-endpoint.md) |
 | 7 | 2 — Producers | ✅ | [step-07](docs/specs/02-producers/step-07-generic-device-node.md) |
@@ -294,17 +301,20 @@ implement the open items.
 | 9 | 1 — Transport and hub foundation | ✅ | [step-09](docs/specs/01-transport-and-hub/step-09-connection-stats.md) |
 | 10 | 5 — Sync | ⚠️ | [step-10](docs/specs/05-sync/step-10-time-alignment.md) |
 | 11 | 4 — Consumers and Python | ✅ | [step-11](docs/specs/04-consumers-and-python/step-11-pyo3-bindings.md) |
-| 12 | 6 — Hardware validation | ❌ | [step-12](docs/specs/06-hardware-validation/step-12-hardware-validation.md) |
+| 12 | 6 — Hardware validation | ⚠️ | [step-12](docs/specs/06-hardware-validation/step-12-hardware-validation.md) |
 | 13 | 3 — Hub fan-in and hub status | ✅ | [step-13](docs/specs/03-hub-fan-in-and-status/step-13-multi-producer-fan-in.md) |
 | 14 | 2 — Producers | ✅ | [step-14](docs/specs/02-producers/step-14-remote-control.md) |
 | 15 | 4 — Consumers and Python | ✅ | [step-15](docs/specs/04-consumers-and-python/step-15-python-packaging-tests.md) |
 | 16 | 3 — Hub fan-in and hub status | ✅ | [step-16](docs/specs/03-hub-fan-in-and-status/step-16-hub-status-endpoint.md) |
 | 17 | 7 — Calibration | ❌ | [step-17](docs/specs/07-calibration/step-17-calibration.md) |
 | 18 | 8 — Windows microphone | ❌ | [step-18](docs/specs/08-windows-microphone/step-18-windows-microphone.md) |
+| 19 | 2 — Producers | ❌ | [step-19](docs/specs/02-producers/step-19-camera-config-negotiation.md) |
+| 20 | 2 — Producers | ❌ | [step-20](docs/specs/02-producers/step-20-microphone-enumeration-pipewire.md) |
 
 ### 8.1 Order of remaining work
 
-Implement the open items in this order: 12 → 10 → 17 → 18. An item is done only
+Implement the open items in this order: 19 → 20 → 12 → 10 → 17 → 18. Items 19 and 20 come first because item 12's
+end-to-end run cannot start a producer without them. An item is done only
 when its acceptance check passes with `cargo test --workspace` (plus the hardware run for item 12), and
 the README TODO and this file are updated in the same change.
 

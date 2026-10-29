@@ -17,7 +17,7 @@ Reduce the camera buffer count from 128 to 4, and validate the negotiated v4l2 f
 
 - [x] Camera uses 4 buffers (`devices/src/camera.rs`)
 - [x] Negotiated v4l2 format is validated (`devices/src/camera.rs`)
-- [ ] Capture verified on real hardware (carried into the hardware validation stage)
+- [ ] Capture verified on real hardware — 2026-10-30: the ignored streaming test delivered 42 frames in 3 s (14 fps) at 1920×1080 MJPG; `device-node run camera` fails because its fixed default (1920×1080 YUYV) is not advertised ([results](../../hardware/2026-10-30-framework-12-webcam.md), fix tracked as [step 19](step-19-camera-config-negotiation.md))
 
 ## Stage 2 definition of done
 
@@ -26,4 +26,4 @@ Reduce the camera buffer count from 128 to 4, and validate the negotiated v4l2 f
 - [x] `DeviceNode` is generic over `T: Device`
 - [x] Remote `/start`, `/stop`, `/restart` return `409` on invalid transitions
 - [ ] Capture loops exercised on real hardware (moved to the hardware validation stage)
-- [ ] `cargo test --workspace` passes (not run in the last review)
+- [x] `cargo test --workspace` passes (run 2026-10-30 at `3c3d183`, 13 test binaries, all passing)

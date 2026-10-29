@@ -17,7 +17,7 @@ Camera and microphone set `DeviceStatus` to `Running` on start and `Stopped` on 
 
 - [x] Microphone sets `Running` on start and `Stopped` on stop (`devices/src/microphone_linux.rs`)
 - [x] `device-node/tests/status-test.rs` covers the status endpoint
-- [ ] Camera status transitions checked against the same behaviour (not re-read in the last review)
+- [x] Camera status transitions checked against the same behaviour (`devices/src/camera.rs` sets `Running` at the end of `start()` and `Stopped` in `stop()`)
 
 ## Stage 2 definition of done
 
@@ -26,4 +26,4 @@ Camera and microphone set `DeviceStatus` to `Running` on start and `Stopped` on 
 - [x] `DeviceNode` is generic over `T: Device`
 - [x] Remote `/start`, `/stop`, `/restart` return `409` on invalid transitions
 - [ ] Capture loops exercised on real hardware (moved to the hardware validation stage)
-- [ ] `cargo test --workspace` passes (not run in the last review)
+- [x] `cargo test --workspace` passes (run 2026-10-30 at `3c3d183`, 13 test binaries, all passing)

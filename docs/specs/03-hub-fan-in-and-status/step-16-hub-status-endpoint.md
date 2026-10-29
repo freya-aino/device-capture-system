@@ -25,4 +25,4 @@
 - [x] `HUB_PRODUCERS` is parsed and the hub connects its XSUB socket to every endpoint
 - [x] Two-producer loopback tests exist in `access-client/tests/`
 - [x] Hub `GET /status` reports producer and consumer counts
-- [ ] `cargo test --workspace` passes (not run in the last review)
+- [x] `cargo test --workspace` passes (run 2026-10-30 at `3c3d183`, 13 test binaries, all passing)

@@ -17,7 +17,7 @@
 
 - [x] Transitions are validated before the device is called
 - [x] `409` tests in `device-node/tests/status-test.rs`, including start on a never-started node
-- [ ] `500` device-failure path (`device control failed`) covered by a test (not confirmed in the last review)
+- [ ] `500` device-failure path (`device control failed`) covered by a test (checked 2026-10-30: `device-node/tests/status-test.rs` only covers the poisoned-lock `500`; the mock device never fails, so this path is untested)
 
 ## Stage 2 definition of done
 
@@ -26,4 +26,4 @@
 - [x] `DeviceNode` is generic over `T: Device`
 - [x] Remote `/start`, `/stop`, `/restart` return `409` on invalid transitions
 - [ ] Capture loops exercised on real hardware (moved to the hardware validation stage)
-- [ ] `cargo test --workspace` passes (not run in the last review)
+- [x] `cargo test --workspace` passes (run 2026-10-30 at `3c3d183`, 13 test binaries, all passing)

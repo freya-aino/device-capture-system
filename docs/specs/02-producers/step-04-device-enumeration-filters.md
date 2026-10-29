@@ -1,6 +1,6 @@
 # Step 04: Microphone enumeration fix and camera capability filter
 
-- **Status:** ✅ Done
+- **Status:** ⚠️ Partial (filters exist; they drop every hardware hint on a PipeWire host, see step 20)
 - **Stage:** 2 — Producers (devices and device-node)
 - **Spec item:** [`SPECS.md`](../../../SPECS.md) §8 item 4
 
@@ -20,7 +20,7 @@ Fix microphone enumeration so playback-only hints are skipped and virtual device
 - [x] Microphone: virtual devices are matched by base name
 - [x] Microphone: buffer size accounts for channel count
 - [x] Camera: `VIDEO_CAPTURE` capability filter (`devices/src/camera.rs`)
-- [ ] Enumeration verified on real hardware (carried into the hardware validation stage)
+- [ ] Enumeration verified on real hardware — 2026-10-30: camera enumerates (`/dev/video0`), microphone list is empty on a host with one capture PCM because the `DEV` filter drops `front:CARD=PCH,DEV=0` ([results](../../hardware/2026-10-30-framework-12-webcam.md), fix tracked as [step 20](step-20-microphone-enumeration-pipewire.md))
 
 ## Stage 2 definition of done
 
@@ -29,4 +29,4 @@ Fix microphone enumeration so playback-only hints are skipped and virtual device
 - [x] `DeviceNode` is generic over `T: Device`
 - [x] Remote `/start`, `/stop`, `/restart` return `409` on invalid transitions
 - [ ] Capture loops exercised on real hardware (moved to the hardware validation stage)
-- [ ] `cargo test --workspace` passes (not run in the last review)
+- [x] `cargo test --workspace` passes (run 2026-10-30 at `3c3d183`, 13 test binaries, all passing)

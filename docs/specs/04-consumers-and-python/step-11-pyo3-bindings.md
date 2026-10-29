@@ -26,4 +26,4 @@ Expose the Python client as a PyO3 extension module named `device_system`. `Devi
 - [x] `AccessClient` exposes connect, next frame, run and disconnect
 - [x] PyO3 `device_system` module wraps `AccessClient`
 - [x] maturin packaging and loopback pytest exist
-- [ ] Clean-virtualenv install and pytest re-run (not run in the last review)
+- [x] Clean-virtualenv install and pytest re-run (2026-10-30: `pip install ./python-client` into a fresh venv, `pytest` 1 passed)

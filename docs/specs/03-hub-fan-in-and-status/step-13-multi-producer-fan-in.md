@@ -20,11 +20,11 @@ Acceptance: a hardware-free test runs two producers on different loopback ports 
 - [x] `control-hub/src/main.rs` parses `HUB_PRODUCERS` and connects to each endpoint
 - [x] Single-endpoint `HUB_PRODUCER_*` fallback is kept
 - [x] Two-producer tests exist in `access-client/tests/`
-- [ ] Test asserts that frames with both device IDs are received (not confirmed in the last review)
+- [x] Test asserts that frames with both device IDs are received (`hub-pipeline-test.rs` collects ids into a set and asserts `producer-a` and `producer-b`; `aligned-client-test.rs` does the same per group)
 
 ## Stage 3 definition of done
 
 - [x] `HUB_PRODUCERS` is parsed and the hub connects its XSUB socket to every endpoint
 - [x] Two-producer loopback tests exist in `access-client/tests/`
 - [x] Hub `GET /status` reports producer and consumer counts
-- [ ] `cargo test --workspace` passes (not run in the last review)
+- [x] `cargo test --workspace` passes (run 2026-10-30 at `3c3d183`, 13 test binaries, all passing)

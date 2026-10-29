@@ -24,4 +24,4 @@
 - [x] `DeviceNode` is generic over `T: Device`
 - [x] Remote `/start`, `/stop`, `/restart` return `409` on invalid transitions
 - [ ] Capture loops exercised on real hardware (moved to the hardware validation stage)
-- [ ] `cargo test --workspace` passes (not run in the last review)
+- [x] `cargo test --workspace` passes (run 2026-10-30 at `3c3d183`, 13 test binaries, all passing)

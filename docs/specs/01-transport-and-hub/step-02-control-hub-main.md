@@ -22,4 +22,4 @@ The `control-hub` binary loads its bind and connect settings from `HUB_*` enviro
 - [x] `Proxy` forwards frames between XSUB and XPUB and stops cleanly
 - [x] Peer-controlled input on the receive path is dropped, not panicked on
 - [x] `ConnectionStats` uses `Instant` and records per-frame latency
-- [ ] `cargo test --workspace` passes (not run in the last review)
+- [x] `cargo test --workspace` passes (run 2026-10-30 at `3c3d183`, 13 test binaries, all passing)

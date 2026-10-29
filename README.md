@@ -390,8 +390,10 @@ The ordered build plan is in `SPECS.md` §8, and each build item's spec and chec
   - [x] Read-only `GET /status` (device and connection state)
   - [x] StartDevice / StopDevice / RestartDevice (`POST /start`, `/stop`, `/restart`)
 - [x] `DeviceNode` support for cameras + microphones
-- [ ] Capture hardware validation
-  - [ ] Exercise the v4l2 camera capture loop on real hardware
+- [ ] Capture hardware validation (first run 2026-10-30, see [`docs/hardware/`](docs/hardware/))
+  - [~] Exercise the v4l2 camera capture loop on real hardware (streams in the ignored `devices` test; `device-node` cannot start it with the fixed default config)
+  - [ ] Camera config selected from the advertised list, FourCC carried on the wire (`docs/specs` step 19)
+  - [ ] Microphone enumeration keeps hardware hints on PipeWire hosts (`docs/specs` step 20)
   - [ ] Exercise the ALSA microphone capture loop on real hardware
   - [ ] Windows microphone support (`devices/src/microphone_windows.rs` is empty)
 - [ ] Control Hub
