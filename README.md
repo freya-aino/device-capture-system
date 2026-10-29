@@ -380,7 +380,7 @@ Python notes:
 
 ## TODO
 
-The ordered build plan is in `SPECS.md` §8.
+The ordered build plan is in `SPECS.md` §8, and each build item's spec and checklist is in [`docs/specs/`](docs/specs/README.md).
 
 - [x] Device Node CLI
   - [x] List devices

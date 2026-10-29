@@ -3,8 +3,8 @@
 This document specifies the intended design of the system: the deployment topologies it must
 support, the roles each component plays, the wire protocol, and the current implementation state
 against that spec. It consolidates the architecture described in `README.md`/`AGENT.md` with the
-findings in `CODE_REVIEW.md` (historical review at commit `40c8af5`; the status in §6 was revised
-2026-10-28 against commit `7ac4b5a`).
+findings in `CODE_REVIEW.md` (historical review at commit `40c8af5`; the status in §6 and §8 was revised
+2026-10-29 against commit `e367b77`).
 
 Status markers used throughout: ✅ done · ⚠️ partial/broken · ❌ not implemented.
 
@@ -43,8 +43,8 @@ that split.
 ## 3. Deployment topologies
 
 The topologies below must be reachable by changing only IP/port configuration — never by
-recompiling or forking code paths. §3.1 and §3.2 (one producer) meet this today; §3.3 with more than
-one producer host also needs multi-producer fan-in, which is not implemented yet. The reason this is
+recompiling or forking code paths. §3.1, §3.2 and §3.3 (several producer hosts, via `HUB_PRODUCERS`) all meet this today.
+The reason this is
 possible is that `Sender`, `Receiver`, and `Proxy`
 (the three `networking` transport primitives) are parameterized purely by `Ipv4Addr` + `u16` and
 use plain TCP, which works identically over loopback or a real NIC.
@@ -144,14 +144,14 @@ Packaging is in place: `python-client/pyproject.toml` builds the extension with 
 The implemented path is PyO3 bindings in `python-client/` (see `python-client/README.md`):
 `DeviceSystem` wraps `access-client::AccessClient`, so Python uses the same Rust wire decoder and
 cannot drift from it when `shared` changes. A pure-Python decoder (a `pyzmq` `SUB` socket plus a small
-bincode header decoder, specified in §7) remains a fallback only if consumers must avoid a Rust-built
+bincode header decoder, not written and not specified here) remains a fallback only if consumers must avoid a Rust-built
 extension. It is not planned.
 
 ---
 
 ## 6. Current implementation state
 
-Revised against the current workspace (`7ac4b5a`). `CODE_REVIEW.md` is a historical review at commit
+Revised 2026-10-29 against the current workspace (`e367b77`). `CODE_REVIEW.md` is a historical review at commit
 `40c8af5`; see it for line numbers and the findings it already applied (for example the `devices`
 crate's broken module re-export, §4.1 there).
 
@@ -267,68 +267,44 @@ The binaries read these variables (see `README.md`, Configuration):
 | `HUB_CONSUMER_IP` / `HUB_CONSUMER_PORT` | `control-hub` | `0.0.0.0` / `5556` |
 | `HUB_QUEUE_SIZE` | `control-hub` | `128` |
 | `HUB_DATA_CHUNK_SIZE` | `control-hub` | `1024` |
+| `HUB_PRODUCERS` | `control-hub` | unset; comma-separated `ip:port` list that takes precedence over `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT` |
+| `HUB_STATUS_ADDR` | `control-hub` | `127.0.0.1:8081` |
+| `HUB_SYNC_PORT` | `control-hub` | unset (sync off); when set, `HUB_SYNC_DEVICES` is required |
+| `HUB_SYNC_DEVICES` | `control-hub` | unset; device ids to align, required with `HUB_SYNC_PORT` |
 
 ---
 
 ## 8. Build order and remaining work
 
-Items marked ✅ are done, including item 16. Items 1–9, 11, and 13–15 are complete. Item 10 is partial; items 12 and 17–18 are open. Item numbers
-are stable so older references still resolve. §8.1 gives the order in which to implement the open
-items.
+Items 1–9, 11, and 13–16 are complete. Item 10 is partial; items 12 and 17–18 are open. Item numbers
+are stable so older references still resolve. Each item's spec, acceptance criteria and checklist is in its
+own file under [`docs/specs/`](docs/specs/README.md), grouped into stages. §8.1 gives the order in which to
+implement the open items.
 
-1. ✅ Done: fix `Proxy` and add loopback proxy tests (`proxy-test.rs`, hub pipeline test).
-2. ✅ Done: minimal `control-hub` `main()` loads config and runs `Proxy`.
-3. ✅ Done: `access-client` connects a `Receiver` to the hub and exposes frames via
-   `AccessClient`. Still open: packaging the Python bindings that sit on top of it (§5).
-4. ✅ Done: microphone enumeration filter fixed (playback-only skipped, virtual devices matched by
-   base name) and camera capability filtering (`V4L2_CAP_VIDEO_CAPTURE`) added. Build-verified
-   with a Nix shell providing libclang; the hardware itself has not been exercised.
-5. ✅ Done: remove panics on the network receive path (peer-controlled input is validated and
-   malformed frames are dropped).
-6. ✅ Done: camera and microphone set `DeviceStatus` to `Running` on start and `Stopped` on stop,
-   and `device-node run` serves `GET /status` (JSON with device and connection state) on
-   `DEVICE_NODE_STATUS_ADDR` (default `127.0.0.1:8080`). Covered by `device-node/tests/status-test.rs`.
-7. ✅ Done: `DeviceNode` is generic over `T: Device`, so producer hosts can publish cameras.
-8. ✅ Done: camera buffer count reduced from 128 to 4, and the negotiated v4l2 format is validated.
-9. ✅ Done: rewrite `ConnectionStats` to use `Instant` for interval math and record per-frame latency
-   from `tx_timestamp`/`rx_timestamp`.
-10. ⚠️ Sync: time alignment across producers. `shared::Aligner` groups frames by capture time, and
-    `control-hub` runs it in an `AlignedRelay` when `HUB_SYNC_PORT` and `HUB_SYNC_DEVICES` are set. Aligned groups
-    are published on that port, and the raw forwarding stays unchanged. Covered by codec unit tests and
-    `networking/tests/aligned-relay-test.rs`. Still open: validation with real devices, and a consumer
-    that reads the aligned port by default.
-    Calibration is item 17.
-11. ✅ Done: Python client (§5) as a PyO3 extension in `python-client/`. `DeviceSystem(hub_ip, hub_port)`
-    with `get_frame()` / `next_frame()` wraps `AccessClient`, so Python shares the Rust wire decoder.
-    Packaging and tests are covered by item 15.
-12. ❌ Hardware validation: run the `V4lCameraDevice` and `AlsaMicrophoneDevice` capture loops against
-    real devices, end to end through `device-node` → `control-hub` → `access-client`. Acceptance: frames
-    arrive at the configured rate (30 fps camera, 16 kHz microphone) for at least 60 s, and the dropped
-    frame count and latency are recorded in a dated results note. Tests stay hardware-free.
-13. ✅ Done: multi-producer fan-in. `control-hub` connects its XSUB socket to several producer endpoints,
-    for example `HUB_PRODUCERS=ip:port,ip:port`, keeping the single-endpoint variables as a fallback.
-    Acceptance: a hardware-free test runs two producers on different loopback ports and checks that
-    `access-client` receives frames with both device IDs.
-14. ✅ Done: remote control. `device-node` accepts `POST /start`, `POST /stop` and `POST /restart` on the
-    status server, with transitions validated against `DeviceStatus` (§7.1). Covered by
-    `device-node/tests/status-test.rs` for each transition and each invalid transition (409).
-15. ✅ Done: Python packaging and tests. `python-client/pyproject.toml` builds the extension with maturin, and
-    `python-client/tests/test_loopback.py` runs `examples/loopback-publisher.rs` and receives frames through
-    `DeviceSystem`. Verified: a clean virtualenv installed the package and the pytest passed.
-16. ✅ Hub status endpoint: `control-hub` serves `GET /status` with producer and consumer counts, read from
-    ZMQ socket monitor events (`networking::PeerCounts`). Set the bind address with `HUB_STATUS_ADDR`
-    (default `127.0.0.1:8081`). Covered by `networking/tests/peer-count-test.rs` and the status unit test in
-    `control-hub/src/status.rs`, which queries it while one producer and one consumer are connected.
-17. ❌ Calibration: choose a general reference-point detection model, then port the python-opencv
-    calibration code. Acceptance: a deterministic test on a checked-in fixture image returns the expected
-    reference points.
-18. ❌ Windows microphone: implement `devices/src/microphone_windows.rs`, or record in the README
-    Requirements that Windows is unsupported. Acceptance: one of the two is written down, and if
-    implemented, the device tests pass on Windows. Lowest priority.
+| Item | Stage | Status | Spec file |
+|---|---|---|---|
+| 1 | 1 — Transport and hub foundation | ✅ | [step-01](docs/specs/01-transport-and-hub/step-01-fix-proxy.md) |
+| 2 | 1 — Transport and hub foundation | ✅ | [step-02](docs/specs/01-transport-and-hub/step-02-control-hub-main.md) |
+| 3 | 4 — Consumers and Python | ✅ | [step-03](docs/specs/04-consumers-and-python/step-03-access-client-frames.md) |
+| 4 | 2 — Producers | ✅ | [step-04](docs/specs/02-producers/step-04-device-enumeration-filters.md) |
+| 5 | 1 — Transport and hub foundation | ✅ | [step-05](docs/specs/01-transport-and-hub/step-05-receive-path-panics.md) |
+| 6 | 2 — Producers | ✅ | [step-06](docs/specs/02-producers/step-06-device-status-endpoint.md) |
+| 7 | 2 — Producers | ✅ | [step-07](docs/specs/02-producers/step-07-generic-device-node.md) |
+| 8 | 2 — Producers | ✅ | [step-08](docs/specs/02-producers/step-08-camera-buffers-format.md) |
+| 9 | 1 — Transport and hub foundation | ✅ | [step-09](docs/specs/01-transport-and-hub/step-09-connection-stats.md) |
+| 10 | 5 — Sync | ⚠️ | [step-10](docs/specs/05-sync/step-10-time-alignment.md) |
+| 11 | 4 — Consumers and Python | ✅ | [step-11](docs/specs/04-consumers-and-python/step-11-pyo3-bindings.md) |
+| 12 | 6 — Hardware validation | ❌ | [step-12](docs/specs/06-hardware-validation/step-12-hardware-validation.md) |
+| 13 | 3 — Hub fan-in and hub status | ✅ | [step-13](docs/specs/03-hub-fan-in-and-status/step-13-multi-producer-fan-in.md) |
+| 14 | 2 — Producers | ✅ | [step-14](docs/specs/02-producers/step-14-remote-control.md) |
+| 15 | 4 — Consumers and Python | ✅ | [step-15](docs/specs/04-consumers-and-python/step-15-python-packaging-tests.md) |
+| 16 | 3 — Hub fan-in and hub status | ✅ | [step-16](docs/specs/03-hub-fan-in-and-status/step-16-hub-status-endpoint.md) |
+| 17 | 7 — Calibration | ❌ | [step-17](docs/specs/07-calibration/step-17-calibration.md) |
+| 18 | 8 — Windows microphone | ❌ | [step-18](docs/specs/08-windows-microphone/step-18-windows-microphone.md) |
 
 ### 8.1 Order of remaining work
 
-Implement the open items in this order: 12 → 10 → 15 → 16 → 17 → 18. An item is done only
+Implement the open items in this order: 12 → 10 → 17 → 18. An item is done only
 when its acceptance check passes with `cargo test --workspace` (plus the hardware run for item 12), and
 the README TODO and this file are updated in the same change.
 
