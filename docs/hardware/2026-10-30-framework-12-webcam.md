@@ -143,3 +143,27 @@ Notes:
   service on this host; the node exits with `failed to bind status server … Address already in use`, as intended.
 - The 60 s acceptance criterion for step 12 is met for both devices. Latency numbers are single-host and say nothing
   about cross-host clock skew.
+
+## Sync run (step 10, after the Aligner changes)
+
+Same topology plus `HUB_SYNC_PORT=5558 HUB_SYNC_DEVICES=/dev/video0,pipewire HUB_SYNC_TOLERANCE_MS=20`; a raw client
+and an aligned client (`CLIENT_ALIGNED_PORT=5558`) read in parallel for 70 s.
+
+First attempt, with the sync code as it was: 656 groups in 70 s (9.4/s) while the raw stream carried every frame.
+Two causes, both visible only on real devices:
+
+| Cause | Evidence | Fix |
+|---|---|---|
+| Frames were aligned on `tx_timestamp`, the send time | The microphone sends four 512-sample packets back to back every 128 ms (PipeWire's 2048-sample quantum): `tx` gaps of 0.0, 0.0, 0.0, 128 ms. All four carried the same time, so only one camera frame per 128 ms could pair | New header field `capture_timestamp`: the camera uses the driver's monotonic buffer timestamp, the microphone subtracts the frames still queued in ALSA (`avail / rate`) from the read time. Sync aligns on it and falls back to `tx_timestamp` |
+| `Aligner` dropped a sample as "stale" once anything newer than `time + tolerance` arrived | With 20 ms tolerance, a partner that is 25 ms later in transport is discarded before it can pair | `max_wait` (default 200 ms, `HUB_SYNC_MAX_WAIT_MS`) bounds the wait; an anchor is dropped immediately only when every other device has already moved past its window |
+
+Second run, 70 s:
+
+| Stream | Groups / frames | Rate | Skew inside a group | Latency tx→rx | Age capture→rx |
+|---|---|---|---|---|---|
+| Aligned (`/dev/video0` + `pipewire`) | 2101 groups, one per camera frame | 30.0/s | mean 8.3 ms, max 17.9 ms | mean 45 ms, max 115 ms | — |
+| Raw `/dev/video0` | 2101 frames | 30.0 fps | — | mean 25.6 ms | mean 57 ms, max 92 ms |
+| Raw `pipewire` | 2188 packets | 31.3/s | — | mean 4.9 ms | mean 62 ms, max 128 ms |
+
+The aligned stream's extra latency is the wait for the partner device, bounded by the microphone's 128 ms quantum.
+A smaller PipeWire quantum or a larger microphone buffer would lower it; the alignment itself adds nothing further.

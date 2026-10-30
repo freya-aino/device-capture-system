@@ -12,7 +12,7 @@ streams, keep them in sync, and expose them to clients.
 > plus remote `POST /start`, `/stop` and `/restart`, a `control-hub` that fans in one or more producer
 > endpoints to any number of consumers (XSUB/XPUB proxy) and serves `GET /status` with live producer and
 > consumer counts, an `access-client` (CLI and library, including client-side aligned groups), and
-> installable Python bindings. Hub-side sync is opt-in (`HUB_SYNC_PORT`) and has not been validated on real
+> installable Python bindings. Hub-side sync is opt-in (`HUB_SYNC_PORT`) and was validated on real
 > devices. Not implemented yet: calibration and Windows microphone capture. See [TODO](#todo).
 
 ## Architecture
@@ -49,7 +49,7 @@ A frame is sent as a single ZMQ multipart message:
 
 | Part    | Content                                                            |
 |---------|--------------------------------------------------------------------|
-| `0`     | `bincode`-encoded `FramePacketInformation` (device info, frame shape, pixel format or sample rate, tx timestamp) |
+| `0`     | `bincode`-encoded `FramePacketInformation` (device info, frame shape, pixel format or sample rate, capture and tx timestamps) |
 | `1`     | Sender-local `u64` sequence number (little-endian)                  |
 | `2..n`  | The raw frame bytes, split into `data_chunk_size` chunks            |
 
@@ -146,12 +146,14 @@ Environment variables read by the binaries:
 | `HUB_SYNC_PORT` | `control-hub` | unset | Enables the aligned relay; it binds a PUB socket on `HUB_CONSUMER_IP`:this port |
 | `HUB_SYNC_DEVICES` | `control-hub` | unset | Comma-separated device ids that must all appear in one aligned group (required with `HUB_SYNC_PORT`) |
 | `HUB_SYNC_TOLERANCE_MS` | `control-hub` | `20` | Maximum capture-time distance between samples in one group |
+| `HUB_SYNC_MAX_WAIT_MS` | `control-hub` | `200` | How long a frame waits for partners from the other devices before it is dropped. Must cover the transport-latency difference between devices, not the pairing tolerance |
 | `HUB_DATA_CHUNK_SIZE` | `control-hub` | `1024` | Data chunk size passed to the proxy |
 | `HUB_IP` / `HUB_PORT` | `access-client` | `127.0.0.1` / `5556` | Hub XPUB endpoint the CLI **connects** to |
 | `CLIENT_QUEUE_SIZE` | `access-client` | `128` | Queue size for the client's SUB socket |
 | `CLIENT_DATA_CHUNK_SIZE` | `access-client` | `1024` | Data chunk size expected by the client |
 | `CLIENT_SUMMARY_SECS` | `access-client` | `0` | When > 0, print one `summary:` line per device every N seconds (rate, Mbit/s, latency mean/max, dropped frames) instead of a line per frame |
 | `CLIENT_RUN_SECS` | `access-client` | `0` | When > 0, exit after N seconds with a final per-device total (used by the hardware validation run) |
+| `CLIENT_ALIGNED_PORT` | `access-client` | `0` | When > 0, read aligned groups from the hub's `HUB_SYNC_PORT` on this port instead of the raw stream, and print one `aligned:` summary line per window (groups/s, skew, latency, frames per device) |
 
 `device-node` uses a queue size of `128` and a chunk size of `1024` (fixed in `device-node/src/main.rs`).
 
@@ -300,7 +302,11 @@ cargo run -p control-hub
 ```
 
 The unaligned stream stays on `HUB_CONSUMER_PORT`; the aligned groups are on `HUB_SYNC_PORT`. Consumers
-of the aligned stream decode it with `networking::GroupReceiver` (see below). Set `HUB_SYNC_DEVICES`
+of the aligned stream decode it with `networking::GroupReceiver` (see below) or run
+`CLIENT_ALIGNED_PORT=5557 cargo run -p access-client` for a summary. Groups are formed on each frame's
+`capture_timestamp`, so a microphone that delivers several packets at once still aligns packet by packet.
+`HUB_SYNC_MAX_WAIT_MS` (default 200) is how long a frame waits for its partners; raise it if one producer's
+frames reach the hub much later than another's. Set `HUB_SYNC_DEVICES`
 to the device ids your producers report (camera: the `/dev/videoN` path; microphone: the ALSA PCM name).
 A mismatch means no groups are ever produced. The list is split on commas, so ids that contain a comma
 (for example `hw:CARD=PCH,DEV=0`) cannot be listed here.
@@ -408,7 +414,7 @@ The ordered build plan is in `SPECS.md` §8, and each build item's spec and chec
 - [ ] Control Hub
   - [x] Load bind/connect config from env and run a ZMQ proxy
   - [x] Multi-producer fan-in (`HUB_PRODUCERS`, comma-separated `ip:port` list)
-  - [~] Sync: opt-in hub-side `AlignedRelay` on `HUB_SYNC_PORT` (not validated on real devices); `access-client::AlignedClient` aligns on the consumer side; the unaligned stream is unchanged
+  - [x] Sync: opt-in hub-side `AlignedRelay` on `HUB_SYNC_PORT`, validated on real devices (one group per camera frame, skew ≤ 18 ms); `access-client` reads it with `CLIENT_ALIGNED_PORT`, `AlignedClient` aligns on the consumer side; the unaligned stream is unchanged
   - [ ] Calibrate
     - [ ] choose & implement general reference point detection model
     - [ ] transfer calibration code from python-opencv

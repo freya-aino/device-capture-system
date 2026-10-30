@@ -118,9 +118,9 @@ ZMQ's own trade-off — PUB silently drops frames once a subscriber's high-water
 no log or counter (§6, and CODE_REVIEW §3) — is the one real cost of this choice and must be
 instrumented, not papered over by switching transports.
 
-**Conclusion:** ZMQ is architecturally correct for this system's latency goal. Single-producer
-forwarding over it works (§6). The open problems are sync, hardware validation of device capture,
-and calibration, not the transport choice. Multi-producer fan-in and remote control are implemented.
+**Conclusion:** ZMQ is architecturally correct for this system's latency goal. Forwarding, multi-producer
+fan-in, remote control, hub-side sync and hardware validation are implemented and measured (§6, `docs/hardware/`).
+The open problem is calibration, not the transport choice.
 
 ---
 
@@ -165,8 +165,8 @@ crate's broken module re-export, §4.1 there).
 | `devices::microphone_windows` | ❌ Empty file | Producer on Windows |
 | `devices::manager` | ✅ Deleted | n/a |
 | `device-node::DeviceNode` | ✅ Works: generic over `T: Device`, can publish one camera/mic stream, serves `GET /status` and remote `POST /start`, `/stop`, `/restart` with transition checks | Producer |
-| `control-hub` | ✅ Works as XSUB/XPUB proxy fanning in every `HUB_PRODUCERS` endpoint (or the single `HUB_PRODUCER_*` pair), configured by `HUB_*` env vars; serves `GET /status` with live producer and consumer counts; opt-in `HUB_SYNC_PORT` runs an `AlignedRelay` that publishes aligned groups on a separate PUB port while the raw forwarding stays unchanged | Syncer |
-| `shared::Aligner` | ✅ Generic over a payload; groups frames from several devices by capture time, reports skew, and counts dropped stale samples. Used by the hub's `AlignedRelay` and by `AlignedClient` | Syncer |
+| `control-hub` | ✅ Works as XSUB/XPUB proxy fanning in every `HUB_PRODUCERS` endpoint (or the single `HUB_PRODUCER_*` pair), configured by `HUB_*` env vars; serves `GET /status` with live producer and consumer counts; opt-in `HUB_SYNC_PORT` runs an `AlignedRelay` that publishes aligned groups on a separate PUB port while the raw forwarding stays unchanged. Validated on real devices 2026-10-30: one group per camera frame at 30/s, skew ≤ 18 ms | Syncer |
+| `shared::Aligner` | ✅ Generic over a payload; groups frames from several devices by capture time, reports skew, and counts dropped samples. Pairing tolerance and wait window (`max_wait`) are separate; an anchor is dropped as soon as every other device has moved past it. Used by the hub's `AlignedRelay` and by `AlignedClient` | Syncer |
 | `access-client` | ✅ `AccessClient` (`connect`, `next_frame`, `run`, `disconnect`, `dropped_frames`) plus a CLI binary with a per-device summary mode (`CLIENT_SUMMARY_SECS`, `CLIENT_RUN_SECS`: rate, bandwidth, latency, drops); `AlignedClient` wraps it to yield aligned groups of frame packets, covered by end-to-end tests. Used by Python bindings | Consumer |
 | `python-client` | ✅ PyO3 bindings (`device_system`) packaged with maturin and covered by a pytest that runs the loopback example | Consumer |
 | `DeviceStatus` | ✅ Status transitions are implemented and observable via `device-node` | Observability for Producer |
@@ -175,7 +175,8 @@ crate's broken module re-export, §4.1 there).
 The *shape* of the deployment flexibility is real: `Sender::new`/`Receiver::new`/`Proxy::new` take
 `Ipv4Addr` + `u16` with no hardcoded host assumptions, and `device-node`/`control-hub`/`access-client`
 are configured through arguments and environment variables only. Topologies §3.1, §3.2 and §3.3 (with
-several producers via `HUB_PRODUCERS`) are reachable through configuration alone. Sync (§2 Syncer) is partial: an opt-in `HUB_SYNC_PORT` relay exists and is covered only by tests.
+several producers via `HUB_PRODUCERS`) are reachable through configuration alone. Sync (§2 Syncer) is an opt-in
+`HUB_SYNC_PORT` relay, covered by tests and validated on real devices (item 10).
 
 ### 6.2 What blocks it today
 Resolved: `networking::Proxy` forwards data (`proxy_steerable`) and `control-hub` runs it;
@@ -189,7 +190,7 @@ and hub pipeline tests.
 Open, in priority order:
 0. ✅ Producers on real hardware: item 19 (camera selection, FourCC on the wire, frame-rate fixes), item 20
    (microphone enumeration on PipeWire hosts) and item 21 (sample rate on the wire) are done.
-1. ⚠️ Sync and calibration: the hub runs an opt-in `AlignedRelay` (`HUB_SYNC_PORT`), and consumers can use `AlignedClient`; the relay has not been validated on real devices, and calibration is not started (§2 Syncer).
+1. ✅ Sync (item 10): the hub's opt-in `AlignedRelay` (`HUB_SYNC_PORT`) is validated on real devices; consumers read it with `CLIENT_ALIGNED_PORT`, `GroupReceiver` or align themselves with `AlignedClient`. ❌ Calibration (item 17) is not started.
 2. ✅ Hardware validation (item 12): 70 s single-host run through the full path, camera 30.0 fps and microphone
    16 kHz with 0 dropped frames (`docs/hardware/`). A cross-host run is still outstanding.
 3. ✅ Remote control: `POST /start`, `/stop` and `/restart` are implemented on the device-node status server (§7.1, item 14).
@@ -219,10 +220,17 @@ pub struct FramePacketInformation {
     pub frame_shape: Vec<u32>,
     pub pixel_format: Option<String>,     // camera: negotiated FourCC ("YUYV", "MJPG", ...); microphone: None
     pub sample_rate: Option<u32>,         // microphone: granted rate in Hz; camera: None
+    pub capture_timestamp: Option<SystemTime>, // when the device captured the frame; sync aligns on this
 }
 ```
 
-`pixel_format` (item 19) and `sample_rate` (item 21) were added 2026-10-30. Every peer in a deployment must be built from the same revision;
+`pixel_format` (item 19), `sample_rate` (item 21) and `capture_timestamp` (item 10) were added 2026-10-30.
+
+`tx_timestamp` is the send time and `rx_timestamp - tx_timestamp` is transport latency. `capture_timestamp` is
+what alignment uses (`FramePacketInformation::capture_time()`, falling back to `tx_timestamp`): the camera takes
+it from the driver's buffer timestamp, the microphone from the read time minus the frames still queued in ALSA.
+The two differ in practice: a microphone behind a sound server delivers several packets at once when its quantum
+fills, all with the same send time but distinct capture times. Every peer in a deployment must be built from the same revision;
 there is no protocol version negotiation, and a pre-item-19 peer cannot decode frames from a post-item-19 peer.
 
 Payload formats by device type:
@@ -300,12 +308,16 @@ The binaries read these variables (see `README.md`, Configuration):
 | `HUB_STATUS_ADDR` | `control-hub` | `127.0.0.1:8081` |
 | `HUB_SYNC_PORT` | `control-hub` | unset (sync off); when set, `HUB_SYNC_DEVICES` is required |
 | `HUB_SYNC_DEVICES` | `control-hub` | unset; device ids to align, required with `HUB_SYNC_PORT` |
+| `HUB_SYNC_TOLERANCE_MS` | `control-hub` | `20`; maximum capture-time distance inside one group |
+| `HUB_SYNC_MAX_WAIT_MS` | `control-hub` | `200`; how long a frame waits for partners before it is dropped (must cover the transport-latency difference between devices) |
+| `CLIENT_SUMMARY_SECS` / `CLIENT_RUN_SECS` | `access-client` | `0` / `0`; summary window and bounded run |
+| `CLIENT_ALIGNED_PORT` | `access-client` | `0` (off); read aligned groups from the hub's `HUB_SYNC_PORT` instead of the raw stream |
 
 ---
 
 ## 8. Build order and remaining work
 
-Items 1–9, 11–16 and 19–21 are complete. Item 10 is partial; items 17 and 18 are open.
+Items 1–16 and 19–21 are complete. Items 17 and 18 are open.
 Items 19–21 were added 2026-10-30 from the first hardware run. Item numbers
 are stable so older references still resolve. Each item's spec, acceptance criteria and checklist is in its
 own file under [`docs/specs/`](docs/specs/README.md), grouped into stages. §8.1 gives the order in which to
@@ -322,7 +334,7 @@ implement the open items.
 | 7 | 2 — Producers | ✅ | [step-07](docs/specs/02-producers/step-07-generic-device-node.md) |
 | 8 | 2 — Producers | ✅ | [step-08](docs/specs/02-producers/step-08-camera-buffers-format.md) |
 | 9 | 1 — Transport and hub foundation | ✅ | [step-09](docs/specs/01-transport-and-hub/step-09-connection-stats.md) |
-| 10 | 5 — Sync | ⚠️ | [step-10](docs/specs/05-sync/step-10-time-alignment.md) |
+| 10 | 5 — Sync | ✅ | [step-10](docs/specs/05-sync/step-10-time-alignment.md) |
 | 11 | 4 — Consumers and Python | ✅ | [step-11](docs/specs/04-consumers-and-python/step-11-pyo3-bindings.md) |
 | 12 | 6 — Hardware validation | ✅ | [step-12](docs/specs/06-hardware-validation/step-12-hardware-validation.md) |
 | 13 | 3 — Hub fan-in and hub status | ✅ | [step-13](docs/specs/03-hub-fan-in-and-status/step-13-multi-producer-fan-in.md) |
@@ -337,7 +349,7 @@ implement the open items.
 
 ### 8.1 Order of remaining work
 
-Implement the open items in this order: 10 → 17 → 18. An item is done only
+Implement the open items in this order: 17 → 18. An item is done only
 when its acceptance check passes with `cargo test --workspace` (plus the hardware run for item 12), and
 the README TODO and this file are updated in the same change.
 

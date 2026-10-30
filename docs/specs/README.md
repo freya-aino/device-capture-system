@@ -13,16 +13,16 @@ Status markers: ✅ done · ⚠️ partial · ❌ open.
 | 2 — Producers (devices and device-node) | [02-producers](02-producers/) | 4 ✅, 6 ✅, 7 ✅, 8 ✅, 14 ✅, 19 ✅, 20 ✅, 21 ✅ | Camera and microphone both start and stream on real hardware; FourCC and sample rate on the wire |
 | 3 — Hub fan-in and hub status | [03-hub-fan-in-and-status](03-hub-fan-in-and-status/) | 13 ✅, 16 ✅ | Done |
 | 4 — Consumers and Python | [04-consumers-and-python](04-consumers-and-python/) | 3 ✅, 11 ✅, 15 ✅ | Done; clean-virtualenv pytest re-run 2026-10-30 |
-| 5 — Sync | [05-sync](05-sync/) | 10 ⚠️ | Partial |
+| 5 — Sync | [05-sync](05-sync/) | 10 ✅ | Validated on real devices 2026-10-30 (30 groups/s, skew ≤ 18 ms) |
 | 6 — Hardware validation | [06-hardware-validation](06-hardware-validation/) | 12 ✅ | 70 s single-host run 2026-10-30: 30 fps camera, 16 kHz mic, 0 drops; cross-host run still to do |
 | 7 — Calibration | [07-calibration](07-calibration/) | 17 ❌ | Open |
 | 8 — Windows microphone | [08-windows-microphone](08-windows-microphone/) | 18 ❌ | Open |
 
-Totals: 18 done, 1 partial (item 10), 2 open (items 17, 18).
+Totals: 19 done, 2 open (items 17, 18).
 
 ### Order of remaining work
 
-Implement the open items in this order: 10 → 17 → 18 (`SPECS.md` §8.1). An item is done only when its
+Implement the open items in this order: 17 → 18 (`SPECS.md` §8.1). An item is done only when its
 acceptance check passes with `cargo test --workspace` (plus the hardware run for item 12), and the README
 TODO and the step file are updated in the same change.
 
