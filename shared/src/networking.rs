@@ -84,9 +84,19 @@ pub struct FramePacketInformation {
     /// Microphone frames: the sample rate ALSA granted, in Hz, so a consumer can interpret `data`
     /// without knowing the node's configuration. Camera frames: `None`.
     pub sample_rate: Option<u32>,
+    /// When the device captured this frame (camera: the driver's buffer timestamp; microphone:
+    /// the end of the sample buffer, derived from the frames still queued in ALSA). Independent of
+    /// when the producer got around to sending it, which is what `tx_timestamp` records. Sync
+    /// aligns on this and falls back to `tx_timestamp` when a producer does not set it.
+    pub capture_timestamp: Option<SystemTime>,
 }
 
 impl FramePacketInformation {
+    /// The time to align this frame on: `capture_timestamp`, or `tx_timestamp` when unset.
+    pub fn capture_time(&self) -> Option<SystemTime> {
+        self.capture_timestamp.or(self.tx_timestamp)
+    }
+
     pub fn serialize(&self) -> Result<Vec<u8>, Error> {
         let ser_info = bincode::encode_to_vec(&self, config::standard())
             .map_err(|e| Error::msg(format!("Serialization error: {}", e)))?;
@@ -147,7 +157,9 @@ mod tests {
             frame_shape: vec![1920, 1080],
             pixel_format: Some("MJPG".to_string()),
             sample_rate: None,
+            capture_timestamp: None,
         };
+        assert_eq!(info.capture_time(), info.tx_timestamp, "falls back to tx");
 
         let bytes = info.serialize().unwrap();
         let decoded = FramePacketInformation::deserialize(&bytes).unwrap();
@@ -155,14 +167,18 @@ mod tests {
         assert_eq!(info, decoded);
         assert_eq!(decoded.pixel_format.as_deref(), Some("MJPG"));
 
+        let captured = SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(1234);
         let mic = FramePacketInformation {
             pixel_format: None,
             sample_rate: Some(16_000),
             frame_shape: vec![512, 1],
+            capture_timestamp: Some(captured),
             ..info
         };
+        assert_eq!(mic.capture_time(), Some(captured));
         let decoded = FramePacketInformation::deserialize(&mic.serialize().unwrap()).unwrap();
         assert_eq!(decoded.sample_rate, Some(16_000));
+        assert_eq!(decoded.capture_timestamp, Some(captured));
     }
 
     #[test]

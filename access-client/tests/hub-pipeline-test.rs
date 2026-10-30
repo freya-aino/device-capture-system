@@ -24,6 +24,7 @@ fn generate_dummy_frame_packet_with_id(device_id: &str) -> FramePacket {
         frame_shape: vec![2, 2],
         pixel_format: None,
         sample_rate: None,
+        capture_timestamp: None,
     };
     FramePacket::new(frame_info, vec![9u8, 8, 7, 6].into_boxed_slice())
 }

@@ -215,6 +215,12 @@ impl Device for AlsaMicrophoneDevice {
                     0,
                 );
                 io.read_exact(&mut buffer)?;
+                // Frames still queued in ALSA were captured after this buffer, so the buffer
+                // ended `avail / rate` ago. Without this, every packet of a 128 ms PipeWire
+                // quantum would carry the same send time and only one could ever align.
+                let queued = pcm.avail().unwrap_or(0).max(0) as u64;
+                let captured = std::time::SystemTime::now()
+                    - std::time::Duration::from_nanos(queued * 1_000_000_000 / granted_rate as u64);
 
                 let fp = FramePacket::new(
                     FramePacketInformation {
@@ -224,6 +230,7 @@ impl Device for AlsaMicrophoneDevice {
                         frame_shape: vec![config.buffer_size, config.channels as u32],
                         pixel_format: None,
                         sample_rate: Some(granted_rate),
+                        capture_timestamp: Some(captured),
                     },
                     buffer.into_boxed_slice(),
                 );

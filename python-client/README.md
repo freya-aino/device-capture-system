@@ -62,6 +62,7 @@ invalid IPv4 address and `RuntimeError` if the connection fails.
 | `frame_shape` | `list[int]` | `[width, height]` for cameras, `[buffer_size, channels]` for microphones. |
 | `pixel_format` | `str \| None` | FourCC of a camera frame (`"YUYV"`, `"MJPG"`, ...). `None` for microphone frames, whose samples are always `S16LE`. |
 | `sample_rate` | `int \| None` | Sample rate in Hz of a microphone frame, as granted by the sound card. `None` for camera frames. |
+| `capture_timestamp` | `float \| None` | When the device captured the frame, seconds since the epoch. Align on this, not on `tx_timestamp`: a microphone sends several packets at once when its buffer fills. |
 | `rx_timestamp` | `float \| None` | Receive time, seconds since the Unix epoch. |
 | `tx_timestamp` | `float \| None` | Send time set by the producer, seconds since the Unix epoch. |
 | `data` | `bytes` | Raw payload. Cameras use the negotiated FourCC (default `YUYV`); microphones use interleaved `S16LE`. |

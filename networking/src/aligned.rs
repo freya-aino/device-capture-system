@@ -133,6 +133,7 @@ pub struct AlignedRelay {
     output_endpoint: String,
     devices: Vec<String>,
     tolerance: Duration,
+    max_wait: Duration,
     stop: Arc<AtomicBool>,
     handle: Option<JoinHandle<Result<(), Error>>>,
 }
@@ -149,9 +150,17 @@ impl AlignedRelay {
             output_endpoint: output_endpoint.into(),
             devices,
             tolerance,
+            max_wait: shared::DEFAULT_MAX_WAIT.max(tolerance),
             stop: Arc::new(AtomicBool::new(false)),
             handle: None,
         }
+    }
+
+    /// How long the relay holds a frame for partners from the other devices (see
+    /// `Aligner::with_max_wait`). Must cover the transport-latency difference between devices.
+    pub fn with_max_wait(mut self, max_wait: Duration) -> Self {
+        self.max_wait = max_wait.max(self.tolerance);
+        self
     }
 
     pub fn start(&mut self, context: &Context) -> Result<(), Error> {
@@ -170,7 +179,8 @@ impl AlignedRelay {
         output.set_linger(0)?;
         output.bind(&self.output_endpoint)?;
 
-        let aligner = Aligner::new(self.devices.clone(), self.tolerance);
+        let aligner =
+            Aligner::new(self.devices.clone(), self.tolerance).with_max_wait(self.max_wait);
         self.stop = Arc::new(AtomicBool::new(false));
         let stop = self.stop.clone();
         self.handle = Some(spawn(move || run_relay(input, output, aligner, stop)));
@@ -234,7 +244,7 @@ fn sample_of(parts: Vec<Vec<u8>>) -> Option<Sample<Vec<Vec<u8>>>> {
             return None;
         }
     };
-    let time = info.tx_timestamp?;
+    let time = info.capture_time()?;
     Some(Sample {
         device_id: info.device_info.id,
         time,
@@ -260,6 +270,7 @@ mod tests {
             frame_shape: vec![2, 2],
             pixel_format: None,
             sample_rate: None,
+            capture_timestamp: None,
         };
         vec![
             info.serialize().unwrap(),

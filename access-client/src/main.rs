@@ -2,8 +2,17 @@ use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
-use access_client::{AccessClient, FrameSummary};
+use access_client::{AccessClient, FrameSummary, GroupSummary};
 use anyhow::{Error, Result};
+use networking::GroupReceiver;
+
+/// Microseconds since the Unix epoch, or `-` when the stamp is missing.
+fn micros(stamp: Option<std::time::SystemTime>) -> String {
+    stamp
+        .and_then(|s| s.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_micros().to_string())
+        .unwrap_or_else(|| "-".to_string())
+}
 
 fn env_or<T: FromStr>(key: &str, default: T) -> T {
     std::env::var(key)
@@ -23,6 +32,20 @@ fn main() -> Result<(), Error> {
     let summary_secs: u64 = env_or("CLIENT_SUMMARY_SECS", 0);
     // 0 (default): run until killed. N > 0: exit cleanly after N seconds, printing a final summary.
     let run_secs: u64 = env_or("CLIENT_RUN_SECS", 0);
+    // 0 (default): read the raw stream on HUB_PORT. N > 0: read aligned groups from the hub's
+    // HUB_SYNC_PORT relay instead and print one `aligned:` summary line per window.
+    let aligned_port: u16 = env_or("CLIENT_ALIGNED_PORT", 0);
+
+    if aligned_port > 0 {
+        return run_aligned(
+            hub_ip,
+            aligned_port,
+            queue_size,
+            data_chunk_size,
+            summary_secs.max(1),
+            run_secs,
+        );
+    }
 
     println!("access-client: connecting to tcp://{}:{}", hub_ip, hub_port);
 
@@ -48,12 +71,14 @@ fn main() -> Result<(), Error> {
             Some(packet) => match summary.as_mut() {
                 Some(summary) => summary.record(&packet),
                 None => println!(
-                    "frame: device={} type={:?} shape={:?} format={} bytes={}",
+                    "frame: device={} type={:?} shape={:?} format={} bytes={} tx_us={} rx_us={}",
                     packet.frame_info.device_info.name,
                     packet.frame_info.device_info.device_type,
                     packet.frame_info.frame_shape,
                     packet.frame_info.pixel_format.as_deref().unwrap_or("-"),
-                    packet.data.len()
+                    packet.data.len(),
+                    micros(packet.frame_info.tx_timestamp),
+                    micros(packet.frame_info.rx_timestamp),
                 ),
             },
             None if summary.is_none() => {
@@ -84,5 +109,52 @@ fn main() -> Result<(), Error> {
         }
     }
     client.disconnect()?;
+    Ok(())
+}
+
+/// Reads aligned groups from the hub's `HUB_SYNC_PORT` relay and prints one summary per window.
+fn run_aligned(
+    hub_ip: Ipv4Addr,
+    port: u16,
+    queue_size: u32,
+    data_chunk_size: u32,
+    summary_secs: u64,
+    run_secs: u64,
+) -> Result<(), Error> {
+    let endpoint = format!("tcp://{hub_ip}:{port}");
+    println!("access-client: connecting to aligned relay {endpoint}");
+    let context = zmq::Context::new();
+    let mut receiver = GroupReceiver::new_endpoint(endpoint, queue_size, data_chunk_size);
+    receiver.start(&context)?;
+
+    let started = Instant::now();
+    let deadline = (run_secs > 0).then(|| started + Duration::from_secs(run_secs));
+    let mut summary = GroupSummary::new(Duration::from_secs(summary_secs));
+
+    loop {
+        if deadline.is_some_and(|d| Instant::now() >= d) {
+            break;
+        }
+        match receiver.receive(zmq::DONTWAIT)? {
+            Some(group) => summary.record(&group),
+            None => std::thread::sleep(Duration::from_millis(5)),
+        }
+        if summary.window_elapsed()
+            && let Some(line) = summary.flush()
+        {
+            println!("{line}");
+        }
+    }
+
+    if let Some(line) = summary.flush() {
+        println!("{line}");
+    }
+    println!(
+        "final: aligned total_groups={} run_s={:.1} mean_rate={:.1}/s",
+        summary.total_groups(),
+        started.elapsed().as_secs_f64(),
+        summary.total_groups() as f64 / started.elapsed().as_secs_f64()
+    );
+    receiver.stop()?;
     Ok(())
 }

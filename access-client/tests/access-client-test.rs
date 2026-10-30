@@ -19,6 +19,7 @@ fn generate_dummy_frame_packet() -> FramePacket {
         frame_shape: vec![512],
         pixel_format: None,
         sample_rate: None,
+        capture_timestamp: None,
     };
     FramePacket::new(frame_info, vec![1u8, 2, 3].into_boxed_slice())
 }

@@ -24,6 +24,7 @@ struct SyncConfig {
     port: u16,
     devices: Vec<String>,
     tolerance: Duration,
+    max_wait: Duration,
 }
 
 fn env_or<T: FromStr>(key: &str, default: T) -> T {
@@ -43,7 +44,9 @@ fn parse_sync_devices(raw: &str) -> Result<Vec<String>> {
         .collect();
 
     if devices.is_empty() {
-        return Err(anyhow!("HUB_SYNC_DEVICES is set but contains no device ids"));
+        return Err(anyhow!(
+            "HUB_SYNC_DEVICES is set but contains no device ids"
+        ));
     }
     Ok(devices)
 }
@@ -100,13 +103,15 @@ impl HubConfig {
         let port: u16 = port
             .parse()
             .map_err(|e| anyhow!("invalid HUB_SYNC_PORT {:?}: {}", port, e))?;
-        let devices = parse_sync_devices(&std::env::var("HUB_SYNC_DEVICES").map_err(|_| {
-            anyhow!("HUB_SYNC_PORT is set but HUB_SYNC_DEVICES is missing")
-        })?)?;
+        let devices = parse_sync_devices(
+            &std::env::var("HUB_SYNC_DEVICES")
+                .map_err(|_| anyhow!("HUB_SYNC_PORT is set but HUB_SYNC_DEVICES is missing"))?,
+        )?;
         Ok(Some(SyncConfig {
             port,
             devices,
             tolerance: Duration::from_millis(env_or("HUB_SYNC_TOLERANCE_MS", 20)),
+            max_wait: Duration::from_millis(env_or("HUB_SYNC_MAX_WAIT_MS", 200)),
         }))
     }
 }
@@ -159,7 +164,8 @@ fn main() -> Result<(), Error> {
                 format!("tcp://{}:{}", config.consumer_ip, sync.port),
                 sync.devices.clone(),
                 sync.tolerance,
-            );
+            )
+            .with_max_wait(sync.max_wait);
             relay.start(&context)?;
             println!(
                 "control-hub: aligned groups on tcp://{}:{} for devices {:?}",

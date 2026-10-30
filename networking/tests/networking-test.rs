@@ -18,6 +18,7 @@ fn generate_dummy_frame_packet_info(size: usize) -> FramePacketInformation {
         frame_shape: vec![size as u32],
         pixel_format: None,
         sample_rate: None,
+        capture_timestamp: None,
     }
 }
 

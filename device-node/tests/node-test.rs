@@ -74,6 +74,7 @@ impl Device for MockDevice {
                     frame_shape: vec![1, 1],
                     pixel_format: None,
                     sample_rate: None,
+                    capture_timestamp: None,
                 },
                 vec![42u8].into_boxed_slice(),
             );

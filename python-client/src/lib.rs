@@ -26,6 +26,7 @@ pub struct Frame {
     frame_shape: Vec<u32>,
     pixel_format: Option<String>,
     sample_rate: Option<u32>,
+    capture_timestamp: Option<f64>,
     rx_timestamp: Option<f64>,
     tx_timestamp: Option<f64>,
     data: Vec<u8>,
@@ -45,6 +46,7 @@ impl From<FramePacket> for Frame {
             frame_shape: info.frame_shape,
             pixel_format: info.pixel_format,
             sample_rate: info.sample_rate,
+            capture_timestamp: timestamp_secs(info.capture_timestamp),
             rx_timestamp: timestamp_secs(info.rx_timestamp),
             tx_timestamp: timestamp_secs(info.tx_timestamp),
             data: packet.data.into_vec(),
@@ -84,6 +86,13 @@ impl Frame {
     #[getter]
     fn sample_rate(&self) -> Option<u32> {
         self.sample_rate
+    }
+
+    /// When the device captured the frame (seconds since the epoch), if the producer reported it.
+    /// Use this, not `tx_timestamp`, to align frames from different devices.
+    #[getter]
+    fn capture_timestamp(&self) -> Option<f64> {
+        self.capture_timestamp
     }
 
     #[getter]

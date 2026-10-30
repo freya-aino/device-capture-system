@@ -18,6 +18,7 @@ fn frame_packet(payload: u8) -> FramePacket {
         frame_shape: vec![1],
         pixel_format: None,
         sample_rate: None,
+        capture_timestamp: None,
     };
     FramePacket::new(frame_info, vec![payload].into_boxed_slice())
 }

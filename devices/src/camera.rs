@@ -1,5 +1,6 @@
 use std::ffi::OsString;
 use std::thread::{JoinHandle, spawn};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Error, Result, anyhow};
 use flume::Sender;
@@ -22,6 +23,31 @@ use v4l::video::Capture;
 /// frames than granted (the Framework 12 webcam fell to 20 fps in indoor light with every mode,
 /// `docs/hardware/`). The capture path turns it off so the granted interval is honoured.
 const V4L2_CID_EXPOSURE_AUTO_PRIORITY: u32 = 0x009a0903;
+
+/// `CLOCK_MONOTONIC` as a duration, the clock UVC drivers stamp buffers with.
+fn monotonic_now() -> Duration {
+    let mut ts = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    // SAFETY: clock_gettime only writes the provided timespec.
+    unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) };
+    Duration::new(ts.tv_sec as u64, ts.tv_nsec as u32)
+}
+
+/// Converts a driver buffer timestamp to wall-clock time. `mono_to_wall` is the offset between
+/// `CLOCK_MONOTONIC` and `SystemTime` measured once at stream start; `None` when the driver did
+/// not flag the stamp as monotonic, in which case callers fall back to "now".
+fn capture_time_of(meta: &v4l::buffer::Metadata, mono_to_wall: Duration) -> Option<SystemTime> {
+    if !meta.flags.contains(v4l::buffer::Flags::TIMESTAMP_MONOTONIC) {
+        return None;
+    }
+    let stamp = Duration::new(
+        meta.timestamp.sec as u64,
+        (meta.timestamp.usec as u32) * 1000,
+    );
+    Some(UNIX_EPOCH + mono_to_wall + stamp)
+}
 
 pub struct V4lCameraDevice {
     pub device_info: DeviceInformation,
@@ -221,6 +247,9 @@ impl Device for V4lCameraDevice {
         tracing::info!("Camera device started");
 
         let device_information = self.device_info.clone();
+        let mono_to_wall = SystemTime::now()
+            .duration_since(UNIX_EPOCH)?
+            .saturating_sub(monotonic_now());
 
         let (tx, rx) = flume::unbounded::<DeviceCommand>();
         self.command_tx = Some(tx);
@@ -238,7 +267,7 @@ impl Device for V4lCameraDevice {
                     },
                 }
 
-                let (buf, _) = v4l::io::traits::CaptureStream::next(&mut stream)
+                let (buf, meta) = v4l::io::traits::CaptureStream::next(&mut stream)
                     .map_err(|e| anyhow!("Unable to read frame: {}", e))?;
                 let frame_shape = vec![config.width, config.height];
 
@@ -250,6 +279,9 @@ impl Device for V4lCameraDevice {
                         frame_shape,
                         pixel_format: Some(config.fourcc_string()),
                         sample_rate: None,
+                        capture_timestamp: Some(
+                            capture_time_of(meta, mono_to_wall).unwrap_or_else(SystemTime::now),
+                        ),
                     },
                     buf.to_vec().into_boxed_slice(),
                 );

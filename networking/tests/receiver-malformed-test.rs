@@ -19,6 +19,7 @@ fn valid_parts(payload: &[u8]) -> Vec<Vec<u8>> {
         frame_shape: vec![2, 2],
         pixel_format: None,
         sample_rate: None,
+        capture_timestamp: None,
     };
     vec![
         info.serialize().unwrap(),

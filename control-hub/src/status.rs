@@ -22,7 +22,10 @@ pub fn start_status_server(server: Server, peers: PeerCounts) -> JoinHandle<Resu
 }
 
 pub fn status_body(producers: usize, consumers: usize) -> String {
-    format!("{{\"producers\":{},\"consumers\":{}}}", producers, consumers)
+    format!(
+        "{{\"producers\":{},\"consumers\":{}}}",
+        producers, consumers
+    )
 }
 
 fn handle_request(request: Request, peers: &PeerCounts) -> Result<(), Error> {

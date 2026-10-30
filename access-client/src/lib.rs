@@ -119,7 +119,7 @@ impl AlignedClient {
             let Some(packet) = self.client.next_frame(remaining)? else {
                 return Ok(None);
             };
-            let Some(time) = packet.frame_info.tx_timestamp else {
+            let Some(time) = packet.frame_info.capture_time() else {
                 continue;
             };
             let sample = Sample {
