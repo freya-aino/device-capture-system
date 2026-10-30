@@ -5,6 +5,9 @@ use anyhow::{Error, Result};
 use networking::Receiver;
 use shared::{AlignedGroup, Aligner, FramePacket, Sample};
 
+mod summary;
+pub use summary::*;
+
 /// Consumer-side client: connects a `Receiver` to a `control-hub`'s XPUB endpoint and
 /// exposes the aggregated frame stream through a simple blocking API. This is the
 /// foundation future bindings (e.g. a Python client, per README/SPECS §5) sit on top of.
@@ -38,6 +41,12 @@ impl AccessClient {
 
     pub fn disconnect(&mut self) -> Result<(), Error> {
         self.receiver.stop()
+    }
+
+    /// Frames the receiver has seen go missing, derived from per-device sequence gaps. Covers every
+    /// device on this connection; it only grows when a later frame from the same device arrives.
+    pub fn dropped_frames(&self) -> u64 {
+        self.receiver.dropped_frames()
     }
 
     /// Blocks (polling) until a frame is available or `timeout` elapses.
