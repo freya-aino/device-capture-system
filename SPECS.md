@@ -167,7 +167,7 @@ crate's broken module re-export, §4.1 there).
 | `device-node::DeviceNode` | ✅ Works: generic over `T: Device`, can publish one camera/mic stream, serves `GET /status` and remote `POST /start`, `/stop`, `/restart` with transition checks | Producer |
 | `control-hub` | ✅ Works as XSUB/XPUB proxy fanning in every `HUB_PRODUCERS` endpoint (or the single `HUB_PRODUCER_*` pair), configured by `HUB_*` env vars; serves `GET /status` with live producer and consumer counts; opt-in `HUB_SYNC_PORT` runs an `AlignedRelay` that publishes aligned groups on a separate PUB port while the raw forwarding stays unchanged | Syncer |
 | `shared::Aligner` | ✅ Generic over a payload; groups frames from several devices by capture time, reports skew, and counts dropped stale samples. Used by the hub's `AlignedRelay` and by `AlignedClient` | Syncer |
-| `access-client` | ✅ `AccessClient` (`connect`, `next_frame`, `run`, `disconnect`) plus a CLI binary; `AlignedClient` wraps it to yield aligned groups of frame packets, covered by end-to-end tests. Used by Python bindings | Consumer |
+| `access-client` | ✅ `AccessClient` (`connect`, `next_frame`, `run`, `disconnect`, `dropped_frames`) plus a CLI binary with a per-device summary mode (`CLIENT_SUMMARY_SECS`, `CLIENT_RUN_SECS`: rate, bandwidth, latency, drops); `AlignedClient` wraps it to yield aligned groups of frame packets, covered by end-to-end tests. Used by Python bindings | Consumer |
 | `python-client` | ✅ PyO3 bindings (`device_system`) packaged with maturin and covered by a pytest that runs the loopback example | Consumer |
 | `DeviceStatus` | ✅ Status transitions are implemented and observable via `device-node` | Observability for Producer |
 
@@ -180,7 +180,8 @@ several producers via `HUB_PRODUCERS`) are reachable through configuration alone
 ### 6.2 What blocks it today
 Resolved: `networking::Proxy` forwards data (`proxy_steerable`) and `control-hub` runs it;
 `DeviceNode` is generic over `T: Device`, status transitions are implemented, and `/status` is served.
-`cargo test --workspace` and the Python loopback pytest pass at `3c3d183` (2026-10-30).
+`cargo test --workspace` and the Python loopback pytest pass at `3c3d183` (2026-10-30), and again after items 19,
+20 and 12 landed the same day.
 
 Resolved since the last review: multi-producer fan-in (§8 item 13), covered by the two-producer proxy
 and hub pipeline tests.
@@ -189,8 +190,8 @@ Open, in priority order:
 0. ✅ Producers on real hardware: item 19 (camera selection, FourCC on the wire, frame-rate fixes) and item 20
    (microphone enumeration on PipeWire hosts) are done; item 21 (sample rate on the wire) is a small follow-up.
 1. ⚠️ Sync and calibration: the hub runs an opt-in `AlignedRelay` (`HUB_SYNC_PORT`), and consumers can use `AlignedClient`; the relay has not been validated on real devices, and calibration is not started (§2 Syncer).
-2. ⚠️ Hardware validation: the v4l2 loop streams on a real webcam in the ignored `devices` test; the ALSA loop
-   is untested because enumeration finds nothing; the end-to-end path has not been run (item 12, blocked by 19 and 20).
+2. ✅ Hardware validation (item 12): 70 s single-host run through the full path, camera 30.0 fps and microphone
+   16 kHz with 0 dropped frames (`docs/hardware/`). A cross-host run is still outstanding.
 3. ✅ Remote control: `POST /start`, `/stop` and `/restart` are implemented on the device-node status server (§7.1, item 14).
 4. ✅ Python packaging and tests: maturin `pyproject.toml` and a loopback pytest (§5, item 15).
 5. ❌ Windows microphone: `devices/src/microphone_windows.rs` is empty.
@@ -303,7 +304,7 @@ The binaries read these variables (see `README.md`, Configuration):
 
 ## 8. Build order and remaining work
 
-Items 1–9, 11, 13–16, 19 and 20 are complete. Items 10 and 12 are partial; items 17, 18 and 21 are open.
+Items 1–9, 11–16, 19 and 20 are complete. Item 10 is partial; items 17, 18 and 21 are open.
 Items 19–21 were added 2026-10-30 from the first hardware run. Item numbers
 are stable so older references still resolve. Each item's spec, acceptance criteria and checklist is in its
 own file under [`docs/specs/`](docs/specs/README.md), grouped into stages. §8.1 gives the order in which to
@@ -322,7 +323,7 @@ implement the open items.
 | 9 | 1 — Transport and hub foundation | ✅ | [step-09](docs/specs/01-transport-and-hub/step-09-connection-stats.md) |
 | 10 | 5 — Sync | ⚠️ | [step-10](docs/specs/05-sync/step-10-time-alignment.md) |
 | 11 | 4 — Consumers and Python | ✅ | [step-11](docs/specs/04-consumers-and-python/step-11-pyo3-bindings.md) |
-| 12 | 6 — Hardware validation | ⚠️ | [step-12](docs/specs/06-hardware-validation/step-12-hardware-validation.md) |
+| 12 | 6 — Hardware validation | ✅ | [step-12](docs/specs/06-hardware-validation/step-12-hardware-validation.md) |
 | 13 | 3 — Hub fan-in and hub status | ✅ | [step-13](docs/specs/03-hub-fan-in-and-status/step-13-multi-producer-fan-in.md) |
 | 14 | 2 — Producers | ✅ | [step-14](docs/specs/02-producers/step-14-remote-control.md) |
 | 15 | 4 — Consumers and Python | ✅ | [step-15](docs/specs/04-consumers-and-python/step-15-python-packaging-tests.md) |
@@ -335,7 +336,7 @@ implement the open items.
 
 ### 8.1 Order of remaining work
 
-Implement the open items in this order: 12 → 21 → 10 → 17 → 18. Item 21 is a small wire-format follow-up and
+Implement the open items in this order: 21 → 10 → 17 → 18. Item 21 is a small wire-format follow-up and
 should land before any external consumer depends on the header. An item is done only
 when its acceptance check passes with `cargo test --workspace` (plus the hardware run for item 12), and
 the README TODO and this file are updated in the same change.

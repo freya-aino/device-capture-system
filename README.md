@@ -149,6 +149,8 @@ Environment variables read by the binaries:
 | `HUB_IP` / `HUB_PORT` | `access-client` | `127.0.0.1` / `5556` | Hub XPUB endpoint the CLI **connects** to |
 | `CLIENT_QUEUE_SIZE` | `access-client` | `128` | Queue size for the client's SUB socket |
 | `CLIENT_DATA_CHUNK_SIZE` | `access-client` | `1024` | Data chunk size expected by the client |
+| `CLIENT_SUMMARY_SECS` | `access-client` | `0` | When > 0, print one `summary:` line per device every N seconds (rate, Mbit/s, latency mean/max, dropped frames) instead of a line per frame |
+| `CLIENT_RUN_SECS` | `access-client` | `0` | When > 0, exit after N seconds with a final per-device total (used by the hardware validation run) |
 
 `device-node` uses a queue size of `128` and a chunk size of `1024` (fixed in `device-node/src/main.rs`).
 
@@ -395,11 +397,11 @@ The ordered build plan is in `SPECS.md` §8, and each build item's spec and chec
   - [x] Read-only `GET /status` (device and connection state)
   - [x] StartDevice / StopDevice / RestartDevice (`POST /start`, `/stop`, `/restart`)
 - [x] `DeviceNode` support for cameras + microphones
-- [ ] Capture hardware validation (first run 2026-10-30, see [`docs/hardware/`](docs/hardware/))
-  - [~] Exercise the v4l2 camera capture loop on real hardware (every advertised mode streams at its granted rate in the ignored `devices` tests and `device-node` starts on the webcam; the 60 s end-to-end run is still open)
+- [ ] Capture hardware validation (2026-10-30 single-host run, see [`docs/hardware/`](docs/hardware/); cross-host run still open)
+  - [x] Exercise the v4l2 camera capture loop on real hardware (30.0 fps over 70 s through hub and client, 0 dropped)
   - [x] Camera config selected from the advertised list, FourCC carried on the wire (`docs/specs` step 19)
   - [x] Microphone enumeration keeps hardware hints on PipeWire hosts (`docs/specs` step 20)
-  - [~] Exercise the ALSA microphone capture loop on real hardware (16 kHz mono from `sysdefault:CARD=PCH` and `pipewire` in the ignored `devices` test; end-to-end run still open)
+  - [x] Exercise the ALSA microphone capture loop on real hardware (16 kHz mono over 70 s through hub and client, 0 dropped)
   - [ ] Microphone sample rate carried on the wire (`docs/specs` step 21)
   - [ ] Windows microphone support (`devices/src/microphone_windows.rs` is empty)
 - [ ] Control Hub

@@ -1,9 +1,8 @@
 # Hardware run — 2026-10-30, Framework Laptop 12
 
-Partial results for [`docs/specs/06-hardware-validation/step-12-hardware-validation.md`](../specs/06-hardware-validation/step-12-hardware-validation.md).
-Workspace at `3c3d183`, built in the `devenv` shell (rustc 1.99.0). Only the device side was exercised; the
-`device-node → control-hub → access-client` path was not run because the device node does not start on this camera
-(see below).
+Results for [`docs/specs/06-hardware-validation/step-12-hardware-validation.md`](../specs/06-hardware-validation/step-12-hardware-validation.md).
+Started at `3c3d183`, built in the `devenv` shell (rustc 1.99.0). The device-side findings below led to steps 19 and
+20; the end-to-end run at the bottom was made after those landed.
 
 ## Camera: `/dev/video0`, "Framework Laptop 12 Webcam Module"
 
@@ -111,3 +110,36 @@ and `start()` asks ALSA for the nearest rate. A consumer has to assume the node'
 
 Separate from the hardware run: `pip install ./python-client` into a fresh venv followed by `pytest` passed (1 test,
 4.5 s), which closes the open clean-virtualenv item for stage 4.
+
+## End-to-end run (after steps 19 and 20)
+
+Three-process topology on one host, 70 s, workspace after `db8914b` plus the `access-client` summary mode:
+
+```
+control-hub   HUB_PRODUCERS=127.0.0.1:5555,127.0.0.1:5557 HUB_STATUS_ADDR=127.0.0.1:8081
+device-node   run camera 0 127.0.0.1 5555   (DEVICE_NODE_STATUS_ADDR=127.0.0.1:8083, default selection → 1920×1080 MJPG 1/30)
+device-node   run mic 1 127.0.0.1 5557      (DEVICE_NODE_STATUS_ADDR=127.0.0.1:8082, PCM "pipewire", 16 kHz mono, 512 samples)
+access-client CLIENT_SUMMARY_SECS=10 CLIENT_RUN_SECS=70
+```
+
+Hub status at t+20 s: `{"producers":2,"consumers":1}`; both nodes `{"device":"Running","connection":"Active"}`.
+
+Client totals over 70.0 s (latency is `rx_timestamp - tx_timestamp` on the client, both stamps from the same host clock;
+the client polls every 5 ms, which is part of the measured latency):
+
+| Device | Frames | Rate | Expected | Dropped | Latency mean (per 10 s window) | Latency max | Bandwidth |
+|---|---|---|---|---|---|---|---|
+| `/dev/video0`, 1920×1080 MJPG | 2100 | 30.0 fps | 30 fps | 0 | 21.7–27.7 ms | 77.5 ms (one window; others ≤ 43 ms) | ~995 Mbit/s |
+| `pipewire`, 512-sample packets | 2188 | 31.3 pkt/s = 16 013 Hz | 16 000 Hz | 0 | 4.0–6.7 ms | 30.2 ms | 0.3 Mbit/s |
+
+Every 10 s window delivered 300 or 301 camera frames and 311–316 microphone packets. `dropped_total` (receiver
+sequence gaps across all devices) stayed at 0 for the whole run.
+
+Notes:
+
+- This camera's MJPG at 1080p is close to 1 Gbit/s (~415 KB per frame), so a real LAN deployment at this mode needs
+  gigabit links or a smaller mode (`DEVICE_NODE_CAMERA_WIDTH=1280 …`).
+- A first attempt failed because `DEVICE_NODE_STATUS_ADDR`'s default `127.0.0.1:8080` was already taken by an unrelated
+  service on this host; the node exits with `failed to bind status server … Address already in use`, as intended.
+- The 60 s acceptance criterion for step 12 is met for both devices. Latency numbers are single-host and say nothing
+  about cross-host clock skew.
