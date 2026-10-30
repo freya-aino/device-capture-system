@@ -2,12 +2,8 @@ mod camera;
 
 pub use camera::*;
 
-#[cfg(target_os = "linux")]
+// Linux only: the camera is v4l2 and the microphone is ALSA. Windows is not supported (README,
+// Requirements; docs/specs step 18); a Windows microphone would need a WASAPI implementation of
+// `shared::Device` and a camera backend to go with it.
 mod microphone_linux;
-#[cfg(target_os = "linux")]
 pub use microphone_linux::*;
-
-#[cfg(target_os = "windows")]
-mod microphone_windows;
-#[cfg(target_os = "windows")]
-pub use microphone_windows::*;

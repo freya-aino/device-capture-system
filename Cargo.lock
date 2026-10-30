@@ -306,6 +306,7 @@ dependencies = [
  "anyhow",
  "flume",
  "glob",
+ "libc",
  "shared",
  "tracing",
  "v4l",

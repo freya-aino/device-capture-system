@@ -13,7 +13,7 @@ streams, keep them in sync, and expose them to clients.
 > endpoints to any number of consumers (XSUB/XPUB proxy) and serves `GET /status` with live producer and
 > consumer counts, an `access-client` (CLI and library, including client-side aligned groups), and
 > installable Python bindings. Hub-side sync is opt-in (`HUB_SYNC_PORT`) and was validated on real
-> devices. Not implemented yet: calibration and Windows microphone capture. See [TODO](#todo).
+> devices. Not implemented yet: calibration. Windows is unsupported by decision. See [TODO](#todo).
 
 ## Architecture
 
@@ -73,7 +73,8 @@ Payload formats:
 
 ## Requirements
 
-- Linux (the capture code is Linux-only; `device-node` asserts this at startup)
+- Linux only. The capture code is v4l2 and ALSA, and `device-node` asserts the OS at startup. Windows and macOS
+  are not supported and not planned; see `docs/specs/08-windows-microphone/` for what a port would involve.
 - Rust toolchain with **edition 2024** support (Rust 1.85+)
 - System libraries — pick one:
 
@@ -410,7 +411,7 @@ The ordered build plan is in `SPECS.md` §8, and each build item's spec and chec
   - [x] Microphone enumeration keeps hardware hints on PipeWire hosts (`docs/specs` step 20)
   - [x] Exercise the ALSA microphone capture loop on real hardware (16 kHz mono over 70 s through hub and client, 0 dropped)
   - [x] Microphone sample rate carried on the wire (`docs/specs` step 21)
-  - [ ] Windows microphone support (`devices/src/microphone_windows.rs` is empty)
+  - [x] Windows microphone: decided unsupported (Requirements; `docs/specs` step 18), empty module removed
 - [ ] Control Hub
   - [x] Load bind/connect config from env and run a ZMQ proxy
   - [x] Multi-producer fan-in (`HUB_PRODUCERS`, comma-separated `ip:port` list)

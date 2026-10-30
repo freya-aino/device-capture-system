@@ -76,7 +76,8 @@ Worth knowing before you debug something — fix only if the task asks for it. T
 `SPECS.md` §6 and the README TODO; `CODE_REVIEW.md` is a historical review at commit `40c8af5` and its
 line numbers may be stale. This is only the two items that still require real hardware to close out.
 
-- `devices/src/microphone_windows.rs` is empty; only Linux is supported today.
+- Linux only, by decision (README Requirements, `docs/specs` step 18). There is no Windows module any more; do not
+  add `cfg(target_os = "windows")` stubs.
 - Camera and microphone capture (opening a real device and reading frames) has never been exercised
   against real hardware on this machine — it compiles and is covered by hardware-free tests
   (enumeration, status transitions, error paths), but the actual capture loop is unverified. See

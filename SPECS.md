@@ -162,7 +162,7 @@ crate's broken module re-export, §4.1 there).
 | `networking::Proxy` | ✅ Works: `start()` runs `zmq::proxy_steerable` on a forwarding thread; `stop()` terminates it cleanly through a control socket. Covered by `proxy-test.rs` and the hub pipeline test | Receiver + Accumulator |
 | `devices::V4lCameraDevice` | ✅ Streams on a real webcam at the granted rate in every advertised mode (2026-10-30 survey, `docs/hardware/`): `start()` disables exposure auto-priority, sets format before interval and reads both back; `device-node` selects the mode from `get_configs()` (§7.3). End-to-end 60 s run still open (item 12) | Producer (camera) |
 | `devices::AlsaMicrophoneDevice` | ✅ Enumerates one converting PCM per card plus sound-server PCMs (`select_capture_hints`, item 20), captures 16 kHz mono from both on real hardware (2026-10-30, `docs/hardware/`), and stamps the granted sample rate on every frame (item 21) | Producer (mic) |
-| `devices::microphone_windows` | ❌ Empty file | Producer on Windows |
+| `devices::microphone_windows` | ✅ Removed; Windows is unsupported by decision (item 18) | n/a |
 | `devices::manager` | ✅ Deleted | n/a |
 | `device-node::DeviceNode` | ✅ Works: generic over `T: Device`, can publish one camera/mic stream, serves `GET /status` and remote `POST /start`, `/stop`, `/restart` with transition checks | Producer |
 | `control-hub` | ✅ Works as XSUB/XPUB proxy fanning in every `HUB_PRODUCERS` endpoint (or the single `HUB_PRODUCER_*` pair), configured by `HUB_*` env vars; serves `GET /status` with live producer and consumer counts; opt-in `HUB_SYNC_PORT` runs an `AlignedRelay` that publishes aligned groups on a separate PUB port while the raw forwarding stays unchanged. Validated on real devices 2026-10-30: one group per camera frame at 30/s, skew ≤ 18 ms | Syncer |
@@ -195,7 +195,7 @@ Open, in priority order:
    16 kHz with 0 dropped frames (`docs/hardware/`). A cross-host run is still outstanding.
 3. ✅ Remote control: `POST /start`, `/stop` and `/restart` are implemented on the device-node status server (§7.1, item 14).
 4. ✅ Python packaging and tests: maturin `pyproject.toml` and a loopback pytest (§5, item 15).
-5. ❌ Windows microphone: `devices/src/microphone_windows.rs` is empty.
+5. ✅ Windows microphone: decided unsupported and recorded in the README Requirements (item 18).
 
 ---
 
@@ -317,7 +317,7 @@ The binaries read these variables (see `README.md`, Configuration):
 
 ## 8. Build order and remaining work
 
-Items 1–16 and 19–21 are complete. Items 17 and 18 are open.
+Items 1–16 and 18–21 are complete. Item 17 is open.
 Items 19–21 were added 2026-10-30 from the first hardware run. Item numbers
 are stable so older references still resolve. Each item's spec, acceptance criteria and checklist is in its
 own file under [`docs/specs/`](docs/specs/README.md), grouped into stages. §8.1 gives the order in which to
@@ -342,14 +342,14 @@ implement the open items.
 | 15 | 4 — Consumers and Python | ✅ | [step-15](docs/specs/04-consumers-and-python/step-15-python-packaging-tests.md) |
 | 16 | 3 — Hub fan-in and hub status | ✅ | [step-16](docs/specs/03-hub-fan-in-and-status/step-16-hub-status-endpoint.md) |
 | 17 | 7 — Calibration | ❌ | [step-17](docs/specs/07-calibration/step-17-calibration.md) |
-| 18 | 8 — Windows microphone | ❌ | [step-18](docs/specs/08-windows-microphone/step-18-windows-microphone.md) |
+| 18 | 8 — Windows microphone | ✅ | [step-18](docs/specs/08-windows-microphone/step-18-windows-microphone.md) |
 | 19 | 2 — Producers | ✅ | [step-19](docs/specs/02-producers/step-19-camera-config-negotiation.md) |
 | 20 | 2 — Producers | ✅ | [step-20](docs/specs/02-producers/step-20-microphone-enumeration-pipewire.md) |
 | 21 | 2 — Producers | ✅ | [step-21](docs/specs/02-producers/step-21-microphone-sample-rate-on-the-wire.md) |
 
 ### 8.1 Order of remaining work
 
-Implement the open items in this order: 17 → 18. An item is done only
+The only open item is 17. An item is done only
 when its acceptance check passes with `cargo test --workspace` (plus the hardware run for item 12), and
 the README TODO and this file are updated in the same change.
 

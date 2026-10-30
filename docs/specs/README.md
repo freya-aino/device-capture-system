@@ -16,13 +16,13 @@ Status markers: ✅ done · ⚠️ partial · ❌ open.
 | 5 — Sync | [05-sync](05-sync/) | 10 ✅ | Validated on real devices 2026-10-30 (30 groups/s, skew ≤ 18 ms) |
 | 6 — Hardware validation | [06-hardware-validation](06-hardware-validation/) | 12 ✅ | 70 s single-host run 2026-10-30: 30 fps camera, 16 kHz mic, 0 drops; cross-host run still to do |
 | 7 — Calibration | [07-calibration](07-calibration/) | 17 ❌ | Open |
-| 8 — Windows microphone | [08-windows-microphone](08-windows-microphone/) | 18 ❌ | Open |
+| 8 — Windows microphone | [08-windows-microphone](08-windows-microphone/) | 18 ✅ | Decided unsupported 2026-10-30 |
 
-Totals: 19 done, 2 open (items 17, 18).
+Totals: 20 done, 1 open (item 17).
 
 ### Order of remaining work
 
-Implement the open items in this order: 17 → 18 (`SPECS.md` §8.1). An item is done only when its
+The only open item is 17 (`SPECS.md` §8.1). An item is done only when its
 acceptance check passes with `cargo test --workspace` (plus the hardware run for item 12), and the README
 TODO and the step file are updated in the same change.
 
