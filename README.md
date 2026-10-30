@@ -110,25 +110,102 @@ Payload formats:
 
 ## Build & Run
 
-```bash
-cargo build --workspace
-cargo run -p device-node              # defaults to `list`
-cargo run -p device-node -- list
+Build inside the devenv shell so `bindgen` finds a matching libclang:
 
-# One-machine demo (3-process topology):
-# - `device-node` PUB binds on 127.0.0.1:5555
-# - `control-hub` XSUB connects to 127.0.0.1:5555 and XPUB binds on :5556
-cargo run -p device-node -- run mic 0 127.0.0.1 5555
-cargo run -p control-hub
-cargo run -p access-client            # connects to :5556 and prints frames
+```bash
+devenv shell -- cargo build --workspace
 ```
 
-For a multi-host setup, the `<hub_ip> <hub_port>` arguments of `device-node run` are the address the
-producer's PUB socket **binds** to, not the hub's address. Bind on a local address (for example
-`0.0.0.0 5555`) on the capture machine, and point the hub at that producer with `HUB_PRODUCER_IP` and
-`HUB_PRODUCER_PORT`. Renaming these arguments is still open. To fan in several producers, set
-`HUB_PRODUCERS` to a comma-separated list such as `10.0.0.2:5555,10.0.0.3:5555`; it takes precedence
-over `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT`.
+### Layouts
+
+The same binaries run in every layout. Only the addresses change (see `SPECS.md` §3). Each process has one job:
+
+| Process | Runs on | Binds (listens) | Connects to |
+|---|---|---|---|
+| `device-node run <kind> <index> <ip> <port>` | the machine with the camera or microphone | its PUB socket on `<ip>:<port>` | nothing |
+| `control-hub` | the hub machine | consumers on `HUB_CONSUMER_IP:HUB_CONSUMER_PORT` (default `0.0.0.0:5556`) | every producer in `HUB_PRODUCERS` (or `HUB_PRODUCER_IP:HUB_PRODUCER_PORT`) |
+| `access-client` | any machine that consumes frames | nothing | the hub at `HUB_IP:HUB_PORT` |
+
+The `<ip> <port>` arguments of `device-node run` are the address the producer **listens on**. They are not
+the hub's address. Use `0.0.0.0` to accept connections on every interface, or `127.0.0.1` to keep the
+producer local.
+
+Run `cargo run -p device-node -- list` on each capture machine first. The number after `run <kind>` is the
+index it prints.
+
+#### One device: everything on one machine
+
+Three processes on `127.0.0.1`. No environment variables are needed, because the defaults already match.
+
+```bash
+# terminal 1: producer publishes camera 0 on 127.0.0.1:5555
+cargo run -p device-node -- run camera 0 127.0.0.1 5555
+
+# terminal 2: hub connects to 127.0.0.1:5555, serves consumers on 0.0.0.0:5556
+cargo run -p control-hub
+
+# terminal 3: consumer connects to 127.0.0.1:5556 and prints frames
+cargo run -p access-client
+```
+
+#### Two devices: producer on host A, hub and consumer on host B
+
+On host A, the capture machine. Listen on the LAN interface so host B can reach it:
+
+```bash
+DEVICE_NODE_STATUS_ADDR=127.0.0.1:8080 cargo run -p device-node -- run camera 0 0.0.0.0 5555
+```
+
+On host B, the hub and the consumer. Point the hub at host A, then run the consumer against the local hub:
+
+```bash
+HUB_PRODUCER_IP=<host A address> HUB_PRODUCER_PORT=5555 cargo run -p control-hub
+
+# on host B, in another terminal
+cargo run -p access-client          # HUB_IP defaults to 127.0.0.1
+```
+
+Port 5555 must be open from B to A. The `GET /status` endpoint on host A only listens on loopback by default,
+so check it from host A itself.
+
+#### Three devices: producer on A, hub on B, consumer on C
+
+Host A is the same as in the two-device layout. Host B runs the hub, and host C runs the consumer:
+
+```bash
+# host B
+HUB_PRODUCER_IP=<host A address> HUB_PRODUCER_PORT=5555 cargo run -p control-hub
+
+# host C
+HUB_IP=<host B address> HUB_PORT=5556 cargo run -p access-client
+```
+
+Open two ports: 5555 from B to A (producer), and 5556 from C to B (consumer). The hub's status endpoint
+(`HUB_STATUS_ADDR`, default `127.0.0.1:8081`) listens on loopback only, so `curl` it on host B.
+
+#### Several producers fanned into one hub
+
+Each additional capture machine runs its own `device-node` exactly as on host A. On the hub, list every
+producer instead of a single one:
+
+```bash
+HUB_PRODUCERS=<host A address>:5555,<host A2 address>:5555 cargo run -p control-hub
+```
+
+Device ids are the device paths (`/dev/video0`, `hw:1`), so two machines that both have `/dev/video0` report the
+same id. Sync and the per-device summaries group frames by that id, so give each producer a distinct id or keep
+the same-named devices out of the same sync group.
+
+#### Checking the layout
+
+```bash
+curl http://127.0.0.1:8080/status   # on each producer host: {"device":"Running","connection":"Active"}
+curl http://127.0.0.1:8081/status   # on the hub host: {"producers":1,"consumers":1}
+```
+
+`producers` and `consumers` count the live connections, so a missing peer shows up as a lower number.
+
+To also publish time-aligned groups from the hub, see the `control-hub` component guide below.
 
 ### Configuration
 
