@@ -49,7 +49,7 @@ A frame is sent as a single ZMQ multipart message:
 
 | Part    | Content                                                            |
 |---------|--------------------------------------------------------------------|
-| `0`     | `bincode`-encoded `FramePacketInformation` (device info, frame shape, pixel format, tx timestamp) |
+| `0`     | `bincode`-encoded `FramePacketInformation` (device info, frame shape, pixel format or sample rate, tx timestamp) |
 | `1`     | Sender-local `u64` sequence number (little-endian)                  |
 | `2..n`  | The raw frame bytes, split into `data_chunk_size` chunks            |
 
@@ -67,7 +67,8 @@ Payload formats:
   mode from what the camera advertises (see Configuration); if the driver then negotiates a
   different width, height or FourCC, `start()` returns an error instead of silently using the
   negotiated format (see `CODE_REVIEW.md` §4.7).
-- **Microphone** – interleaved `S16LE` samples as bytes, `frame_shape = [buffer_size, channels]`.
+- **Microphone** – interleaved `S16LE` samples as bytes, `frame_shape = [buffer_size, channels]`, and the
+  header's `sample_rate` is the rate the sound card granted in Hz.
   Use `FramePacket::decode_to_i16_le` to get `i16` samples back.
 
 ## Requirements
@@ -402,7 +403,7 @@ The ordered build plan is in `SPECS.md` §8, and each build item's spec and chec
   - [x] Camera config selected from the advertised list, FourCC carried on the wire (`docs/specs` step 19)
   - [x] Microphone enumeration keeps hardware hints on PipeWire hosts (`docs/specs` step 20)
   - [x] Exercise the ALSA microphone capture loop on real hardware (16 kHz mono over 70 s through hub and client, 0 dropped)
-  - [ ] Microphone sample rate carried on the wire (`docs/specs` step 21)
+  - [x] Microphone sample rate carried on the wire (`docs/specs` step 21)
   - [ ] Windows microphone support (`devices/src/microphone_windows.rs` is empty)
 - [ ] Control Hub
   - [x] Load bind/connect config from env and run a ZMQ proxy

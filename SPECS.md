@@ -161,7 +161,7 @@ crate's broken module re-export, §4.1 there).
 | `networking::Connection`/`Sender`/`Receiver` | ✅ Works: receive path validates peer input and drops malformed frames; a sequence part enables gap-based dropped-frame counts | Producer, Consumer |
 | `networking::Proxy` | ✅ Works: `start()` runs `zmq::proxy_steerable` on a forwarding thread; `stop()` terminates it cleanly through a control socket. Covered by `proxy-test.rs` and the hub pipeline test | Receiver + Accumulator |
 | `devices::V4lCameraDevice` | ✅ Streams on a real webcam at the granted rate in every advertised mode (2026-10-30 survey, `docs/hardware/`): `start()` disables exposure auto-priority, sets format before interval and reads both back; `device-node` selects the mode from `get_configs()` (§7.3). End-to-end 60 s run still open (item 12) | Producer (camera) |
-| `devices::AlsaMicrophoneDevice` | ✅ Enumerates one converting PCM per card plus sound-server PCMs (`select_capture_hints`, item 20) and captures 16 kHz mono from both on real hardware (2026-10-30, `docs/hardware/`). Sample rate is not yet on the wire (item 21) | Producer (mic) |
+| `devices::AlsaMicrophoneDevice` | ✅ Enumerates one converting PCM per card plus sound-server PCMs (`select_capture_hints`, item 20), captures 16 kHz mono from both on real hardware (2026-10-30, `docs/hardware/`), and stamps the granted sample rate on every frame (item 21) | Producer (mic) |
 | `devices::microphone_windows` | ❌ Empty file | Producer on Windows |
 | `devices::manager` | ✅ Deleted | n/a |
 | `device-node::DeviceNode` | ✅ Works: generic over `T: Device`, can publish one camera/mic stream, serves `GET /status` and remote `POST /start`, `/stop`, `/restart` with transition checks | Producer |
@@ -187,8 +187,8 @@ Resolved since the last review: multi-producer fan-in (§8 item 13), covered by 
 and hub pipeline tests.
 
 Open, in priority order:
-0. ✅ Producers on real hardware: item 19 (camera selection, FourCC on the wire, frame-rate fixes) and item 20
-   (microphone enumeration on PipeWire hosts) are done; item 21 (sample rate on the wire) is a small follow-up.
+0. ✅ Producers on real hardware: item 19 (camera selection, FourCC on the wire, frame-rate fixes), item 20
+   (microphone enumeration on PipeWire hosts) and item 21 (sample rate on the wire) are done.
 1. ⚠️ Sync and calibration: the hub runs an opt-in `AlignedRelay` (`HUB_SYNC_PORT`), and consumers can use `AlignedClient`; the relay has not been validated on real devices, and calibration is not started (§2 Syncer).
 2. ✅ Hardware validation (item 12): 70 s single-host run through the full path, camera 30.0 fps and microphone
    16 kHz with 0 dropped frames (`docs/hardware/`). A cross-host run is still outstanding.
@@ -218,10 +218,11 @@ pub struct FramePacketInformation {
     pub tx_timestamp: Option<SystemTime>, // set by sender just before send
     pub frame_shape: Vec<u32>,
     pub pixel_format: Option<String>,     // camera: negotiated FourCC ("YUYV", "MJPG", ...); microphone: None
+    pub sample_rate: Option<u32>,         // microphone: granted rate in Hz; camera: None
 }
 ```
 
-`pixel_format` was added 2026-10-30 (item 19). Every peer in a deployment must be built from the same revision;
+`pixel_format` (item 19) and `sample_rate` (item 21) were added 2026-10-30. Every peer in a deployment must be built from the same revision;
 there is no protocol version negotiation, and a pre-item-19 peer cannot decode frames from a post-item-19 peer.
 
 Payload formats by device type:
@@ -230,8 +231,8 @@ Payload formats by device type:
   `frame_shape = [width, height]`. The format is whichever advertised mode the device node selected (§7.3), so
   consumers must branch on `pixel_format`: `YUYV` is 2 bytes per pixel, `MJPG` is one JPEG image per frame.
 - **Microphone** — interleaved `S16LE` samples as bytes, `frame_shape = [buffer_size, channels]`
-  (channel count is included). **Gap (item 21):** the sample rate is not on the wire; consumers assume the node's
-  configured rate (default 16 kHz).
+  (channel count is included), `sample_rate` = the rate ALSA granted in Hz (the node warns when it differs from
+  the requested rate; the `plug` layer normally makes them equal).
 
 Per-frame latency is measurable today as `rx_timestamp - tx_timestamp`. The receive path records
 this into `ConnectionStats` (best-effort; frames without a `tx_timestamp` are dropped).
@@ -304,7 +305,7 @@ The binaries read these variables (see `README.md`, Configuration):
 
 ## 8. Build order and remaining work
 
-Items 1–9, 11–16, 19 and 20 are complete. Item 10 is partial; items 17, 18 and 21 are open.
+Items 1–9, 11–16 and 19–21 are complete. Item 10 is partial; items 17 and 18 are open.
 Items 19–21 were added 2026-10-30 from the first hardware run. Item numbers
 are stable so older references still resolve. Each item's spec, acceptance criteria and checklist is in its
 own file under [`docs/specs/`](docs/specs/README.md), grouped into stages. §8.1 gives the order in which to
@@ -332,12 +333,11 @@ implement the open items.
 | 18 | 8 — Windows microphone | ❌ | [step-18](docs/specs/08-windows-microphone/step-18-windows-microphone.md) |
 | 19 | 2 — Producers | ✅ | [step-19](docs/specs/02-producers/step-19-camera-config-negotiation.md) |
 | 20 | 2 — Producers | ✅ | [step-20](docs/specs/02-producers/step-20-microphone-enumeration-pipewire.md) |
-| 21 | 2 — Producers | ❌ | [step-21](docs/specs/02-producers/step-21-microphone-sample-rate-on-the-wire.md) |
+| 21 | 2 — Producers | ✅ | [step-21](docs/specs/02-producers/step-21-microphone-sample-rate-on-the-wire.md) |
 
 ### 8.1 Order of remaining work
 
-Implement the open items in this order: 21 → 10 → 17 → 18. Item 21 is a small wire-format follow-up and
-should land before any external consumer depends on the header. An item is done only
+Implement the open items in this order: 10 → 17 → 18. An item is done only
 when its acceptance check passes with `cargo test --workspace` (plus the hardware run for item 12), and
 the README TODO and this file are updated in the same change.
 

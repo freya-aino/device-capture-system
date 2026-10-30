@@ -1,6 +1,6 @@
 # Step 21: Microphone sample rate on the wire
 
-- **Status:** ❌ Open
+- **Status:** ✅ Done (2026-10-30)
 - **Stage:** 2 — Producers (devices and device-node)
 - **Spec item:** [`SPECS.md`](../../../SPECS.md) §8 item 21
 
@@ -12,7 +12,7 @@ microphone frame carries `frame_shape = [buffer_size, channels]` and `S16LE` sam
 16 kHz streams at another rate and nothing on the wire says so. Consumers currently have to assume the node's
 configured rate. Step 19 solved the same class of problem for cameras with `pixel_format`.
 
-## Scope
+## Scope (as implemented)
 
 1. Put the granted sample rate on the wire. Either add `sample_rate: Option<u32>` to `FramePacketInformation`
    next to `pixel_format`, or widen `frame_shape` to `[buffer_size, channels, sample_rate]`; the former keeps
@@ -26,7 +26,7 @@ microphone test prints the header rate next to the measured one.
 
 ## Step checklist
 
-- [ ] Sample rate in `FramePacketInformation`
-- [ ] `start()` reads back the granted rate
-- [ ] Python `Frame` exposes it; `SPECS.md` §7 updated
-- [ ] Loopback pytest and round-trip test cover it
+- [x] `sample_rate: Option<u32>` in `FramePacketInformation` (camera frames: `None`)
+- [x] `start()` reads back the granted rate with `hw_params_current().get_rate()` and warns when it differs
+- [x] Python `Frame.sample_rate`; `SPECS.md` §7 and both READMEs updated
+- [x] Loopback pytest asserts `None` for the camera frame; the `shared` round-trip test covers a microphone header; the ignored microphone test prints the header rate next to the measured one
