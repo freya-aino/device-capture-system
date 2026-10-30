@@ -56,6 +56,7 @@ def test_device_system_receives_frames_from_loopback_hub(loopback_publisher):
         assert frame.device_type == "camera"
         assert frame.frame_shape == [2, 2]
         assert frame.pixel_format == "YUYV"
+        assert frame.sample_rate is None
         assert len(frame.data) == 4
     finally:
         ds.close()

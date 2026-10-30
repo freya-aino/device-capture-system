@@ -81,6 +81,9 @@ pub struct FramePacketInformation {
     /// Camera frames: the FourCC the camera negotiated (`"YUYV"`, `"MJPG"`, ...), so a consumer
     /// knows how to interpret `data`. Microphone frames: `None` (samples are always `S16LE`).
     pub pixel_format: Option<String>,
+    /// Microphone frames: the sample rate ALSA granted, in Hz, so a consumer can interpret `data`
+    /// without knowing the node's configuration. Camera frames: `None`.
+    pub sample_rate: Option<u32>,
 }
 
 impl FramePacketInformation {
@@ -143,6 +146,7 @@ mod tests {
             tx_timestamp: Some(SystemTime::now()),
             frame_shape: vec![1920, 1080],
             pixel_format: Some("MJPG".to_string()),
+            sample_rate: None,
         };
 
         let bytes = info.serialize().unwrap();
@@ -150,6 +154,15 @@ mod tests {
 
         assert_eq!(info, decoded);
         assert_eq!(decoded.pixel_format.as_deref(), Some("MJPG"));
+
+        let mic = FramePacketInformation {
+            pixel_format: None,
+            sample_rate: Some(16_000),
+            frame_shape: vec![512, 1],
+            ..info
+        };
+        let decoded = FramePacketInformation::deserialize(&mic.serialize().unwrap()).unwrap();
+        assert_eq!(decoded.sample_rate, Some(16_000));
     }
 
     #[test]

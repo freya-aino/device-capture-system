@@ -25,6 +25,7 @@ pub struct Frame {
     device_type: String,
     frame_shape: Vec<u32>,
     pixel_format: Option<String>,
+    sample_rate: Option<u32>,
     rx_timestamp: Option<f64>,
     tx_timestamp: Option<f64>,
     data: Vec<u8>,
@@ -43,6 +44,7 @@ impl From<FramePacket> for Frame {
             device_type: device_type.to_string(),
             frame_shape: info.frame_shape,
             pixel_format: info.pixel_format,
+            sample_rate: info.sample_rate,
             rx_timestamp: timestamp_secs(info.rx_timestamp),
             tx_timestamp: timestamp_secs(info.tx_timestamp),
             data: packet.data.into_vec(),
@@ -76,6 +78,12 @@ impl Frame {
     #[getter]
     fn pixel_format(&self) -> Option<&str> {
         self.pixel_format.as_deref()
+    }
+
+    /// Sample rate in Hz of a microphone frame, as granted by the sound card; `None` for camera frames.
+    #[getter]
+    fn sample_rate(&self) -> Option<u32> {
+        self.sample_rate
     }
 
     #[getter]

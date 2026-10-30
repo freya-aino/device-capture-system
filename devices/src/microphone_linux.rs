@@ -180,6 +180,18 @@ impl Device for AlsaMicrophoneDevice {
 
             // start pcm
             pcm.hw_params(&params)?;
+            // The `plug` layer usually hides a card that cannot do the requested rate, but a direct
+            // `hw:` PCM may have been granted the nearest rate instead. Whatever was granted goes
+            // on the wire so consumers never have to guess.
+            let granted_rate = pcm.hw_params_current()?.get_rate()?;
+            if granted_rate != config.sample_rate {
+                tracing::warn!(
+                    "microphone {:?} granted {} Hz instead of the requested {} Hz; frames carry the granted rate",
+                    device_info.name,
+                    granted_rate,
+                    config.sample_rate
+                );
+            }
             pcm.start()?;
             let mut io = pcm.io_i16()?;
 
@@ -211,6 +223,7 @@ impl Device for AlsaMicrophoneDevice {
                         tx_timestamp: None,
                         frame_shape: vec![config.buffer_size, config.channels as u32],
                         pixel_format: None,
+                        sample_rate: Some(granted_rate),
                     },
                     buffer.into_boxed_slice(),
                 );

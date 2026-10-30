@@ -65,13 +65,14 @@ fn capture_and_report(mic: &mut AlsaMicrophoneDevice, seconds: u64) -> usize {
             &FramePacket::decode_to_i16_le(&packets[10.min(count - 1)].1.data).unwrap()[..12]
         );
         println!(
-            "  first packet after {:.0} ms; {} packets, {} samples over {:.2} s = {:.0} Hz (expected {}); rms {:.4}; shape {:?}",
+            "  first packet after {:.0} ms; {} packets, {} samples over {:.2} s = {:.0} Hz (expected {}, header says {:?}); rms {:.4}; shape {:?}",
             first.duration_since(started).as_secs_f64() * 1000.0,
             count,
             samples,
             span,
             delivered_rate,
             CONFIG.sample_rate,
+            packets[0].1.frame_info.sample_rate,
             rms,
             packets[0].1.frame_info.frame_shape
         );

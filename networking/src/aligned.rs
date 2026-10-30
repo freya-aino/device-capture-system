@@ -259,6 +259,7 @@ mod tests {
             tx_timestamp: Some(SystemTime::UNIX_EPOCH + Duration::from_millis(tx_ms)),
             frame_shape: vec![2, 2],
             pixel_format: None,
+            sample_rate: None,
         };
         vec![
             info.serialize().unwrap(),

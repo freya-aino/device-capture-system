@@ -139,6 +139,7 @@ mod tests {
                 tx_timestamp: Some(UNIX_EPOCH + Duration::from_millis(tx_ms)),
                 frame_shape: vec![4, 2],
                 pixel_format: Some("YUYV".to_string()),
+                sample_rate: None,
             },
             vec![0u8; bytes].into_boxed_slice(),
         )

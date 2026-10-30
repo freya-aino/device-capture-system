@@ -249,6 +249,7 @@ impl Device for V4lCameraDevice {
                         tx_timestamp: None,
                         frame_shape,
                         pixel_format: Some(config.fourcc_string()),
+                        sample_rate: None,
                     },
                     buf.to_vec().into_boxed_slice(),
                 );
