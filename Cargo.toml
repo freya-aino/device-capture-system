@@ -7,5 +7,6 @@ members = [
     "control-hub",
     "access-client",
     "python-client",
+    "calibration",
 ]
 resolver = "3"

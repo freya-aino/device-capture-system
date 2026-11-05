@@ -10,6 +10,7 @@
     pkgs.alsa-lib
     pkgs.zeromq
     pkgs.libv4l
+    pkgs.opencv
   ];
 
   languages.rust.enable = true;

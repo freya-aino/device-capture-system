@@ -1,0 +1,9 @@
+[package]
+name = "calibration"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+shared = { path = "../shared" }
+anyhow = "1.0.98"
+opencv = { version = "0.95", default-features = false, features = ["clang-runtime", "calib3d", "imgcodecs", "imgproc", "objdetect"] }

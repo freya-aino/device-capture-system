@@ -1,43 +1,45 @@
 # calibration
 
-Python consumer package for camera calibration ([item 17](../docs/steps/step-17-calibration.md)). It is not a
-cargo workspace member and runs outside the hub: it reads frames through
-[`python-client`](../python-client/README.md), so OpenCV stays out of the Rust binaries.
+Native Rust crate for camera calibration ([item 17](../docs/steps/step-17-calibration.md)), built on the
+`opencv` crate. It is a consumer of the hub's frames and does not run inside `control-hub`, so the hub binary
+does not link OpenCV. It depends on `shared` only; feed it frames from `access-client`.
 
-- `detect_reference_points(image)` returns the ChArUco inner corners it finds, as ids and pixel positions,
+- `detect_reference_points(&Mat)` returns the ChArUco inner corners it finds, as ids and pixel positions,
   sorted by id. Partial views work.
-- `calibrate_intrinsics(views, (width, height))` returns `(rms, camera_matrix, dist_coeffs)` from at least
-  three views.
-- `decode_camera_frame(frame)` / `camera_images(ds, device_id)` decode `device_system.Frame` payloads. The
-  wire carries the camera's native format: `MJPG` or `YUYV`
-  ([`shared/README.md`](../shared/README.md)).
+- `calibrate_intrinsics(&[ReferencePoints], (width, height))` returns `Intrinsics { rms, camera_matrix,
+  dist_coeffs }` from at least three views.
+- `decode_camera_frame(&FramePacket)` / `decode_payload` turn the wire payload into a BGR `Mat`. The wire
+  carries the camera's native format: `MJPG` or `YUYV` ([`shared/README.md`](../shared/README.md)).
 
-The board (7×5 squares, 40 mm squares, 30 mm markers, `DICT_5X5_100`) is defined once in
-`src/calibration/board.py`. Print it at that size, or change the constants and regenerate the fixture.
+The board (7×5 squares, 40 mm squares, 30 mm markers, `DICT_5X5_100`) is defined once in `src/board.rs`.
+Print it at that size, or change the constants and regenerate the fixture.
 
-```python
-import device_system
-from calibration import camera_images, detect_reference_points, calibrate_intrinsics
-
-ds = device_system.DeviceSystem("127.0.0.1", 5556)
-views = []
-for image in camera_images(ds, "camera-device-id"):
-    points = detect_reference_points(image)
-    if len(points) >= 12:
-        views.append(points)
-    if len(views) == 15:
-        break
-rms, matrix, dist = calibrate_intrinsics(views, (image.shape[1], image.shape[0]))
+```rust
+let mut client = AccessClient::connect(/* hub address */)?;
+let mut views = Vec::new();
+while views.len() < 15 {
+    let packet = client.next_frame()?;
+    if packet.frame_info.device_info.id != camera_id { continue; }
+    let points = detect_reference_points(&decode_camera_frame(&packet)?)?;
+    if points.len() >= 12 { views.push(points); }
+}
+let intrinsics = calibrate_intrinsics(&views, (width, height))?;
 ```
+
+## Build requirements
+
+OpenCV (with `pkg-config` and libclang for the bindings) must be installed. `devenv.nix` provides
+`pkgs.opencv`; without Nix, install the OpenCV development package for your distribution.
 
 ## Tests
 
-```bash
-pip install -e './calibration[test]'
-pytest calibration
-```
+`cargo test -p calibration`. `tests/fixtures/charuco.png` is checked in; `cargo run -p calibration --example
+make-fixture` regenerates it. The test compares the detected corners with the positions implied by the
+rendering geometry (within 0.5 px).
 
-`tests/fixtures/charuco.png` is checked in; `tests/make_fixture.py` regenerates it. The test compares the
-detected corners with the positions implied by the rendering geometry (within 0.5 px).
+Not done: multi-camera extrinsics (`access-client`'s `AlignedClient` already yields aligned groups), and a run
+against a real camera and printed board.
 
-Not done: multi-camera extrinsics, and a run against a real camera and printed board.
+The `opencv` dependency uses the `clang-runtime` feature. Without it, a plain `cargo build --workspace` fails
+in OpenCV's build script (`a libclang shared library is not loaded`), because `bindgen` in the `devices`
+dependency tree switches `clang-sys` to runtime loading for the whole workspace.
