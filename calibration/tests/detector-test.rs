@@ -68,7 +68,8 @@ fn partial_view_still_gives_identified_points() {
 
 #[test]
 fn blank_image_has_no_points() {
-    let blank = Mat::new_rows_cols_with_default(480, 640, core::CV_8UC3, Scalar::all(255.0)).unwrap();
+    let blank =
+        Mat::new_rows_cols_with_default(480, 640, core::CV_8UC3, Scalar::all(255.0)).unwrap();
     assert!(detect_reference_points(&blank).unwrap().is_empty());
 }
 
@@ -78,7 +79,10 @@ fn mjpg_payload_decodes_and_detects() {
     let params = Vector::<i32>::from_slice(&[IMWRITE_JPEG_QUALITY, 95]);
     imencode(".jpg", &fixture(), &mut jpeg, &params).unwrap();
     let decoded = decode_payload(jpeg.as_slice(), "MJPG", &[800, 600]).unwrap();
-    assert_eq!(detect_reference_points(&decoded).unwrap().len(), CORNER_COUNT);
+    assert_eq!(
+        detect_reference_points(&decoded).unwrap().len(),
+        CORNER_COUNT
+    );
 }
 
 #[test]
@@ -86,9 +90,17 @@ fn yuyv_payload_decodes_and_detects() {
     let mut gray = Mat::default();
     cvt_color_def(&fixture(), &mut gray, COLOR_BGR2GRAY).unwrap();
     // Y0 U Y1 V with neutral chroma: every pixel is its luma followed by 128.
-    let yuyv: Vec<u8> = gray.data_bytes().unwrap().iter().flat_map(|&y| [y, 128]).collect();
+    let yuyv: Vec<u8> = gray
+        .data_bytes()
+        .unwrap()
+        .iter()
+        .flat_map(|&y| [y, 128])
+        .collect();
     let decoded = decode_payload(&yuyv, "YUYV", &[800, 600]).unwrap();
-    assert_eq!(detect_reference_points(&decoded).unwrap().len(), CORNER_COUNT);
+    assert_eq!(
+        detect_reference_points(&decoded).unwrap().len(),
+        CORNER_COUNT
+    );
 }
 
 #[test]
@@ -101,7 +113,8 @@ fn bad_payloads_are_errors() {
 #[test]
 fn intrinsics_are_recovered_from_projected_views() {
     let corners3d = default_board().unwrap().get_chessboard_corners().unwrap();
-    let k = Mat::from_slice_2d(&[[800.0f64, 0.0, 320.0], [0.0, 800.0, 240.0], [0.0, 0.0, 1.0]]).unwrap();
+    let k = Mat::from_slice_2d(&[[800.0f64, 0.0, 320.0], [0.0, 800.0, 240.0], [0.0, 0.0, 1.0]])
+        .unwrap();
     let poses = [
         ([0.1, -0.2, 0.0], [-0.12, -0.08, 0.6]),
         ([-0.3, 0.1, 0.1], [-0.1, -0.05, 0.7]),
@@ -115,8 +128,14 @@ fn intrinsics_are_recovered_from_projected_views() {
             let (rvec, tvec) = (Mat::from_slice(r).unwrap(), Mat::from_slice(t).unwrap());
             let mut projected = Vector::<Point2f>::new();
             calib3d::project_points(
-                &corners3d, &rvec, &tvec, &k, &Mat::zeros(5, 1, core::CV_64F).unwrap(),
-                &mut projected, &mut no_array(), 0.0,
+                &corners3d,
+                &rvec,
+                &tvec,
+                &k,
+                &Mat::zeros(5, 1, core::CV_64F).unwrap(),
+                &mut projected,
+                &mut no_array(),
+                0.0,
             )
             .unwrap();
             ReferencePoints {
@@ -131,11 +150,13 @@ fn intrinsics_are_recovered_from_projected_views() {
         *result.camera_matrix.at_2d::<f64>(0, 0).unwrap(),
         *result.camera_matrix.at_2d::<f64>(1, 1).unwrap(),
     );
-    assert!((fx - 800.0).abs() < 20.0 && (fy - 800.0).abs() < 20.0, "fx {fx} fy {fy}");
+    assert!(
+        (fx - 800.0).abs() < 20.0 && (fy - 800.0).abs() < 20.0,
+        "fx {fx} fy {fy}"
+    );
 }
 
 #[test]
 fn too_few_views_is_an_error() {
     assert!(calibrate_intrinsics(&[], (640, 480)).is_err());
 }
-

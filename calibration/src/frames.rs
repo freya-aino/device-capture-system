@@ -27,7 +27,10 @@ pub fn decode_payload(data: &[u8], pixel_format: &str, frame_shape: &[u32]) -> R
             Ok(image)
         }
         "YUYV" => {
-            ensure!(frame_shape.len() >= 2, "frame_shape must be [width, height]");
+            ensure!(
+                frame_shape.len() >= 2,
+                "frame_shape must be [width, height]"
+            );
             let (width, height) = (frame_shape[0] as i32, frame_shape[1] as i32);
             let expected = width as usize * height as usize * 2;
             ensure!(

@@ -55,7 +55,10 @@ pub struct Intrinsics {
 /// Estimates one camera's intrinsics from several views of the board. `image_size` is
 /// `(width, height)`. Views with fewer than four points are skipped; at least three usable views are
 /// required.
-pub fn calibrate_intrinsics(views: &[ReferencePoints], image_size: (i32, i32)) -> Result<Intrinsics> {
+pub fn calibrate_intrinsics(
+    views: &[ReferencePoints],
+    image_size: (i32, i32),
+) -> Result<Intrinsics> {
     let board_corners = default_board()?.get_chessboard_corners()?;
     let mut object_points = Vector::<Vector<Point3f>>::new();
     let mut image_points = Vector::<Vector<Point2f>>::new();
@@ -65,7 +68,11 @@ pub fn calibrate_intrinsics(views: &[ReferencePoints], image_size: (i32, i32)) -
             .iter()
             .map(|&id| board_corners.get(id as usize))
             .collect::<Result<Vector<Point3f>, _>>()?;
-        let img = view.points.iter().map(|p| Point2f::new(p[0], p[1])).collect();
+        let img = view
+            .points
+            .iter()
+            .map(|p| Point2f::new(p[0], p[1]))
+            .collect();
         object_points.push(obj);
         image_points.push(img);
     }
@@ -88,5 +95,9 @@ pub fn calibrate_intrinsics(views: &[ReferencePoints], image_size: (i32, i32)) -
         0,
         TermCriteria::default()?,
     )?;
-    Ok(Intrinsics { rms, camera_matrix, dist_coeffs })
+    Ok(Intrinsics {
+        rms,
+        camera_matrix,
+        dist_coeffs,
+    })
 }
