@@ -27,6 +27,17 @@ groups with `CLIENT_ALIGNED_PORT`, `networking::GroupReceiver`, or align themsel
 Validated on real devices 2026-10-30: one group per camera frame at 30/s, skew ≤ 18 ms. Calibration is not part of the hub; it runs as a
 consumer ([`calibration/`](../calibration/README.md), [item 17](../calibration/docs/step-17-calibration.md)).
 
+## Pre-processing (opt-in)
+
+When `HUB_PREPROCESS_PORT` is set, a `networking::FrameRelay` runs the pipelines in `PREPROCESS_CONFIG` (see
+[`preprocess/README.md`](../preprocess/README.md)) and publishes the processed camera frames on that separate
+port, as `RGB3` or `GREY`. The raw and aligned outputs are unchanged. Only devices with a pipeline appear on the
+port. The relay processes the newest frame per device and skips older ones, so latency stays bounded when the
+pipeline is slower than the camera; consumers see the skipped frames as drops.
+
+Processed frames are uncompressed (1080p RGB at 30 fps is about 1.5 Gbit/s), so the port suits consumers on the
+hub host, or pipelines that crop or resize early.
+
 ## Configuration
 
 | Variable | Default |
@@ -40,6 +51,8 @@ consumer ([`calibration/`](../calibration/README.md), [item 17](../calibration/d
 | `HUB_SYNC_PORT` | unset (sync off); when set, `HUB_SYNC_DEVICES` is required |
 | `HUB_SYNC_DEVICES` | unset; device ids to align |
 | `HUB_SYNC_TOLERANCE_MS` | `20`; maximum capture-time distance inside one group |
+| `HUB_PREPROCESS_PORT` | unset (off); when set, `PREPROCESS_CONFIG` is required |
+| `PREPROCESS_CONFIG` | unset; path of the pre-processor TOML file, validated at start |
 | `HUB_SYNC_MAX_WAIT_MS` | `200`; how long a frame waits for partners before it is dropped (must cover the transport-latency difference between devices) |
 
 ## Build items
@@ -47,4 +60,5 @@ consumer ([`calibration/`](../calibration/README.md), [item 17](../calibration/d
 [Step 2 (hub main)](docs/step-02-control-hub-main.md),
 [Step 10 (time alignment)](docs/step-10-time-alignment.md),
 [Step 13 (multi-producer fan-in)](docs/step-13-multi-producer-fan-in.md),
-[Step 16 (status endpoint)](docs/step-16-hub-status-endpoint.md).
+[Step 16 (status endpoint)](docs/step-16-hub-status-endpoint.md),
+[Step 23 (pre-processor)](../preprocess/docs/step-23-preprocessor.md).

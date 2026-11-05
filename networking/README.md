@@ -11,6 +11,7 @@ reached by configuration alone.
 | `Receiver` | SUB side; validates peer input, drops malformed frames, counts gaps from the sequence part |
 | `Proxy` | XSUB/XPUB; `start()` runs `zmq::proxy_steerable` on a forwarding thread, `stop()` ends it through a control socket |
 | `AlignedRelay`, `GroupReceiver`, `FrameGroup` | Publish and read time-aligned groups (hub sync) |
+| `FrameRelay` | Runs a per-frame transform on the producers' frames and publishes the results on its own port; processes the newest frame per device so latency stays bounded (hub pre-processing) |
 | `PeerCounts` | Live producer and consumer counts behind the hub status endpoint |
 
 The frame layout is the wire protocol in [`shared/README.md`](../shared/README.md).

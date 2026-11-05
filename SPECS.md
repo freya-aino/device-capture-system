@@ -40,7 +40,7 @@ split across hosts (talking over the LAN) — the transport layer doesn't distin
 | **Accumulator** | Fans in frames from all connected producers into one logical stream | `control-hub` (via `networking::Proxy`'s XSUB side, one connection per `HUB_PRODUCERS` endpoint) |
 | **Syncer** | Aligns frames from different producers/devices to a common clock/reference | `control-hub` (planned — see §6) |
 | **Consumer** | Subscribes to the hub's aggregated output and does something with the frames | `access-client` bin, `calibration`, the planned `recorder` and `live-sink` bins (items 24, 25), and third-party clients (e.g. Python) |
-| **Pre-processor** | Applies configured basic image transforms per camera | planned `preprocess` crate, run in `control-hub` or in a consumer (item 23) |
+| **Pre-processor** | Applies configured basic image transforms per camera | `preprocess` crate, run in `control-hub` (`networking::FrameRelay`) or in a consumer (item 23) |
 
 There is currently no separate "syncer" crate — sync is a planned responsibility *inside*
 `control-hub`, not a standalone deployable unit. If a future requirement needs sync to scale or
@@ -170,7 +170,8 @@ crate's broken module re-export, §4.1 there).
 | `access-client` | ✅ `AccessClient` (`connect`, `next_frame`, `run`, `disconnect`, `dropped_frames`) plus a CLI binary with a per-device summary mode (`CLIENT_SUMMARY_SECS`, `CLIENT_RUN_SECS`: rate, bandwidth, latency, drops); `AlignedClient` wraps it to yield aligned groups of frame packets, covered by end-to-end tests. Used by Python bindings | Consumer |
 | `python-client` | ✅ PyO3 bindings (`device_system`) packaged with maturin and covered by a pytest that runs the loopback example | Consumer |
 | `calibration` | ✅ Native Rust consumer crate (`opencv`): ChArUco reference-point detection, camera intrinsics, frame decoding (MJPG/YUYV); deterministic fixture test. ❌ Multi-camera extrinsics (item 22) | Calibration |
-| `preprocess`, `recorder`, `live-sink` | ❌ Not started (items 23–25) | Pre-processor, Consumer |
+| `preprocess` | ✅ Per-camera transforms (rotate, flip, crop, resize, brightness, contrast, gamma, grayscale) from TOML; hub output on `HUB_PREPROCESS_PORT` via `FrameRelay`, or in `access-client`. Webcam: 640×480 at 30 fps / 13 ms, 1080p at 25.5 fps / 80 ms | Pre-processor |
+| `recorder`, `live-sink` | ❌ Not started (items 24, 25) | Consumer |
 | `DeviceStatus` | ✅ Status transitions are implemented and observable via `device-node` | Observability for Producer |
 
 ### 6.1 What already satisfies the topology requirement (§3)
@@ -216,12 +217,13 @@ only what spans crates.
 | Consumer API, `CLIENT_*` variables | [`access-client/README.md`](access-client/README.md) |
 | Python bindings | [`python-client/README.md`](python-client/README.md) |
 | Calibration (ChArUco detection, intrinsics) | [`calibration/README.md`](calibration/README.md) |
+| Pre-processor (transforms, config, placement, performance) | [`preprocess/README.md`](preprocess/README.md) |
 | Real-hardware results | [`docs/hardware/`](docs/hardware/) |
 | Historical review at commit `40c8af5` | [`docs/history/CODE_REVIEW.md`](docs/history/CODE_REVIEW.md) |
 
 ## 8. Build order and remaining work
 
-Items 1–21 are complete. Items 22–26 are open; they were added 2026-11-05 to deliver images to downstream
+Items 1–21 and 23 are complete. Items 22 and 24–26 are open; they were added 2026-11-05 to deliver images to downstream
 applications (§1). Items 19–21 were added 2026-10-30 from the first hardware run. Item numbers
 are stable so older references still resolve. Each item's spec, acceptance criteria and checklist is in its
 own file, kept in the crate that owns it (cross-cutting items, and items whose crate does not exist yet, are in [`docs/steps/`](docs/steps/)). §8.1 gives the order in which to
@@ -251,18 +253,17 @@ implement the open items.
 | 20 | 2 — Producers | ✅ | [step-20](devices/docs/step-20-microphone-enumeration-pipewire.md) |
 | 21 | 2 — Producers | ✅ | [step-21](devices/docs/step-21-microphone-sample-rate-on-the-wire.md) |
 | 22 | 7 — Calibration | ❌ | [step-22](calibration/docs/step-22-camera-extrinsics.md) |
-| 23 | 9 — Delivery | ❌ | [step-23](docs/steps/step-23-preprocessor.md) |
+| 23 | 9 — Delivery | ✅ | [step-23](preprocess/docs/step-23-preprocessor.md) |
 | 24 | 9 — Delivery | ❌ | [step-24](docs/steps/step-24-recorder.md) |
 | 25 | 9 — Delivery | ❌ | [step-25](docs/steps/step-25-live-output.md) |
 | 26 | 6 — Hardware validation | ❌ | [step-26](docs/steps/step-26-multi-camera-run.md) |
 
 ### 8.1 Order of remaining work
 
-1. **Item 23 (pre-processor):** the recorder and the live sink both use it.
-2. **Item 24 (recorder):** the first way to hand images over, and what training data needs.
-3. **Item 25 (live output):** the second hand-off; the ZMQ part exists, the `v4l2loopback` sink does not.
-4. **Item 22 (extrinsics):** needs a second camera; the recorder copies its result into sessions.
-5. **Item 26 (multi-camera run):** needs two hosts and cameras. It can run whenever they are available, and its
+1. **Item 24 (recorder):** the first way to hand images over, and what training data needs.
+2. **Item 25 (live output):** the second hand-off; the ZMQ part exists, the `v4l2loopback` sink does not.
+3. **Item 22 (extrinsics):** needs a second camera; the recorder copies its result into sessions.
+4. **Item 26 (multi-camera run):** needs two hosts and cameras. It can run whenever they are available, and its
    numbers decide whether hub-side pre-processing works across hosts.
 
 An item is done only

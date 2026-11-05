@@ -47,6 +47,9 @@ pub struct FramePacketInformation {
   `MJPG` is one JPEG image per frame.
 - **Microphone:** interleaved `S16LE` samples as bytes, `frame_shape = [buffer_size, channels]`,
   `sample_rate` = the rate ALSA granted in Hz.
+- **Pre-processed camera frames** (the hub's `HUB_PREPROCESS_PORT`, item 23): `RGB3` is 24-bit RGB, 3 bytes per
+  pixel; `GREY` is 8-bit luma, 1 byte per pixel. Rows top to bottom, `frame_shape = [width, height]` of the output.
+  These are new `pixel_format` values, not a wire struct change.
 
 Frames are transported exactly as the device delivered them. Nothing in the hot path encodes or transcodes
 (`SPECS.md` §9).

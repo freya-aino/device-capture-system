@@ -14,6 +14,7 @@ wire decoder.
 |---|---|
 | `CLIENT_SUMMARY_SECS` | `0`; summary window in seconds |
 | `CLIENT_RUN_SECS` | `0`; bounded run in seconds |
+| `CLIENT_PREPROCESS_CONFIG` | unset; path of a pre-processor TOML file to run on the raw stream locally ([`preprocess/README.md`](../preprocess/README.md)). Devices without a pipeline pass through. Every frame is processed, so a pipeline slower than the camera builds up latency |
 | `CLIENT_ALIGNED_PORT` | `0` (off); read aligned groups from the hub's `HUB_SYNC_PORT` instead of the raw stream |
 
 Aligned reading is opt-in rather than the default, because single-device deployments, the Python bindings and

@@ -1,6 +1,6 @@
 # Step 23: Configurable image pre-processor
 
-- **Status:** ❌ Open
+- **Status:** ✅ Done (2026-11-05; validated on the webcam, single host)
 - **Stage:** 9 — Delivery
 - **Spec item:** [`SPECS.md`](../../SPECS.md) §8 item 23
 
@@ -10,7 +10,7 @@ A pipeline of basic image transforms, configured per camera, that can run either
 It prepares images for the downstream application and does no analysis.
 
 **Crate.** A new `preprocess` library crate, depending on `shared` only. It is pure Rust, with no OpenCV, so
-that the hub can use it without linking OpenCV. When the crate exists, this file moves to `preprocess/docs/`.
+that the hub can use it without linking OpenCV.
 
 **Transforms**, applied in the configured order:
 
@@ -57,11 +57,30 @@ Acceptance: unit tests per transform on small synthetic images with exact expect
 test. A hub test in which a processed frame keeps the capture timestamp of its source and has the transformed
 shape.
 
+## Evidence
+
+- `preprocess` crate ([README](../README.md)): 21 unit tests (exact pixels per transform, fused value transforms,
+  config parsing and validation) and 5 integration tests on a checked-in JPEG.
+- `networking::FrameRelay` runs the pipeline in the hub: `networking/tests/frame-relay-test.rs` (transform, skip,
+  error handling, and a slow transform skipping to the newest frame).
+- `access-client/tests/preprocess-pipeline-test.rs`: the hub layout publishes processed frames with the
+  transformed shape and the source's capture timestamp, while the raw stream stays unchanged.
+- Webcam run ([results](../../docs/hardware/2026-11-05-preprocessor.md)): 640×480 YUYV processed at 30.0 fps with
+  0 drops and 13 ms latency; 1920×1080 MJPG at 25.5 fps and 80 ms, skipping the frames it cannot keep up with.
+
+## Deviations from the proposal
+
+- Config validation rejects invalid parameters, unknown steps and duplicate device ids. Unknown device ids cannot
+  be rejected at start, because devices appear when their producers do.
+- The hub relay is live: it drains its input and processes the newest frame per device, and it sends each
+  payload as one part. Both came out of the webcam run, where the first version fell 8 s behind at 1080p.
+- `HUB_PREPROCESS_PORT` alone does nothing; `PREPROCESS_CONFIG` is required with it.
+
 ## Step checklist
 
-- [ ] `preprocess` crate with decode (`MJPG`, `YUYV`) and the transforms above
-- [ ] TOML config, validated at start (unknown device ids and invalid parameters are errors)
-- [ ] Hub output on `HUB_PREPROCESS_PORT`
-- [ ] Consumer-side use in `access-client`
-- [ ] `RGB3` and `GREY` documented in `shared/README.md`; variables in the crate READMEs
-- [ ] Tests as in the acceptance
+- [x] `preprocess` crate with decode (`MJPG`, `YUYV`) and the transforms above
+- [x] TOML config, validated at start (invalid parameters and duplicate device ids are errors)
+- [x] Hub output on `HUB_PREPROCESS_PORT`
+- [x] Consumer-side use in `access-client`
+- [x] `RGB3` and `GREY` documented in `shared/README.md`; variables in the crate READMEs
+- [x] Tests as in the acceptance

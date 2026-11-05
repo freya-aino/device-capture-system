@@ -15,6 +15,7 @@ devices/        V4lCameraDevice, AlsaMicrophoneDevice — implement shared::Devi
 device-node/    bin: runs on a capture machine (lib part: DeviceNode + helpers)
 control-hub/    bin: central hub (XSUB/XPUB proxy fanning in every `HUB_PRODUCERS` endpoint; sync)
 access-client/  bin+lib: consumer client that subscribes to the hub and yields decoded frames
+preprocess/     lib: per-camera image transforms from TOML (pure Rust); run by control-hub's FrameRelay or a consumer
 calibration/    lib: ChArUco reference-point detection and intrinsics on the `opencv` crate; consumes frames, not used by the hub
 python-client/  PyO3 extension module (`device_system`): `DeviceSystem` + `Frame` for Python consumers
 ```
