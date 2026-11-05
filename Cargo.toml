@@ -8,5 +8,6 @@ members = [
     "access-client",
     "python-client",
     "calibration",
+    "preprocess",
 ]
 resolver = "3"
