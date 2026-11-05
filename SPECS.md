@@ -120,7 +120,7 @@ instrumented, not papered over by switching transports.
 
 **Conclusion:** ZMQ is architecturally correct for this system's latency goal. Forwarding, multi-producer
 fan-in, remote control, hub-side sync and hardware validation are implemented and measured (§6, `docs/hardware/`).
-The open problem is calibration, not the transport choice.
+Calibration runs as a consumer package (`calibration/`), so the transport choice is not what limits it.
 
 ---
 
@@ -160,6 +160,7 @@ crate's broken module re-export, §4.1 there).
 | `shared::Aligner` | ✅ Generic over a payload; groups frames from several devices by capture time, reports skew, and counts dropped samples. Pairing tolerance and wait window (`max_wait`) are separate; an anchor is dropped as soon as every other device has moved past it. Used by the hub's `AlignedRelay` and by `AlignedClient` | Syncer |
 | `access-client` | ✅ `AccessClient` (`connect`, `next_frame`, `run`, `disconnect`, `dropped_frames`) plus a CLI binary with a per-device summary mode (`CLIENT_SUMMARY_SECS`, `CLIENT_RUN_SECS`: rate, bandwidth, latency, drops); `AlignedClient` wraps it to yield aligned groups of frame packets, covered by end-to-end tests. Used by Python bindings | Consumer |
 | `python-client` | ✅ PyO3 bindings (`device_system`) packaged with maturin and covered by a pytest that runs the loopback example | Consumer |
+| `calibration` | ✅ Python consumer package: ChArUco reference-point detection, camera intrinsics, `Frame` decoding (MJPG/YUYV); deterministic fixture test. ❌ Multi-camera extrinsics | Calibration |
 | `DeviceStatus` | ✅ Status transitions are implemented and observable via `device-node` | Observability for Producer |
 
 ### 6.1 What already satisfies the topology requirement (§3)
@@ -181,7 +182,7 @@ and hub pipeline tests.
 Open, in priority order:
 0. ✅ Producers on real hardware: item 19 (camera selection, FourCC on the wire, frame-rate fixes), item 20
    (microphone enumeration on PipeWire hosts) and item 21 (sample rate on the wire) are done.
-1. ✅ Sync (item 10): the hub's opt-in `AlignedRelay` (`HUB_SYNC_PORT`) is validated on real devices; consumers read it with `CLIENT_ALIGNED_PORT`, `GroupReceiver` or align themselves with `AlignedClient`. ❌ Calibration (item 17) is not started.
+1. ✅ Sync (item 10): the hub's opt-in `AlignedRelay` (`HUB_SYNC_PORT`) is validated on real devices; consumers read it with `CLIENT_ALIGNED_PORT`, `GroupReceiver` or align themselves with `AlignedClient`. ✅ Calibration (item 17): ChArUco detection and intrinsics in `calibration/`; extrinsics and a real-camera run remain.
 2. ✅ Hardware validation (item 12): 70 s single-host run through the full path, camera 30.0 fps and microphone
    16 kHz with 0 dropped frames (`docs/hardware/`). A cross-host run is still outstanding.
 3. ✅ Remote control: `POST /start`, `/stop` and `/restart` are implemented on the device-node status server (`device-node/README.md`, item 14).
@@ -204,12 +205,13 @@ only what spans crates.
 | Fan-in, hub status endpoint, sync relay, `HUB_*` variables | [`control-hub/README.md`](control-hub/README.md) |
 | Consumer API, `CLIENT_*` variables | [`access-client/README.md`](access-client/README.md) |
 | Python bindings | [`python-client/README.md`](python-client/README.md) |
+| Calibration (ChArUco detection, intrinsics) | [`calibration/README.md`](calibration/README.md) |
 | Real-hardware results | [`docs/hardware/`](docs/hardware/) |
 | Historical review at commit `40c8af5` | [`docs/history/CODE_REVIEW.md`](docs/history/CODE_REVIEW.md) |
 
 ## 8. Build order and remaining work
 
-Items 1–16 and 18–21 are complete. Item 17 is open.
+All items are complete. Item 17's acceptance (fixture test) passes; its follow-ups are listed in its step file.
 Items 19–21 were added 2026-10-30 from the first hardware run. Item numbers
 are stable so older references still resolve. Each item's spec, acceptance criteria and checklist is in its
 own file, kept in the crate that owns it (cross-cutting items 12 and 17 are in [`docs/steps/`](docs/steps/)). §8.1 gives the order in which to
@@ -233,7 +235,7 @@ implement the open items.
 | 14 | 2 — Producers | ✅ | [step-14](device-node/docs/step-14-remote-control.md) |
 | 15 | 4 — Consumers and Python | ✅ | [step-15](python-client/docs/step-15-python-packaging-tests.md) |
 | 16 | 3 — Hub fan-in and hub status | ✅ | [step-16](control-hub/docs/step-16-hub-status-endpoint.md) |
-| 17 | 7 — Calibration | ❌ | [step-17](docs/steps/step-17-calibration.md) |
+| 17 | 7 — Calibration | ✅ | [step-17](docs/steps/step-17-calibration.md) |
 | 18 | 8 — Windows microphone | ✅ | [step-18](devices/docs/step-18-windows-microphone.md) |
 | 19 | 2 — Producers | ✅ | [step-19](device-node/docs/step-19-camera-config-negotiation.md) |
 | 20 | 2 — Producers | ✅ | [step-20](devices/docs/step-20-microphone-enumeration-pipewire.md) |
@@ -241,7 +243,8 @@ implement the open items.
 
 ### 8.1 Order of remaining work
 
-The only open item is 17. An item is done only
+No item is open. Follow-ups from item 17 (multi-camera extrinsics, a real-camera run) are in
+[its step file](docs/steps/step-17-calibration.md). An item is done only
 when its acceptance check passes with `cargo test --workspace` (plus the hardware run for item 12), and
 the README TODO and this file are updated in the same change.
 

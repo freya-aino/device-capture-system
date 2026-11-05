@@ -13,8 +13,9 @@ shared/         data model shared by everything (traits, FramePacket, stats) —
 networking/     ZeroMQ transport: Connection, Sender (PUB), Receiver (SUB), Proxy (XSUB/XPUB)
 devices/        V4lCameraDevice, AlsaMicrophoneDevice — implement shared::Device
 device-node/    bin: runs on a capture machine (lib part: DeviceNode + helpers)
-control-hub/    bin: central hub (XSUB/XPUB proxy fanning in every `HUB_PRODUCERS` endpoint; sync, calibration planned)
+control-hub/    bin: central hub (XSUB/XPUB proxy fanning in every `HUB_PRODUCERS` endpoint; sync)
 access-client/  bin+lib: consumer client that subscribes to the hub and yields decoded frames
+calibration/    Python package (not a cargo member): ChArUco reference-point detection and intrinsics, run as a consumer
 python-client/  PyO3 extension module (`device_system`): `DeviceSystem` + `Frame` for Python consumers
 ```
 

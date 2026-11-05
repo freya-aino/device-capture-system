@@ -13,7 +13,7 @@ streams, keep them in sync, and expose them to clients.
 > endpoints to any number of consumers (XSUB/XPUB proxy) and serves `GET /status` with live producer and
 > consumer counts, an `access-client` (CLI and library, including client-side aligned groups), and
 > installable Python bindings. Hub-side sync is opt-in (`HUB_SYNC_PORT`) and was validated on real
-> devices. Not implemented yet: calibration. Windows is unsupported by decision. See [TODO](#todo).
+> devices. Calibration is a Python consumer package (`calibration/`: ChArUco detection and intrinsics); multi-camera extrinsics are not done. Windows is unsupported by decision. See [TODO](#todo).
 
 ## Architecture
 
@@ -28,7 +28,7 @@ streams, keep them in sync, and expose them to clients.
 Current implementation note: `control-hub` fans in every producer endpoint listed in `HUB_PRODUCERS`
 (or the single `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT` pair) and forwards the frames unaligned to consumers.
 Opt-in sync (`HUB_SYNC_PORT`) additionally publishes time-aligned groups on a separate PUB port, and
-calibration is planned (see [TODO](#todo) and `SPECS.md`). The hub serves `GET /status` on `HUB_STATUS_ADDR`;
+calibration runs as a consumer, not in the hub (see [`calibration/`](calibration/README.md)). The hub serves `GET /status` on `HUB_STATUS_ADDR`;
 each `device-node` serves `GET /status` and `POST /start`, `/stop` and `/restart`.
 
 ### Crates
@@ -39,7 +39,7 @@ each `device-node` serves `GET /status` and `POST /start`, `/stop` and `/restart
 | [`devices`](devices/README.md) | lib  | Concrete capture devices: `V4lCameraDevice` (v4l2 mmap streaming) and `AlsaMicrophoneDevice` (ALSA PCM capture). Each runs its capture loop on its own thread and pushes `FramePacket`s into a user callback. |
 | [`networking`](networking/README.md) | lib  | ZeroMQ transport: `Connection` (socket lifecycle + stats), `Sender` (PUB), `Receiver` (SUB) and `Proxy` (XSUB↔XPUB forwarder). |
 | [`device-node`](device-node/README.md) | bin+lib  | Runs on each capture machine: lists devices and publishes one camera or microphone stream to a hub. Serves `GET /status` and `POST /start`, `/stop`, `/restart` (`DEVICE_NODE_STATUS_ADDR`). |
-| [`control-hub`](control-hub/README.md) | bin  | Central process: runs the XSUB/XPUB ZMQ proxy, fanning in the producer endpoints from `HUB_PRODUCERS` (or the single `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT`), configured by `HUB_*` environment variables. Serves `GET /status` with producer and consumer counts. Opt-in sync (`HUB_SYNC_PORT`) publishes aligned groups; calibration is planned. |
+| [`control-hub`](control-hub/README.md) | bin  | Central process: runs the XSUB/XPUB ZMQ proxy, fanning in the producer endpoints from `HUB_PRODUCERS` (or the single `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT`), configured by `HUB_*` environment variables. Serves `GET /status` with producer and consumer counts. Opt-in sync (`HUB_SYNC_PORT`) publishes aligned groups. |
 | [`access-client`](access-client/README.md) | bin+lib  | Consumer-side client that subscribes to the hub's XPUB stream. The CLI prints received frames; the library provides `AccessClient` (decoded frames) and `AlignedClient` (groups frames from several devices by capture time). Configured by `HUB_IP`/`HUB_PORT` and `CLIENT_*` environment variables. |
 | [`python-client`](python-client/README.md) | lib  | Python bindings via PyO3 (`device_system` extension module) that wrap `access-client` to receive frames from a hub. Installable with maturin (`pip install ./python-client`); see [`python-client/README.md`](python-client/README.md). |
 
@@ -493,9 +493,11 @@ The ordered build plan is in `SPECS.md` §8, and each build item's spec and chec
   - [x] Load bind/connect config from env and run a ZMQ proxy
   - [x] Multi-producer fan-in (`HUB_PRODUCERS`, comma-separated `ip:port` list)
   - [x] Sync: opt-in hub-side `AlignedRelay` on `HUB_SYNC_PORT`, validated on real devices (one group per camera frame, skew ≤ 18 ms); `access-client` reads it with `CLIENT_ALIGNED_PORT`, `AlignedClient` aligns on the consumer side; the unaligned stream is unchanged
-  - [ ] Calibrate
-    - [ ] choose & implement general reference point detection model
-    - [ ] transfer calibration code from python-opencv
+  - [x] Calibrate: runs as a consumer in [`calibration/`](calibration/README.md), not in the hub
+    - [x] general reference point detection model: ChArUco corners, deterministic fixture test
+    - [x] camera intrinsics from detected views (no python-opencv code existed to port, so written from scratch)
+    - [ ] multi-camera extrinsics from aligned groups
+    - [ ] run against a real camera and board
   - [x] `GET /status` with live producer and consumer counts (`HUB_STATUS_ADDR`)
 - [ ] Client
   - [x] Minimal Rust access client (`access-client`) that receives frames from the hub
