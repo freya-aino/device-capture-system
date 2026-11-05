@@ -13,7 +13,7 @@ streams, keep them in sync, and expose them to clients.
 > endpoints to any number of consumers (XSUB/XPUB proxy) and serves `GET /status` with live producer and
 > consumer counts, an `access-client` (CLI and library, including client-side aligned groups), and
 > installable Python bindings. Hub-side sync is opt-in (`HUB_SYNC_PORT`) and was validated on real
-> devices. Calibration is a Python consumer package (`calibration/`: ChArUco detection and intrinsics); multi-camera extrinsics are not done. Windows is unsupported by decision. See [TODO](#todo).
+> devices. Calibration is a Rust consumer crate (`calibration/`: ChArUco detection and intrinsics); multi-camera extrinsics are not done. Windows is unsupported by decision. See [TODO](#todo).
 
 ## Architecture
 
@@ -79,7 +79,7 @@ Payload formats:
 - System libraries — pick one:
 
   **Option A: [devenv](https://devenv.sh)** (recommended if you have Nix). This repo's
-  `devenv.nix`/`devenv.yaml` pin `pkg-config`, `alsa-lib`, `zeromq`, `libv4l`, a Rust toolchain and
+  `devenv.nix`/`devenv.yaml` pin `pkg-config`, `alsa-lib`, `zeromq`, `libv4l`, `opencv`, a Rust toolchain and
   `LIBCLANG_PATH` together, so `bindgen` always finds a `libclang` that's ABI-compatible with the
   rest of the shell:
 
@@ -92,13 +92,13 @@ Payload formats:
 
   ```bash
   # Debian / Ubuntu
-  sudo apt install build-essential pkg-config libasound2-dev libzmq3-dev libv4l-dev clang libclang-dev
+  sudo apt install build-essential pkg-config libasound2-dev libzmq3-dev libv4l-dev libopencv-dev clang libclang-dev
 
   # Fedora
-  sudo dnf install gcc pkgconf-pkg-config alsa-lib-devel zeromq-devel libv4l-devel clang clang-devel
+  sudo dnf install gcc pkgconf-pkg-config alsa-lib-devel zeromq-devel libv4l-devel opencv-devel clang clang-devel
 
   # Arch
-  sudo pacman -S base-devel pkgconf alsa-lib zeromq v4l-utils clang
+  sudo pacman -S base-devel pkgconf alsa-lib zeromq v4l-utils opencv clang
   ```
 
   Without `alsa.pc` / `libzmq` headers on the `pkg-config` path the build fails in the
@@ -495,7 +495,7 @@ The ordered build plan is in `SPECS.md` §8, and each build item's spec and chec
   - [x] Sync: opt-in hub-side `AlignedRelay` on `HUB_SYNC_PORT`, validated on real devices (one group per camera frame, skew ≤ 18 ms); `access-client` reads it with `CLIENT_ALIGNED_PORT`, `AlignedClient` aligns on the consumer side; the unaligned stream is unchanged
   - [x] Calibrate: runs as a consumer in [`calibration/`](calibration/README.md), not in the hub
     - [x] general reference point detection model: ChArUco corners, deterministic fixture test
-    - [x] camera intrinsics from detected views (no python-opencv code existed to port, so written from scratch)
+    - [x] camera intrinsics from detected views (no python-opencv code existed to port, so written from scratch in Rust)
     - [ ] multi-camera extrinsics from aligned groups
     - [ ] run against a real camera and board
   - [x] `GET /status` with live producer and consumer counts (`HUB_STATUS_ADDR`)

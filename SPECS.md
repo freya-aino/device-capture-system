@@ -120,7 +120,7 @@ instrumented, not papered over by switching transports.
 
 **Conclusion:** ZMQ is architecturally correct for this system's latency goal. Forwarding, multi-producer
 fan-in, remote control, hub-side sync and hardware validation are implemented and measured (§6, `docs/hardware/`).
-Calibration runs as a consumer package (`calibration/`), so the transport choice is not what limits it.
+Calibration runs as a consumer crate (`calibration/`), so the transport choice is not what limits it.
 
 ---
 
@@ -160,7 +160,7 @@ crate's broken module re-export, §4.1 there).
 | `shared::Aligner` | ✅ Generic over a payload; groups frames from several devices by capture time, reports skew, and counts dropped samples. Pairing tolerance and wait window (`max_wait`) are separate; an anchor is dropped as soon as every other device has moved past it. Used by the hub's `AlignedRelay` and by `AlignedClient` | Syncer |
 | `access-client` | ✅ `AccessClient` (`connect`, `next_frame`, `run`, `disconnect`, `dropped_frames`) plus a CLI binary with a per-device summary mode (`CLIENT_SUMMARY_SECS`, `CLIENT_RUN_SECS`: rate, bandwidth, latency, drops); `AlignedClient` wraps it to yield aligned groups of frame packets, covered by end-to-end tests. Used by Python bindings | Consumer |
 | `python-client` | ✅ PyO3 bindings (`device_system`) packaged with maturin and covered by a pytest that runs the loopback example | Consumer |
-| `calibration` | ✅ Python consumer package: ChArUco reference-point detection, camera intrinsics, `Frame` decoding (MJPG/YUYV); deterministic fixture test. ❌ Multi-camera extrinsics | Calibration |
+| `calibration` | ✅ Native Rust consumer crate (`opencv`): ChArUco reference-point detection, camera intrinsics, frame decoding (MJPG/YUYV); deterministic fixture test. ❌ Multi-camera extrinsics | Calibration |
 | `DeviceStatus` | ✅ Status transitions are implemented and observable via `device-node` | Observability for Producer |
 
 ### 6.1 What already satisfies the topology requirement (§3)
