@@ -5,7 +5,7 @@ PyO3 bindings that let Python consumers receive frames from a `control-hub`. The
 wrap `access-client::AccessClient`, so Python uses the same wire decoder as the Rust client.
 
 > **Status:** the bindings are implemented, packaged with maturin (`pyproject.toml`), and covered by
-> a pytest that runs the loopback example. See `SPECS.md` §5 and §8.
+> a pytest that runs the loopback example. See `SPECS.md` §5 and §8, and [`docs/`](docs/) for the build items.
 
 ## Build
 
