@@ -2,7 +2,7 @@
 
 - **Status:** ✅ Done (the microphone filter was reworked in step 20 after it dropped every hardware hint on a PipeWire host)
 - **Stage:** 2 — Producers (devices and device-node)
-- **Spec item:** [`SPECS.md`](../../../SPECS.md) §8 item 4
+- **Spec item:** [`SPECS.md`](../../SPECS.md) §8 item 4
 
 ## Scope
 
@@ -20,7 +20,7 @@ Fix microphone enumeration so playback-only hints are skipped and virtual device
 - [x] Microphone: virtual devices are matched by base name
 - [x] Microphone: buffer size accounts for channel count
 - [x] Camera: `VIDEO_CAPTURE` capability filter (`devices/src/camera.rs`)
-- [x] Enumeration verified on real hardware — 2026-10-30: camera enumerates (`/dev/video0`); the microphone list was empty until the `DEV` filter was replaced in [step 20](step-20-microphone-enumeration-pipewire.md), and now lists `sysdefault:CARD=PCH` and `pipewire` ([results](../../hardware/2026-10-30-framework-12-webcam.md))
+- [x] Enumeration verified on real hardware — 2026-10-30: camera enumerates (`/dev/video0`); the microphone list was empty until the `DEV` filter was replaced in [step 20](step-20-microphone-enumeration-pipewire.md), and now lists `sysdefault:CARD=PCH` and `pipewire` ([results](../../docs/hardware/2026-10-30-framework-12-webcam.md))
 
 ## Stage 2 definition of done
 

@@ -2,7 +2,7 @@
 
 - **Status:** ✅ Done
 - **Stage:** 1 — Transport and hub foundation
-- **Spec item:** [`SPECS.md`](../../../SPECS.md) §8 item 9
+- **Spec item:** [`SPECS.md`](../../SPECS.md) §8 item 9
 
 ## Scope
 

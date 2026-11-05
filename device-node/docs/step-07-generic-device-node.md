@@ -2,7 +2,7 @@
 
 - **Status:** ✅ Done
 - **Stage:** 2 — Producers (devices and device-node)
-- **Spec item:** [`SPECS.md`](../../../SPECS.md) §8 item 7
+- **Spec item:** [`SPECS.md`](../../SPECS.md) §8 item 7
 
 ## Scope
 

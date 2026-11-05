@@ -2,7 +2,7 @@
 
 - **Status:** ✅ Done
 - **Stage:** 2 — Producers (devices and device-node)
-- **Spec item:** [`SPECS.md`](../../../SPECS.md) §8 item 14
+- **Spec item:** [`SPECS.md`](../../SPECS.md) §8 item 14
 
 ## Scope
 
@@ -11,7 +11,7 @@
 ## Evidence
 
 - `device-node/tests/status-test.rs` covers the `409` cases: start while running, stop while stopped, restart while stopped, and start on a never-started node.
-- `SPECS.md` §7.1 documents the response formats.
+- `device-node/README.md` (status endpoint) documents the response formats.
 
 ## Step checklist
 

@@ -2,7 +2,7 @@
 
 - **Status:** ❌ Open
 - **Stage:** 7 — Calibration
-- **Spec item:** [`SPECS.md`](../../../SPECS.md) §8 item 17
+- **Spec item:** [`SPECS.md`](../../SPECS.md) §8 item 17
 
 ## Scope
 

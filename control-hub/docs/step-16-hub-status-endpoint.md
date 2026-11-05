@@ -2,7 +2,7 @@
 
 - **Status:** ✅ Done
 - **Stage:** 3 — Hub fan-in and hub status
-- **Spec item:** [`SPECS.md`](../../../SPECS.md) §8 item 16
+- **Spec item:** [`SPECS.md`](../../SPECS.md) §8 item 16
 
 ## Scope
 

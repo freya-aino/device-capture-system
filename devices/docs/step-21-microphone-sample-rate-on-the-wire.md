@@ -2,11 +2,11 @@
 
 - **Status:** ✅ Done (2026-10-30)
 - **Stage:** 2 — Producers (devices and device-node)
-- **Spec item:** [`SPECS.md`](../../../SPECS.md) §8 item 21
+- **Spec item:** [`SPECS.md`](../../SPECS.md) §8 item 21
 
 ## Why this step exists
 
-Found during the 2026-10-30 microphone run ([results](../../hardware/2026-10-30-framework-12-webcam.md)). A
+Found during the 2026-10-30 microphone run ([results](../../docs/hardware/2026-10-30-framework-12-webcam.md)). A
 microphone frame carries `frame_shape = [buffer_size, channels]` and `S16LE` samples, but not the sample rate.
 `AlsaMicrophoneDevice::start` asks ALSA for the configured rate with `ValueOr::Nearest`, so a card that cannot do
 16 kHz streams at another rate and nothing on the wire says so. Consumers currently have to assume the node's
@@ -19,7 +19,7 @@ configured rate. Step 19 solved the same class of problem for cameras with `pixe
    `frame_shape` meaning "shape" and is preferred.
 2. `start()` reads the rate ALSA actually granted (`pcm.hw_params_current()`) and uses it for the header. If it
    differs from the requested rate, log a warning rather than fail, since the `plug` layer usually hides it.
-3. Expose it in the Python `Frame` and document it in `SPECS.md` §7 and the READMEs.
+3. Expose it in the Python `Frame` and document it in `shared/README.md` (wire protocol) and the READMEs.
 
 Acceptance: the loopback pytest asserts the field, the networking round-trip test covers it, and the ignored
 microphone test prints the header rate next to the measured one.
@@ -28,5 +28,5 @@ microphone test prints the header rate next to the measured one.
 
 - [x] `sample_rate: Option<u32>` in `FramePacketInformation` (camera frames: `None`)
 - [x] `start()` reads back the granted rate with `hw_params_current().get_rate()` and warns when it differs
-- [x] Python `Frame.sample_rate`; `SPECS.md` §7 and both READMEs updated
+- [x] Python `Frame.sample_rate`; `shared/README.md` (wire protocol) and both READMEs updated
 - [x] Loopback pytest asserts `None` for the camera frame; the `shared` round-trip test covers a microphone header; the ignored microphone test prints the header rate next to the measured one

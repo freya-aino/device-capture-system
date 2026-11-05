@@ -2,7 +2,7 @@
 
 - **Status:** ✅ Done
 - **Stage:** 2 — Producers (devices and device-node)
-- **Spec item:** [`SPECS.md`](../../../SPECS.md) §8 item 8
+- **Spec item:** [`SPECS.md`](../../SPECS.md) §8 item 8
 
 ## Scope
 
@@ -17,7 +17,7 @@ Reduce the camera buffer count from 128 to 4, and validate the negotiated v4l2 f
 
 - [x] Camera uses 4 buffers (`devices/src/camera.rs`)
 - [x] Negotiated v4l2 format is validated (`devices/src/camera.rs`)
-- [ ] Capture verified on real hardware — 2026-10-30: the ignored streaming test delivered 42 frames in 3 s (14 fps) at 1920×1080 MJPG; `device-node run camera` fails because its fixed default (1920×1080 YUYV) is not advertised ([results](../../hardware/2026-10-30-framework-12-webcam.md), fix tracked as [step 19](step-19-camera-config-negotiation.md))
+- [ ] Capture verified on real hardware — 2026-10-30: the ignored streaming test delivered 42 frames in 3 s (14 fps) at 1920×1080 MJPG; `device-node run camera` fails because its fixed default (1920×1080 YUYV) is not advertised ([results](../../docs/hardware/2026-10-30-framework-12-webcam.md), fix tracked as [step 19](../../device-node/docs/step-19-camera-config-negotiation.md))
 
 ## Stage 2 definition of done
 

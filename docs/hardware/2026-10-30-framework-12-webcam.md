@@ -1,6 +1,6 @@
 # Hardware run — 2026-10-30, Framework Laptop 12
 
-Results for [`docs/specs/06-hardware-validation/step-12-hardware-validation.md`](../specs/06-hardware-validation/step-12-hardware-validation.md).
+Results for [`docs/steps/step-12-hardware-validation.md`](../steps/step-12-hardware-validation.md).
 Started at `3c3d183`, built in the `devenv` shell (rustc 1.99.0). The device-side findings below led to steps 19 and
 20; the end-to-end run at the bottom was made after those landed.
 

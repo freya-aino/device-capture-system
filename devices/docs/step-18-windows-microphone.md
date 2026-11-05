@@ -2,7 +2,7 @@
 
 - **Status:** ✅ Done (2026-10-30: Windows recorded as unsupported)
 - **Stage:** 8 — Windows microphone
-- **Spec item:** [`SPECS.md`](../../../SPECS.md) §8 item 18
+- **Spec item:** [`SPECS.md`](../../SPECS.md) §8 item 18
 
 ## Scope
 

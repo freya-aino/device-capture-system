@@ -2,7 +2,7 @@
 
 - **Status:** ✅ Done
 - **Stage:** 4 — Consumers and Python
-- **Spec item:** [`SPECS.md`](../../../SPECS.md) §8 item 11
+- **Spec item:** [`SPECS.md`](../../SPECS.md) §8 item 11
 
 ## Scope
 

@@ -2,11 +2,11 @@
 
 - **Status:** ✅ Done (2026-10-30; the end-to-end 60 s run stays with step 12)
 - **Stage:** 2 — Producers (devices and device-node)
-- **Spec item:** [`SPECS.md`](../../../SPECS.md) §8 item 19
+- **Spec item:** [`SPECS.md`](../../SPECS.md) §8 item 19
 
 ## Why this step exists
 
-The 2026-10-30 hardware run ([results](../../hardware/2026-10-30-framework-12-webcam.md)) showed that the
+The 2026-10-30 hardware run ([results](../../docs/hardware/2026-10-30-framework-12-webcam.md)) showed that the
 implementation the specs proposed for the camera producer does not start on a real UVC webcam:
 
 - `device-node run camera` passes the fixed `DEFAULT_CAMERA_CONFIG` (1920×1080 YUYV at 30 fps) to the device and
@@ -15,7 +15,7 @@ implementation the specs proposed for the camera producer does not start on a re
 - `shared::select_camera_config` and `select_camera_config_by_policy` (items added at `bd10290` and `d65f446`) pick
   from the advertised list, but nothing in `device-node` calls them.
 - `select_camera_config` ignores FourCC, so on this camera it chooses 1920×1080 MJPG. The wire header
-  (`FramePacketInformation`) has no pixel-format field, and `SPECS.md` §7 says only "raw v4l2 buffer in the negotiated
+  (`FramePacketInformation`) has no pixel-format field, and `shared/README.md` (wire protocol) says only "raw v4l2 buffer in the negotiated
   FourCC". A consumer receiving MJPG and YUYV frames cannot tell them apart.
 
 ## Scope (as implemented)
@@ -24,7 +24,7 @@ implementation the specs proposed for the camera producer does not start on a re
    resolution and frame rate (default 1920×1080 at 30 fps) and the selection policy come from CLI arguments or
    `DEVICE_NODE_CAMERA_*` environment variables; the chosen config is printed at start.
 2. The chosen FourCC travels with every frame. Add a pixel-format field to `FramePacketInformation` (camera only;
-   empty for microphones) and document it in `SPECS.md` §7. This is a wire-protocol change, so bump the protocol in
+   empty for microphones) and document it in `shared/README.md` (wire protocol). This is a wire-protocol change, so bump the protocol in
    the same change and update the Python `Frame` to expose it.
 3. Decide, and write down in `SPECS.md` §9, whether camera-native compressed formats (MJPG) are allowed. The
    non-goal "no codecs in the hot path" refers to encoding added by this system; a camera that only offers MJPG at
@@ -38,10 +38,10 @@ Python `Frame` exposes the format.
 ## Step checklist
 
 - [x] `device-node` picks the camera config from the advertised list (`device_node::CameraSelection`, `DEVICE_NODE_CAMERA_POLICY` / `_WIDTH` / `_HEIGHT` / `_FPS`; unit tests use the Framework webcam's advertised list)
-- [x] `FramePacketInformation` carries the pixel format (`pixel_format: Option<String>`); `SPECS.md` §7 and §7.3 updated
+- [x] `FramePacketInformation` carries the pixel format (`pixel_format: Option<String>`); `shared/README.md` (wire protocol) and §7.3 updated
 - [x] Python `Frame` exposes `pixel_format`; the loopback pytest asserts it
 - [x] MJPG decision recorded in `SPECS.md` §9: stream camera-native formats as delivered, never transcode
-- [x] Delivered-rate shortfall diagnosed and recorded: exposure auto-priority (now disabled at start) and interval set before format (order fixed, parameters read back); every mode then delivers its granted rate ([results](../../hardware/2026-10-30-framework-12-webcam.md))
+- [x] Delivered-rate shortfall diagnosed and recorded: exposure auto-priority (now disabled at start) and interval set before format (order fixed, parameters read back); every mode then delivers its granted rate ([results](../../docs/hardware/2026-10-30-framework-12-webcam.md))
 - [x] `device-node run camera` starts on the Framework webcam (default selection → 1920×1080 MJPG 30 fps; 640×480 request → YUYV)
 - [x] `Device::stop()` marks the device `Stopped` even when the capture thread had already exited (found by the survey harness)
 

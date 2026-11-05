@@ -2,11 +2,11 @@
 
 - **Status:** ✅ Done (2026-10-30)
 - **Stage:** 2 — Producers (devices and device-node)
-- **Spec item:** [`SPECS.md`](../../../SPECS.md) §8 item 20
+- **Spec item:** [`SPECS.md`](../../SPECS.md) §8 item 20
 
 ## Why this step exists
 
-The 2026-10-30 hardware run ([results](../../hardware/2026-10-30-framework-12-webcam.md)) found that
+The 2026-10-30 hardware run ([results](../../docs/hardware/2026-10-30-framework-12-webcam.md)) found that
 `device-node list` reports zero microphones on a machine with one ALSA capture PCM. The filters added in step 04
 skip `default`, `null`, `pipewire` and `sysdefault` by base name and then skip any hint containing `DEV`. On this
 host the only remaining hardware hint is `front:CARD=PCH,DEV=0`, so the `DEV` filter removes it and nothing is left.
@@ -35,8 +35,8 @@ and `device-node run mic 0 <hub>` publishes frames.
 - [x] Sound-server PCMs (`pipewire`, `pulse`, `jack`) listed as microphones when present
 - [x] Hardware-free filter tests with the recorded hint list and a classic ALSA list (`devices/src/microphone_linux.rs`)
 - [x] `device-node list` finds the ALC285 capture device (`sysdefault:CARD=PCH`) and `pipewire`
-- [x] Capture loop delivers 16 kHz mono from both PCMs in the ignored `microphone-stream-test` ([results](../../hardware/2026-10-30-framework-12-webcam.md)); the `device-node run mic` end-to-end publish is part of step 12
+- [x] Capture loop delivers 16 kHz mono from both PCMs in the ignored `microphone-stream-test` ([results](../../docs/hardware/2026-10-30-framework-12-webcam.md)); the `device-node run mic` end-to-end publish is part of step 12
 
 ## Stage 2 definition of done (extended)
 
-See [step 19](step-19-camera-config-negotiation.md).
+See [step 19](../../device-node/docs/step-19-camera-config-negotiation.md).

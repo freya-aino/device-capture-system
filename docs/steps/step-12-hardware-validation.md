@@ -2,7 +2,7 @@
 
 - **Status:** ✅ Done (2026-10-30, single-host three-process run; a cross-host run is still worth doing when two machines are available)
 - **Stage:** 6 — Hardware validation
-- **Spec item:** [`SPECS.md`](../../../SPECS.md) §8 item 12
+- **Spec item:** [`SPECS.md`](../../SPECS.md) §8 item 12
 
 ## Scope
 
@@ -12,13 +12,13 @@ Acceptance: frames arrive at the configured rate (30 fps camera, 16 kHz micropho
 
 ## Evidence
 
-- [`docs/hardware/2026-10-30-framework-12-webcam.md`](../../hardware/2026-10-30-framework-12-webcam.md), "End-to-end
+- [`docs/hardware/2026-10-30-framework-12-webcam.md`](../hardware/2026-10-30-framework-12-webcam.md), "End-to-end
   run": 70 s through `device-node` (camera and microphone) → `control-hub` → `access-client` on one host. Camera
   2100 frames at 30.0 fps (1920×1080 MJPG), microphone 2188 packets at 16 013 Hz, 0 dropped frames, latency mean
   22–28 ms (camera) and 4–7 ms (microphone).
 - The first device-side attempt found the blockers fixed in steps
-  [19](../02-producers/step-19-camera-config-negotiation.md) and
-  [20](../02-producers/step-20-microphone-enumeration-pipewire.md); the same note records them.
+  [19](../../device-node/docs/step-19-camera-config-negotiation.md) and
+  [20](../../devices/docs/step-20-microphone-enumeration-pipewire.md); the same note records them.
 - The measurements come from the `access-client` summary mode (`CLIENT_SUMMARY_SECS`, `CLIENT_RUN_SECS`), added for
   this step and covered by unit tests in `access-client/src/summary.rs`.
 
