@@ -14,14 +14,22 @@ Status markers used throughout: ✅ done · ⚠️ partial/broken · ❌ not imp
 
 Capture synchronized video (v4l2) and audio (ALSA) from one or more machines on a LAN, transport
 raw frames with minimal added latency, aggregate and time-synchronize them centrally, and expose
-the combined stream to consumers — including non-Rust consumers (Python) — for downstream use
-(e.g. multi-camera calibration/recording pipelines).
+the combined stream to consumers — including non-Rust consumers (Python) — for downstream use.
+
+The project's concern ends at delivering images. It extracts the necessary images, prepares them with
+configurable basic transforms (item 23), and hands them over in one of two ways: recorded to video files with
+per-frame timestamps (item 24), or live to another application (item 25). Calibration (items 17, 22) is
+included because it describes the cameras that produced the images.
+
+The target downstream application is a human pose pipeline: instance segmentation of people, per-person
+body-part and SMPL-X extraction, body-part classification, and refinement with keypoints. That pipeline is a
+separate project and a consumer of this one; none of its stages are built here (§9).
 
 ---
 
 ## 2. Logical roles
 
-The system is defined in terms of five logical roles, not five physical machines or five crates.
+The system is defined in terms of six logical roles, not six physical machines or six crates.
 Any role may be colocated with any other role on the same host (talking over `127.0.0.1`) or
 split across hosts (talking over the LAN) — the transport layer doesn't distinguish the two.
 
@@ -31,7 +39,8 @@ split across hosts (talking over the LAN) — the transport layer doesn't distin
 | **Receiver** | Terminates producer connections, subscribes to their published frames | `control-hub` (via `networking::Connection`/`Proxy`'s XSUB side) |
 | **Accumulator** | Fans in frames from all connected producers into one logical stream | `control-hub` (via `networking::Proxy`'s XSUB side, one connection per `HUB_PRODUCERS` endpoint) |
 | **Syncer** | Aligns frames from different producers/devices to a common clock/reference | `control-hub` (planned — see §6) |
-| **Consumer** | Subscribes to the hub's aggregated output and does something with the frames | `access-client` bin, and/or third-party clients (e.g. Python) |
+| **Consumer** | Subscribes to the hub's aggregated output and does something with the frames | `access-client` bin, `calibration`, the planned `recorder` and `live-sink` bins (items 24, 25), and third-party clients (e.g. Python) |
+| **Pre-processor** | Applies configured basic image transforms per camera | planned `preprocess` crate, run in `control-hub` or in a consumer (item 23) |
 
 There is currently no separate "syncer" crate — sync is a planned responsibility *inside*
 `control-hub`, not a standalone deployable unit. If a future requirement needs sync to scale or
@@ -160,7 +169,8 @@ crate's broken module re-export, §4.1 there).
 | `shared::Aligner` | ✅ Generic over a payload; groups frames from several devices by capture time, reports skew, and counts dropped samples. Pairing tolerance and wait window (`max_wait`) are separate; an anchor is dropped as soon as every other device has moved past it. Used by the hub's `AlignedRelay` and by `AlignedClient` | Syncer |
 | `access-client` | ✅ `AccessClient` (`connect`, `next_frame`, `run`, `disconnect`, `dropped_frames`) plus a CLI binary with a per-device summary mode (`CLIENT_SUMMARY_SECS`, `CLIENT_RUN_SECS`: rate, bandwidth, latency, drops); `AlignedClient` wraps it to yield aligned groups of frame packets, covered by end-to-end tests. Used by Python bindings | Consumer |
 | `python-client` | ✅ PyO3 bindings (`device_system`) packaged with maturin and covered by a pytest that runs the loopback example | Consumer |
-| `calibration` | ✅ Native Rust consumer crate (`opencv`): ChArUco reference-point detection, camera intrinsics, frame decoding (MJPG/YUYV); deterministic fixture test. ❌ Multi-camera extrinsics | Calibration |
+| `calibration` | ✅ Native Rust consumer crate (`opencv`): ChArUco reference-point detection, camera intrinsics, frame decoding (MJPG/YUYV); deterministic fixture test. ❌ Multi-camera extrinsics (item 22) | Calibration |
+| `preprocess`, `recorder`, `live-sink` | ❌ Not started (items 23–25) | Pre-processor, Consumer |
 | `DeviceStatus` | ✅ Status transitions are implemented and observable via `device-node` | Observability for Producer |
 
 ### 6.1 What already satisfies the topology requirement (§3)
@@ -211,10 +221,10 @@ only what spans crates.
 
 ## 8. Build order and remaining work
 
-All items are complete. Item 17's acceptance (fixture test) passes; its follow-ups are listed in its step file.
-Items 19–21 were added 2026-10-30 from the first hardware run. Item numbers
+Items 1–21 are complete. Items 22–26 are open; they were added 2026-11-05 to deliver images to downstream
+applications (§1). Items 19–21 were added 2026-10-30 from the first hardware run. Item numbers
 are stable so older references still resolve. Each item's spec, acceptance criteria and checklist is in its
-own file, kept in the crate that owns it (cross-cutting items 12 and 17 are in [`docs/steps/`](docs/steps/)). §8.1 gives the order in which to
+own file, kept in the crate that owns it (cross-cutting items, and items whose crate does not exist yet, are in [`docs/steps/`](docs/steps/)). §8.1 gives the order in which to
 implement the open items.
 
 | Item | Stage | Status | Spec file |
@@ -235,16 +245,27 @@ implement the open items.
 | 14 | 2 — Producers | ✅ | [step-14](device-node/docs/step-14-remote-control.md) |
 | 15 | 4 — Consumers and Python | ✅ | [step-15](python-client/docs/step-15-python-packaging-tests.md) |
 | 16 | 3 — Hub fan-in and hub status | ✅ | [step-16](control-hub/docs/step-16-hub-status-endpoint.md) |
-| 17 | 7 — Calibration | ✅ | [step-17](docs/steps/step-17-calibration.md) |
+| 17 | 7 — Calibration | ✅ | [step-17](calibration/docs/step-17-calibration.md) |
 | 18 | 8 — Windows microphone | ✅ | [step-18](devices/docs/step-18-windows-microphone.md) |
 | 19 | 2 — Producers | ✅ | [step-19](device-node/docs/step-19-camera-config-negotiation.md) |
 | 20 | 2 — Producers | ✅ | [step-20](devices/docs/step-20-microphone-enumeration-pipewire.md) |
 | 21 | 2 — Producers | ✅ | [step-21](devices/docs/step-21-microphone-sample-rate-on-the-wire.md) |
+| 22 | 7 — Calibration | ❌ | [step-22](calibration/docs/step-22-camera-extrinsics.md) |
+| 23 | 9 — Delivery | ❌ | [step-23](docs/steps/step-23-preprocessor.md) |
+| 24 | 9 — Delivery | ❌ | [step-24](docs/steps/step-24-recorder.md) |
+| 25 | 9 — Delivery | ❌ | [step-25](docs/steps/step-25-live-output.md) |
+| 26 | 6 — Hardware validation | ❌ | [step-26](docs/steps/step-26-multi-camera-run.md) |
 
 ### 8.1 Order of remaining work
 
-No item is open. Follow-ups from item 17 (multi-camera extrinsics, a real-camera run) are in
-[its step file](docs/steps/step-17-calibration.md). An item is done only
+1. **Item 23 (pre-processor):** the recorder and the live sink both use it.
+2. **Item 24 (recorder):** the first way to hand images over, and what training data needs.
+3. **Item 25 (live output):** the second hand-off; the ZMQ part exists, the `v4l2loopback` sink does not.
+4. **Item 22 (extrinsics):** needs a second camera; the recorder copies its result into sessions.
+5. **Item 26 (multi-camera run):** needs two hosts and cameras. It can run whenever they are available, and its
+   numbers decide whether hub-side pre-processing works across hosts.
+
+An item is done only
 when its acceptance check passes with `cargo test --workspace` (plus the hardware run for item 12), and
 the README TODO and this file are updated in the same change.
 
@@ -261,4 +282,11 @@ the README TODO and this file are updated in the same change.
   offers a mode as MJPG (every UVC webcam does at 1080p, see `docs/hardware/`) is still streamed in that mode, with
   `pixel_format = "MJPG"` on the wire; decoding is the consumer's choice. Consumers that need uncompressed frames
   ask for a mode the camera offers uncompressed (`DEVICE_NODE_CAMERA_WIDTH=640 …`), they do not get a transcode
-  from the node. Decided 2026-10-30 (item 19).
+  from the node. Decided 2026-10-30 (item 19). Encoding in a consumer, off the transport path, is allowed: the
+  recorder (item 24) encodes uncompressed input and stream-copies MJPG. The hub's pre-processor output is
+  uncompressed for the same reason (item 23).
+- Network video protocols for third-party players (RTSP, HLS) — live use is through the ZMQ ports or a local
+  `v4l2loopback` device (item 25).
+- The downstream pose pipeline (segmentation, SMPL-X extraction, body-part classification, keypoint
+  refinement) and any model training — a separate project that consumes this one's images (§1). Decided
+  2026-11-05.

@@ -496,7 +496,7 @@ The ordered build plan is in `SPECS.md` §8, and each build item's spec and chec
   - [x] Calibrate: runs as a consumer in [`calibration/`](calibration/README.md), not in the hub
     - [x] general reference point detection model: ChArUco corners, deterministic fixture test
     - [x] camera intrinsics from detected views (no python-opencv code existed to port, so written from scratch in Rust)
-    - [ ] multi-camera extrinsics from aligned groups
+    - [ ] multi-camera extrinsics from aligned groups (`SPECS.md` §8 step 22)
     - [ ] run against a real camera and board
   - [x] `GET /status` with live producer and consumer counts (`HUB_STATUS_ADDR`)
 - [ ] Client
@@ -506,6 +506,11 @@ The ordered build plan is in `SPECS.md` §8, and each build item's spec and chec
     - [x] `DeviceSystem.get_frame() -> generator`
   - [x] Package Python bindings (maturin / `pyproject.toml`)
   - [x] Automated tests for the Python bindings (`python-client/tests/test_loopback.py`)
+- [ ] Delivery to downstream applications
+  - [ ] Pre-processor with per-camera transforms (rotate, flip, crop, resize, brightness, contrast, gamma, grayscale), in the hub or a consumer (`SPECS.md` §8 step 23)
+  - [ ] Recorder: selected streams to video files with per-frame timestamps (step 24)
+  - [ ] Live output to other applications: ZMQ ports, plus a `v4l2loopback` virtual camera (step 25)
+- [ ] Multi-camera, cross-host hardware run (step 26)
 
 ## License
 

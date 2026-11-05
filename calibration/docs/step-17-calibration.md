@@ -16,7 +16,7 @@ Acceptance: a deterministic test on a checked-in fixture image returns the expec
   calibration is written from scratch rather than ported.
 - **Target:** a ChArUco board (7×5 squares, `DICT_5X5_100`, `calibration/src/calibration/board.py`). Partial
   views still give identified points, which suits multi-camera rigs.
-- **Language:** a native Rust crate, [`calibration/`](../../calibration/README.md), using the `opencv` crate
+- **Language:** a native Rust crate, [`calibration/`](../README.md), using the `opencv` crate
   (OpenCV 4.13 from `devenv.nix`). A Python first version was written and then replaced by this.
 - **Placement:** a consumer crate, not inside `control-hub`. OpenCV stays out of the hub binary.
 
@@ -30,7 +30,7 @@ Acceptance: a deterministic test on a checked-in fixture image returns the expec
 
 ## Not delivered (follow-ups)
 
-- Multi-camera extrinsics from aligned groups (`access-client`'s `AlignedClient` already yields them).
+- Multi-camera extrinsics from aligned groups: now [item 22](step-22-camera-extrinsics.md).
 - A run against a real camera and a printed board. The tests use a rendered board and projected points only.
 
 ## Evidence

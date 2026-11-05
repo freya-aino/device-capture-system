@@ -1,6 +1,6 @@
 # calibration
 
-Native Rust crate for camera calibration ([item 17](../docs/steps/step-17-calibration.md)), built on the
+Native Rust crate for camera calibration ([item 17](docs/step-17-calibration.md)), built on the
 `opencv` crate. It is a consumer of the hub's frames and does not run inside `control-hub`, so the hub binary
 does not link OpenCV. It depends on `shared` only; feed it frames from `access-client`.
 
@@ -37,8 +37,8 @@ OpenCV (with `pkg-config` and libclang for the bindings) must be installed. `dev
 make-fixture` regenerates it. The test compares the detected corners with the positions implied by the
 rendering geometry (within 0.5 px).
 
-Not done: multi-camera extrinsics (`access-client`'s `AlignedClient` already yields aligned groups), and a run
-against a real camera and printed board.
+Not done: multi-camera extrinsics ([item 22](docs/step-22-camera-extrinsics.md)), and a run against a real
+camera and printed board.
 
 The `opencv` dependency uses the `clang-runtime` feature. Without it, a plain `cargo build --workspace` fails
 in OpenCV's build script (`a libclang shared library is not loaded`), because `bindgen` in the `devices`

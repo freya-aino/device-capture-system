@@ -25,7 +25,7 @@ time and publishes the groups on that separate PUB port. The raw forwarding stay
 groups with `CLIENT_ALIGNED_PORT`, `networking::GroupReceiver`, or align themselves with `AlignedClient`.
 
 Validated on real devices 2026-10-30: one group per camera frame at 30/s, skew ≤ 18 ms. Calibration is not part of the hub; it runs as a
-consumer ([`calibration/`](../calibration/README.md), [item 17](../docs/steps/step-17-calibration.md)).
+consumer ([`calibration/`](../calibration/README.md), [item 17](../calibration/docs/step-17-calibration.md)).
 
 ## Configuration
 
