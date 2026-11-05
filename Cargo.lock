@@ -8,7 +8,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "networking",
+ "preprocess",
  "shared",
+ "tracing",
  "tracing-subscriber",
  "zmq",
 ]
@@ -217,6 +219,7 @@ dependencies = [
  "anyhow",
  "ctrlc",
  "networking",
+ "preprocess",
  "shared",
  "tiny_http",
  "tracing",

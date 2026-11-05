@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use access_client::{AccessClient, FrameSummary, GroupSummary};
 use anyhow::{Error, Result};
 use networking::GroupReceiver;
+use preprocess::{PreprocessConfig, Preprocessor};
 
 /// Microseconds since the Unix epoch, or `-` when the stamp is missing.
 fn micros(stamp: Option<std::time::SystemTime>) -> String {
@@ -35,6 +36,12 @@ fn main() -> Result<(), Error> {
     // 0 (default): read the raw stream on HUB_PORT. N > 0: read aligned groups from the hub's
     // HUB_SYNC_PORT relay instead and print one `aligned:` summary line per window.
     let aligned_port: u16 = env_or("CLIENT_ALIGNED_PORT", 0);
+    // Unset (default): frames as received. A path: run that pre-processor pipeline file on the raw
+    // stream locally. Devices without a pipeline pass through unchanged.
+    let preprocessor = match std::env::var("CLIENT_PREPROCESS_CONFIG") {
+        Ok(path) => Some(Preprocessor::new(PreprocessConfig::load(path)?)),
+        Err(_) => None,
+    };
 
     if aligned_port > 0 {
         return run_aligned(
@@ -67,7 +74,17 @@ fn main() -> Result<(), Error> {
                 .min(Duration::from_secs(5)),
             None => Duration::from_secs(5),
         };
-        match client.next_frame(wait)? {
+        let packet = match (client.next_frame(wait)?, preprocessor.as_ref()) {
+            (Some(packet), Some(preprocessor)) => match preprocessor.process(&packet) {
+                Ok(processed) => Some(processed.unwrap_or(packet)),
+                Err(e) => {
+                    tracing::warn!("Dropping frame that failed pre-processing: {:#}", e);
+                    continue;
+                }
+            },
+            (packet, _) => packet,
+        };
+        match packet {
             Some(packet) => match summary.as_mut() {
                 Some(summary) => summary.record(&packet),
                 None => println!(

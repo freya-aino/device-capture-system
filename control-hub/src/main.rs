@@ -5,7 +5,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use anyhow::{Error, Result, anyhow};
-use networking::{AlignedRelay, Proxy};
+use networking::{AlignedRelay, FrameRelay, Proxy};
+use preprocess::{PreprocessConfig, Preprocessor};
 
 mod status;
 use status::DEFAULT_HUB_STATUS_ADDR;
@@ -18,6 +19,12 @@ struct HubConfig {
     data_chunk_size: u32,
     status_addr: String,
     sync: Option<SyncConfig>,
+    preprocess: Option<PreprocessHubConfig>,
+}
+
+struct PreprocessHubConfig {
+    port: u16,
+    config: PreprocessConfig,
 }
 
 struct SyncConfig {
@@ -92,6 +99,7 @@ impl HubConfig {
             data_chunk_size: env_or("HUB_DATA_CHUNK_SIZE", 1024),
             status_addr: env_or("HUB_STATUS_ADDR", DEFAULT_HUB_STATUS_ADDR.to_string()),
             sync: Self::sync_from_env()?,
+            preprocess: Self::preprocess_from_env()?,
         })
     }
 
@@ -112,6 +120,23 @@ impl HubConfig {
             devices,
             tolerance: Duration::from_millis(env_or("HUB_SYNC_TOLERANCE_MS", 20)),
             max_wait: Duration::from_millis(env_or("HUB_SYNC_MAX_WAIT_MS", 200)),
+        }))
+    }
+
+    /// Pre-processing is opt-in: it runs only when `HUB_PREPROCESS_PORT` is set, and then needs
+    /// `PREPROCESS_CONFIG`, the path of the pipeline file. The file is validated here, at start.
+    fn preprocess_from_env() -> Result<Option<PreprocessHubConfig>> {
+        let Ok(port) = std::env::var("HUB_PREPROCESS_PORT") else {
+            return Ok(None);
+        };
+        let port: u16 = port
+            .parse()
+            .map_err(|e| anyhow!("invalid HUB_PREPROCESS_PORT {:?}: {}", port, e))?;
+        let path = std::env::var("PREPROCESS_CONFIG")
+            .map_err(|_| anyhow!("HUB_PREPROCESS_PORT is set but PREPROCESS_CONFIG is missing"))?;
+        Ok(Some(PreprocessHubConfig {
+            port,
+            config: PreprocessConfig::load(path)?,
         }))
     }
 }
@@ -176,6 +201,31 @@ fn main() -> Result<(), Error> {
         None => None,
     };
 
+    let mut preprocess_relay = match config.preprocess.as_ref() {
+        Some(pre) => {
+            let preprocessor = Preprocessor::new(pre.config.clone());
+            let mut devices: Vec<&str> = preprocessor.devices().collect();
+            devices.sort();
+            println!(
+                "control-hub: pre-processed frames on tcp://{}:{} for devices {:?}",
+                config.consumer_ip, pre.port, devices
+            );
+            let mut relay = FrameRelay::new(
+                config
+                    .producers
+                    .iter()
+                    .map(|producer| format!("tcp://{}", producer))
+                    .collect(),
+                format!("tcp://{}:{}", config.consumer_ip, pre.port),
+                config.data_chunk_size,
+                Box::new(move |packet| preprocessor.process(&packet)),
+            );
+            relay.start(&context)?;
+            Some(relay)
+        }
+        None => None,
+    };
+
     let status_server = status::bind_status_server(&config.status_addr)?;
     let _status_thread = status::start_status_server(status_server, proxy.peer_counts());
     println!(
@@ -194,6 +244,9 @@ fn main() -> Result<(), Error> {
 
     println!("control-hub: shutting down proxy");
     if let Some(relay) = sync_relay.as_mut() {
+        relay.stop()?;
+    }
+    if let Some(relay) = preprocess_relay.as_mut() {
         relay.stop()?;
     }
     proxy.stop()?;
