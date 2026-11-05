@@ -3,7 +3,7 @@
 This document specifies the intended design of the system: the deployment topologies it must
 support, the roles each component plays, the wire protocol, and the current implementation state
 against that spec. It consolidates the architecture described in `README.md`/`AGENT.md` with the
-findings in `CODE_REVIEW.md` (historical review at commit `40c8af5`; the status in §6 and §8 was revised
+findings in `docs/history/CODE_REVIEW.md` (historical review at commit `40c8af5`; the status in §6 and §8 was revised
 2026-10-30 against commit `3c3d183`, with `cargo test --workspace`, the Python pytest and a device-side hardware run).
 
 Status markers used throughout: ✅ done · ⚠️ partial/broken · ❌ not implemented.
@@ -115,7 +115,7 @@ should **not** be replaced with WebRTC:
   the deterministic frame-interval assumption sync will rely on.
 
 ZMQ's own trade-off — PUB silently drops frames once a subscriber's high-water mark is hit, with
-no log or counter (§6, and CODE_REVIEW §3) — is the one real cost of this choice and must be
+no log or counter (§6, and `docs/history/CODE_REVIEW.md` §3) — is the one real cost of this choice and must be
 instrumented, not papered over by switching transports.
 
 **Conclusion:** ZMQ is architecturally correct for this system's latency goal. Forwarding, multi-producer
@@ -126,7 +126,9 @@ The open problem is calibration, not the transport choice.
 
 ## 5. Third-party integration (Python et al.)
 
-`README.md`'s TODO already specifies the target API:
+The target API from the README TODO exists as PyO3 bindings in [`python-client/`](python-client/README.md): a
+`device_system` extension module with `DeviceSystem` (hub connection + iterator) and `Frame` (header + raw
+bytes), built with maturin and covered by an end-to-end loopback pytest (item 15).
 
 ```python
 ds = DeviceSystem(hub_ip, hub_port)
@@ -134,24 +136,13 @@ for frame in ds.get_frame():
     ...
 ```
 
-This API exists today as PyO3 bindings in `python-client/`, exporting a `device_system` extension
-module with `DeviceSystem` (hub connection + iterator) and `Frame` (header + raw bytes). It wraps
-the Rust `access-client` so Python shares the exact wire decoder.
-
-Packaging is in place: `python-client/pyproject.toml` builds the extension with maturin, and
-`python-client/tests/test_loopback.py` checks it end to end (item 15).
-
-The implemented path is PyO3 bindings in `python-client/` (see `python-client/README.md`):
-`DeviceSystem` wraps `access-client::AccessClient`, so Python uses the same Rust wire decoder and
-cannot drift from it when `shared` changes. A pure-Python decoder (a `pyzmq` `SUB` socket plus a small
-bincode header decoder, not written and not specified here) remains a fallback only if consumers must avoid a Rust-built
-extension. It is not planned.
-
----
+`DeviceSystem` wraps `access-client::AccessClient`, so Python uses the exact Rust wire decoder and cannot
+drift from it when `shared` changes. A pure-Python decoder (`pyzmq` plus a bincode header decoder) would be
+the fallback if consumers must avoid a Rust-built extension. It is not planned.
 
 ## 6. Current implementation state
 
-Revised 2026-10-29 against the current workspace (`e367b77`). `CODE_REVIEW.md` is a historical review at commit
+Revised 2026-10-29 against the current workspace (`e367b77`). `docs/history/CODE_REVIEW.md` is a historical review at commit
 `40c8af5`; see it for line numbers and the findings it already applied (for example the `devices`
 crate's broken module re-export, §4.1 there).
 
@@ -160,7 +151,7 @@ crate's broken module re-export, §4.1 there).
 | `shared` (data model) | ✅ Works: `ConnectionStats` uses `Instant` for interval math and records per-frame latency | Observability for all roles |
 | `networking::Connection`/`Sender`/`Receiver` | ✅ Works: receive path validates peer input and drops malformed frames; a sequence part enables gap-based dropped-frame counts | Producer, Consumer |
 | `networking::Proxy` | ✅ Works: `start()` runs `zmq::proxy_steerable` on a forwarding thread; `stop()` terminates it cleanly through a control socket. Covered by `proxy-test.rs` and the hub pipeline test | Receiver + Accumulator |
-| `devices::V4lCameraDevice` | ✅ Streams on a real webcam at the granted rate in every advertised mode (2026-10-30 survey, `docs/hardware/`): `start()` disables exposure auto-priority, sets format before interval and reads both back; `device-node` selects the mode from `get_configs()` (§7.3). End-to-end 60 s run still open (item 12) | Producer (camera) |
+| `devices::V4lCameraDevice` | ✅ Streams on a real webcam at the granted rate in every advertised mode (2026-10-30 survey, `docs/hardware/`): `start()` disables exposure auto-priority, sets format before interval and reads both back; `device-node` selects the mode from `get_configs()` ([`device-node/README.md`](device-node/README.md)). End-to-end 60 s run still open (item 12) | Producer (camera) |
 | `devices::AlsaMicrophoneDevice` | ✅ Enumerates one converting PCM per card plus sound-server PCMs (`select_capture_hints`, item 20), captures 16 kHz mono from both on real hardware (2026-10-30, `docs/hardware/`), and stamps the granted sample rate on every frame (item 21) | Producer (mic) |
 | `devices::microphone_windows` | ✅ Removed; Windows is unsupported by decision (item 18) | n/a |
 | `devices::manager` | ✅ Deleted | n/a |
@@ -193,159 +184,60 @@ Open, in priority order:
 1. ✅ Sync (item 10): the hub's opt-in `AlignedRelay` (`HUB_SYNC_PORT`) is validated on real devices; consumers read it with `CLIENT_ALIGNED_PORT`, `GroupReceiver` or align themselves with `AlignedClient`. ❌ Calibration (item 17) is not started.
 2. ✅ Hardware validation (item 12): 70 s single-host run through the full path, camera 30.0 fps and microphone
    16 kHz with 0 dropped frames (`docs/hardware/`). A cross-host run is still outstanding.
-3. ✅ Remote control: `POST /start`, `/stop` and `/restart` are implemented on the device-node status server (§7.1, item 14).
+3. ✅ Remote control: `POST /start`, `/stop` and `/restart` are implemented on the device-node status server (`device-node/README.md`, item 14).
 4. ✅ Python packaging and tests: maturin `pyproject.toml` and a loopback pytest (§5, item 15).
 5. ✅ Windows microphone: decided unsupported and recorded in the README Requirements (item 18).
 
 ---
 
-## 7. Wire protocol (frozen contract — anything built on top, including §5's Python client,
-depends on this)
+## 7. Per-crate specs
 
-A frame is one ZMQ multipart message:
+The detailed specification of each concern lives in the crate that owns it, next to the code. This file keeps
+only what spans crates.
 
-| Part | Content |
+| Concern | Where |
 |---|---|
-| `0` | `bincode::encode_to_vec(FramePacketInformation, config::standard())` |
-| `1` | Sender-local `u64` sequence number (little-endian) |
-| `2..n` | Raw frame bytes, split into `data_chunk_size`-byte chunks (receiver concatenates them back; chunk boundaries carry no meaning) |
-
-`FramePacketInformation`:
-
-```rust
-pub struct FramePacketInformation {
-    pub device_info: DeviceInformation,   // id, name, device_type, device_status
-    pub rx_timestamp: Option<SystemTime>, // set by receiver on arrival
-    pub tx_timestamp: Option<SystemTime>, // set by sender just before send
-    pub frame_shape: Vec<u32>,
-    pub pixel_format: Option<String>,     // camera: negotiated FourCC ("YUYV", "MJPG", ...); microphone: None
-    pub sample_rate: Option<u32>,         // microphone: granted rate in Hz; camera: None
-    pub capture_timestamp: Option<SystemTime>, // when the device captured the frame; sync aligns on this
-}
-```
-
-`pixel_format` (item 19), `sample_rate` (item 21) and `capture_timestamp` (item 10) were added 2026-10-30.
-
-`tx_timestamp` is the send time and `rx_timestamp - tx_timestamp` is transport latency. `capture_timestamp` is
-what alignment uses (`FramePacketInformation::capture_time()`, falling back to `tx_timestamp`): the camera takes
-it from the driver's buffer timestamp, the microphone from the read time minus the frames still queued in ALSA.
-The two differ in practice: a microphone behind a sound server delivers several packets at once when its quantum
-fills, all with the same send time but distinct capture times. Every peer in a deployment must be built from the same revision;
-there is no protocol version negotiation, and a pre-item-19 peer cannot decode frames from a post-item-19 peer.
-
-Payload formats by device type:
-
-- **Camera** — the v4l2 buffer exactly as the camera delivered it, in the FourCC named by `pixel_format`,
-  `frame_shape = [width, height]`. The format is whichever advertised mode the device node selected (§7.3), so
-  consumers must branch on `pixel_format`: `YUYV` is 2 bytes per pixel, `MJPG` is one JPEG image per frame.
-- **Microphone** — interleaved `S16LE` samples as bytes, `frame_shape = [buffer_size, channels]`
-  (channel count is included), `sample_rate` = the rate ALSA granted in Hz (the node warns when it differs from
-  the requested rate; the `plug` layer normally makes them equal).
-
-Per-frame latency is measurable today as `rx_timestamp - tx_timestamp`. The receive path records
-this into `ConnectionStats` (best-effort; frames without a `tx_timestamp` are dropped).
-
-Defaults (`device-node/src/helper.rs`):
-
-| Device | Default config |
-|---|---|
-| Camera | Selected from the camera's advertised modes (§7.3); the default request is 1920×1080 at 30 fps, uncompressed preferred on ties |
-| Microphone | 16kHz, 1 channel, 512-sample buffer, `S16LE` |
-
-### 7.1 Device-node status endpoint
-
-`GET /status` on `DEVICE_NODE_STATUS_ADDR` (default `127.0.0.1:8080`) returns `200` with
-`Content-Type: application/json`:
-
-```json
-{"device":"Running","connection":"Active"}
-```
-
-The values are the `Debug` names of `DeviceStatus` and `ConnectionStatus`. Other paths and methods return `404`.
-A failed state read returns `500` with `{"error":"status unavailable"}`.
-
-Remote control on the same server (§8 item 14):
-
-- `POST /start`, `POST /stop`, `POST /restart` transition the device and respond with the new status in the
-  same JSON format.
-- A transition the current `DeviceStatus` does not allow (`/start` while `Running`, `/stop` or `/restart`
-  while not `Running`, or any control on a node that was never started) returns `409` with
-  `{"error":"cannot <Action> while device is <Status>"}`.
-- A device failure during control returns `500` with `{"error":"device control failed"}`.
-
-The server validates transitions before calling the device, so a bad request cannot trigger the device's
-own start/stop assertions.
-
-### 7.3 Camera config selection
-
-`device-node run camera` never streams a fixed config. It enumerates the camera's advertised modes
-(`Device::get_configs`) and picks one with `device_node::CameraSelection`:
-
-| `DEVICE_NODE_CAMERA_POLICY` | Rule | Extra variables |
-|---|---|---|
-| `nearest` (default) | `shared::select_camera_config`: closest resolution, then closest frame rate; an uncompressed FourCC wins an exact tie | `DEVICE_NODE_CAMERA_WIDTH`, `_HEIGHT`, `_FPS` (defaults 1920, 1080, 30) |
-| `best-fps` | `shared::select_camera_config_by_policy(BestFps)` | none |
-| `best-resolution` | `…(BestResolution)` | none |
-| `best-average` | `…(BestAverage)` | none |
-
-The node prints the selection and the chosen config at start. `V4lCameraDevice::start` still refuses to run if
-the driver negotiates anything other than the chosen config, so a mismatch is an error, never a silent change.
-
-### 7.2 Environment configuration
-
-The binaries read these variables (see `README.md`, Configuration):
-
-| Variable | Binary | Default |
-|---|---|---|
-| `DEVICE_NODE_STATUS_ADDR` | `device-node` | `127.0.0.1:8080` |
-| `DEVICE_NODE_CAMERA_POLICY` | `device-node` | `nearest` (§7.3) |
-| `DEVICE_NODE_CAMERA_WIDTH` / `_HEIGHT` / `_FPS` | `device-node` | `1920` / `1080` / `30`, used by `nearest` |
-| `HUB_PRODUCER_IP` / `HUB_PRODUCER_PORT` | `control-hub` | `127.0.0.1` / `5555` |
-| `HUB_CONSUMER_IP` / `HUB_CONSUMER_PORT` | `control-hub` | `0.0.0.0` / `5556` |
-| `HUB_QUEUE_SIZE` | `control-hub` | `128` |
-| `HUB_DATA_CHUNK_SIZE` | `control-hub` | `1024` |
-| `HUB_PRODUCERS` | `control-hub` | unset; comma-separated `ip:port` list that takes precedence over `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT` |
-| `HUB_STATUS_ADDR` | `control-hub` | `127.0.0.1:8081` |
-| `HUB_SYNC_PORT` | `control-hub` | unset (sync off); when set, `HUB_SYNC_DEVICES` is required |
-| `HUB_SYNC_DEVICES` | `control-hub` | unset; device ids to align, required with `HUB_SYNC_PORT` |
-| `HUB_SYNC_TOLERANCE_MS` | `control-hub` | `20`; maximum capture-time distance inside one group |
-| `HUB_SYNC_MAX_WAIT_MS` | `control-hub` | `200`; how long a frame waits for partners before it is dropped (must cover the transport-latency difference between devices) |
-| `CLIENT_SUMMARY_SECS` / `CLIENT_RUN_SECS` | `access-client` | `0` / `0`; summary window and bounded run |
-| `CLIENT_ALIGNED_PORT` | `access-client` | `0` (off); read aligned groups from the hub's `HUB_SYNC_PORT` instead of the raw stream |
-
----
+| Wire protocol (frozen contract), payload formats, `Aligner` | [`shared/README.md`](shared/README.md) |
+| Transport primitives, `Proxy`, dropped-frame accounting | [`networking/README.md`](networking/README.md) |
+| Camera and microphone devices, hardware notes | [`devices/README.md`](devices/README.md) |
+| Status/control endpoint, camera config selection, `DEVICE_NODE_*` variables | [`device-node/README.md`](device-node/README.md) |
+| Fan-in, hub status endpoint, sync relay, `HUB_*` variables | [`control-hub/README.md`](control-hub/README.md) |
+| Consumer API, `CLIENT_*` variables | [`access-client/README.md`](access-client/README.md) |
+| Python bindings | [`python-client/README.md`](python-client/README.md) |
+| Real-hardware results | [`docs/hardware/`](docs/hardware/) |
+| Historical review at commit `40c8af5` | [`docs/history/CODE_REVIEW.md`](docs/history/CODE_REVIEW.md) |
 
 ## 8. Build order and remaining work
 
 Items 1–16 and 18–21 are complete. Item 17 is open.
 Items 19–21 were added 2026-10-30 from the first hardware run. Item numbers
 are stable so older references still resolve. Each item's spec, acceptance criteria and checklist is in its
-own file under [`docs/specs/`](docs/specs/README.md), grouped into stages. §8.1 gives the order in which to
+own file, kept in the crate that owns it (cross-cutting items 12 and 17 are in [`docs/steps/`](docs/steps/)). §8.1 gives the order in which to
 implement the open items.
 
 | Item | Stage | Status | Spec file |
 |---|---|---|---|
-| 1 | 1 — Transport and hub foundation | ✅ | [step-01](docs/specs/01-transport-and-hub/step-01-fix-proxy.md) |
-| 2 | 1 — Transport and hub foundation | ✅ | [step-02](docs/specs/01-transport-and-hub/step-02-control-hub-main.md) |
-| 3 | 4 — Consumers and Python | ✅ | [step-03](docs/specs/04-consumers-and-python/step-03-access-client-frames.md) |
-| 4 | 2 — Producers | ✅ | [step-04](docs/specs/02-producers/step-04-device-enumeration-filters.md) |
-| 5 | 1 — Transport and hub foundation | ✅ | [step-05](docs/specs/01-transport-and-hub/step-05-receive-path-panics.md) |
-| 6 | 2 — Producers | ✅ | [step-06](docs/specs/02-producers/step-06-device-status-endpoint.md) |
-| 7 | 2 — Producers | ✅ | [step-07](docs/specs/02-producers/step-07-generic-device-node.md) |
-| 8 | 2 — Producers | ✅ | [step-08](docs/specs/02-producers/step-08-camera-buffers-format.md) |
-| 9 | 1 — Transport and hub foundation | ✅ | [step-09](docs/specs/01-transport-and-hub/step-09-connection-stats.md) |
-| 10 | 5 — Sync | ✅ | [step-10](docs/specs/05-sync/step-10-time-alignment.md) |
-| 11 | 4 — Consumers and Python | ✅ | [step-11](docs/specs/04-consumers-and-python/step-11-pyo3-bindings.md) |
-| 12 | 6 — Hardware validation | ✅ | [step-12](docs/specs/06-hardware-validation/step-12-hardware-validation.md) |
-| 13 | 3 — Hub fan-in and hub status | ✅ | [step-13](docs/specs/03-hub-fan-in-and-status/step-13-multi-producer-fan-in.md) |
-| 14 | 2 — Producers | ✅ | [step-14](docs/specs/02-producers/step-14-remote-control.md) |
-| 15 | 4 — Consumers and Python | ✅ | [step-15](docs/specs/04-consumers-and-python/step-15-python-packaging-tests.md) |
-| 16 | 3 — Hub fan-in and hub status | ✅ | [step-16](docs/specs/03-hub-fan-in-and-status/step-16-hub-status-endpoint.md) |
-| 17 | 7 — Calibration | ❌ | [step-17](docs/specs/07-calibration/step-17-calibration.md) |
-| 18 | 8 — Windows microphone | ✅ | [step-18](docs/specs/08-windows-microphone/step-18-windows-microphone.md) |
-| 19 | 2 — Producers | ✅ | [step-19](docs/specs/02-producers/step-19-camera-config-negotiation.md) |
-| 20 | 2 — Producers | ✅ | [step-20](docs/specs/02-producers/step-20-microphone-enumeration-pipewire.md) |
-| 21 | 2 — Producers | ✅ | [step-21](docs/specs/02-producers/step-21-microphone-sample-rate-on-the-wire.md) |
+| 1 | 1 — Transport and hub foundation | ✅ | [step-01](networking/docs/step-01-fix-proxy.md) |
+| 2 | 1 — Transport and hub foundation | ✅ | [step-02](control-hub/docs/step-02-control-hub-main.md) |
+| 3 | 4 — Consumers and Python | ✅ | [step-03](access-client/docs/step-03-access-client-frames.md) |
+| 4 | 2 — Producers | ✅ | [step-04](devices/docs/step-04-device-enumeration-filters.md) |
+| 5 | 1 — Transport and hub foundation | ✅ | [step-05](networking/docs/step-05-receive-path-panics.md) |
+| 6 | 2 — Producers | ✅ | [step-06](device-node/docs/step-06-device-status-endpoint.md) |
+| 7 | 2 — Producers | ✅ | [step-07](device-node/docs/step-07-generic-device-node.md) |
+| 8 | 2 — Producers | ✅ | [step-08](devices/docs/step-08-camera-buffers-format.md) |
+| 9 | 1 — Transport and hub foundation | ✅ | [step-09](networking/docs/step-09-connection-stats.md) |
+| 10 | 5 — Sync | ✅ | [step-10](control-hub/docs/step-10-time-alignment.md) |
+| 11 | 4 — Consumers and Python | ✅ | [step-11](python-client/docs/step-11-pyo3-bindings.md) |
+| 12 | 6 — Hardware validation | ✅ | [step-12](docs/steps/step-12-hardware-validation.md) |
+| 13 | 3 — Hub fan-in and hub status | ✅ | [step-13](control-hub/docs/step-13-multi-producer-fan-in.md) |
+| 14 | 2 — Producers | ✅ | [step-14](device-node/docs/step-14-remote-control.md) |
+| 15 | 4 — Consumers and Python | ✅ | [step-15](python-client/docs/step-15-python-packaging-tests.md) |
+| 16 | 3 — Hub fan-in and hub status | ✅ | [step-16](control-hub/docs/step-16-hub-status-endpoint.md) |
+| 17 | 7 — Calibration | ❌ | [step-17](docs/steps/step-17-calibration.md) |
+| 18 | 8 — Windows microphone | ✅ | [step-18](devices/docs/step-18-windows-microphone.md) |
+| 19 | 2 — Producers | ✅ | [step-19](device-node/docs/step-19-camera-config-negotiation.md) |
+| 20 | 2 — Producers | ✅ | [step-20](devices/docs/step-20-microphone-enumeration-pipewire.md) |
+| 21 | 2 — Producers | ✅ | [step-21](devices/docs/step-21-microphone-sample-rate-on-the-wire.md) |
 
 ### 8.1 Order of remaining work
 

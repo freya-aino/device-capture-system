@@ -18,6 +18,11 @@ access-client/  bin+lib: consumer client that subscribes to the hub and yields d
 python-client/  PyO3 extension module (`device_system`): `DeviceSystem` + `Frame` for Python consumers
 ```
 
+Docs follow the code: each crate's `README.md` is its spec (config, endpoints, protocol) and its
+`docs/step-NN-*.md` files are the build items it owns. `SPECS.md` holds only what spans crates and the item
+index; cross-cutting items live in `docs/steps/`, real-hardware results in `docs/hardware/`, and the old review
+in `docs/history/`. Update the owning crate's README when behavior changes.
+
 Dependency direction is strictly one-way:
 `shared` ← `networking` / `devices` ← `device-node` / `control-hub` / `access-client`.
 Never introduce a dependency that points the other way.
@@ -37,7 +42,7 @@ If this machine has Nix, prefix each command with `devenv shell -- ` (e.g.
 `devenv shell -- cargo test --workspace`). The checked-in `devenv.nix`/`devenv.yaml` pin
 `pkg-config`, `alsa-lib`, `zeromq`, `libv4l`, a Rust toolchain and `LIBCLANG_PATH` to one consistent
 Nix closure, which sidesteps system packages entirely and avoids `bindgen`/`libclang` ABI mismatches
-(see `CODE_REVIEW.md` §2 for a concrete example of that failure mode).
+(see `docs/history/CODE_REVIEW.md` §2 for a concrete example of that failure mode).
 
 Without Nix, system packages are required before anything compiles (`libasound2-dev`, `libzmq3-dev`,
 `libv4l-dev`, `pkg-config`, plus `clang`/`libclang` for `bindgen`). If a build fails inside
@@ -68,15 +73,15 @@ incompatible `libclang` build available and picked the wrong one.
 - Commented-out exploratory code used to accumulate throughout the tree (e.g. the old
   `devices/src/manager.rs`, `networking/src/primitives.rs`). Those dead modules have since been
   deleted — don't recreate the pattern; delete exploratory code once it's superseded instead of
-  commenting it out, and check `CODE_REVIEW.md` §5.3 before assuming a block is still there.
+  commenting it out, and check `docs/history/CODE_REVIEW.md` §5.3 before assuming a block is still there.
 
 ## Known rough edges
 
 Worth knowing before you debug something — fix only if the task asks for it. The current status is in
-`SPECS.md` §6 and the README TODO; `CODE_REVIEW.md` is a historical review at commit `40c8af5` and its
+`SPECS.md` §6 and the README TODO; `docs/history/CODE_REVIEW.md` is a historical review at commit `40c8af5` and its
 line numbers may be stale. This is only the two items that still require real hardware to close out.
 
-- Linux only, by decision (README Requirements, `docs/specs` step 18). There is no Windows module any more; do not
+- Linux only, by decision (README Requirements, `SPECS.md` §8 step 18). There is no Windows module any more; do not
   add `cfg(target_os = "windows")` stubs.
 - Camera and microphone capture (opening a real device and reading frames) has never been exercised
   against real hardware on this machine — it compiles and is covered by hardware-free tests

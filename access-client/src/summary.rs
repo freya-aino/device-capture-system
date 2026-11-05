@@ -59,7 +59,7 @@ impl DeviceWindow {
 
 /// Accumulates frames per device id and renders one summary line per device when the window is
 /// over. The `access-client` CLI prints these when `CLIENT_SUMMARY_SECS` is set; the hardware
-/// validation run (`docs/specs` step 12) reads its numbers from them.
+/// validation run (`docs/steps/step-12-hardware-validation.md`) reads its numbers from them.
 #[derive(Debug)]
 pub struct FrameSummary {
     window: Duration,

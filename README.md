@@ -35,13 +35,13 @@ each `device-node` serves `GET /status` and `POST /start`, `/stop` and `/restart
 
 | Crate           | Kind | Description                                                                                                     |
 |-----------------|------|-----------------------------------------------------------------------------------------------------------------|
-| `shared`        | lib  | Common data model: the `Device` / `DeviceConfig` traits, `DeviceInformation`, `FramePacket(Information)`, `ConnectionStatus`, `ConnectionStats`. Frame metadata is (de)serialized with `bincode`. |
-| `devices`       | lib  | Concrete capture devices: `V4lCameraDevice` (v4l2 mmap streaming) and `AlsaMicrophoneDevice` (ALSA PCM capture). Each runs its capture loop on its own thread and pushes `FramePacket`s into a user callback. |
-| `networking`    | lib  | ZeroMQ transport: `Connection` (socket lifecycle + stats), `Sender` (PUB), `Receiver` (SUB) and `Proxy` (XSUB↔XPUB forwarder). |
-| `device-node`   | bin+lib  | Runs on each capture machine: lists devices and publishes one camera or microphone stream to a hub. Serves `GET /status` and `POST /start`, `/stop`, `/restart` (`DEVICE_NODE_STATUS_ADDR`). |
-| `control-hub`   | bin  | Central process: runs the XSUB/XPUB ZMQ proxy, fanning in the producer endpoints from `HUB_PRODUCERS` (or the single `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT`), configured by `HUB_*` environment variables. Serves `GET /status` with producer and consumer counts. Opt-in sync (`HUB_SYNC_PORT`) publishes aligned groups; calibration is planned. |
-| `access-client` | bin+lib  | Consumer-side client that subscribes to the hub's XPUB stream. The CLI prints received frames; the library provides `AccessClient` (decoded frames) and `AlignedClient` (groups frames from several devices by capture time). Configured by `HUB_IP`/`HUB_PORT` and `CLIENT_*` environment variables. |
-| `python-client` | lib  | Python bindings via PyO3 (`device_system` extension module) that wrap `access-client` to receive frames from a hub. Installable with maturin (`pip install ./python-client`); see [`python-client/README.md`](python-client/README.md). |
+| [`shared`](shared/README.md) | lib  | Common data model: the `Device` / `DeviceConfig` traits, `DeviceInformation`, `FramePacket(Information)`, `ConnectionStatus`, `ConnectionStats`. Frame metadata is (de)serialized with `bincode`. |
+| [`devices`](devices/README.md) | lib  | Concrete capture devices: `V4lCameraDevice` (v4l2 mmap streaming) and `AlsaMicrophoneDevice` (ALSA PCM capture). Each runs its capture loop on its own thread and pushes `FramePacket`s into a user callback. |
+| [`networking`](networking/README.md) | lib  | ZeroMQ transport: `Connection` (socket lifecycle + stats), `Sender` (PUB), `Receiver` (SUB) and `Proxy` (XSUB↔XPUB forwarder). |
+| [`device-node`](device-node/README.md) | bin+lib  | Runs on each capture machine: lists devices and publishes one camera or microphone stream to a hub. Serves `GET /status` and `POST /start`, `/stop`, `/restart` (`DEVICE_NODE_STATUS_ADDR`). |
+| [`control-hub`](control-hub/README.md) | bin  | Central process: runs the XSUB/XPUB ZMQ proxy, fanning in the producer endpoints from `HUB_PRODUCERS` (or the single `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT`), configured by `HUB_*` environment variables. Serves `GET /status` with producer and consumer counts. Opt-in sync (`HUB_SYNC_PORT`) publishes aligned groups; calibration is planned. |
+| [`access-client`](access-client/README.md) | bin+lib  | Consumer-side client that subscribes to the hub's XPUB stream. The CLI prints received frames; the library provides `AccessClient` (decoded frames) and `AlignedClient` (groups frames from several devices by capture time). Configured by `HUB_IP`/`HUB_PORT` and `CLIENT_*` environment variables. |
+| [`python-client`](python-client/README.md) | lib  | Python bindings via PyO3 (`device_system` extension module) that wrap `access-client` to receive frames from a hub. Installable with maturin (`pip install ./python-client`); see [`python-client/README.md`](python-client/README.md). |
 
 ### Frame transport
 
@@ -66,7 +66,7 @@ Payload formats:
   `pixel_format` (`"YUYV"`, `"MJPG"`, ...), `frame_shape = [width, height]`. `device-node` picks the
   mode from what the camera advertises (see Configuration); if the driver then negotiates a
   different width, height or FourCC, `start()` returns an error instead of silently using the
-  negotiated format (see `CODE_REVIEW.md` §4.7).
+  negotiated format (see `docs/history/CODE_REVIEW.md` §4.7).
 - **Microphone** – interleaved `S16LE` samples as bytes, `frame_shape = [buffer_size, channels]`, and the
   header's `sample_rate` is the rate the sound card granted in Hz.
   Use `FramePacket::decode_to_i16_le` to get `i16` samples back.
@@ -74,7 +74,7 @@ Payload formats:
 ## Requirements
 
 - Linux only. The capture code is v4l2 and ALSA, and `device-node` asserts the OS at startup. Windows and macOS
-  are not supported and not planned; see `docs/specs/08-windows-microphone/` for what a port would involve.
+  are not supported and not planned; see `devices/docs/step-18-windows-microphone.md` for what a port would involve.
 - Rust toolchain with **edition 2024** support (Rust 1.85+)
 - System libraries — pick one:
 
@@ -123,8 +123,8 @@ The same binaries run in every layout. Only the addresses change (see `SPECS.md`
 | Process | Runs on | Binds (listens) | Connects to |
 |---|---|---|---|
 | `device-node run <kind> <index> <ip> <port>` | the machine with the camera or microphone | its PUB socket on `<ip>:<port>` | nothing |
-| `control-hub` | the hub machine | consumers on `HUB_CONSUMER_IP:HUB_CONSUMER_PORT` (default `0.0.0.0:5556`) | every producer in `HUB_PRODUCERS` (or `HUB_PRODUCER_IP:HUB_PRODUCER_PORT`) |
-| `access-client` | any machine that consumes frames | nothing | the hub at `HUB_IP:HUB_PORT` |
+| [`control-hub`](control-hub/README.md) | the hub machine | consumers on `HUB_CONSUMER_IP:HUB_CONSUMER_PORT` (default `0.0.0.0:5556`) | every producer in `HUB_PRODUCERS` (or `HUB_PRODUCER_IP:HUB_PRODUCER_PORT`) |
+| [`access-client`](access-client/README.md) | any machine that consumes frames | nothing | the hub at `HUB_IP:HUB_PORT` |
 
 The `<ip> <port>` arguments of `device-node run` are the address the producer **listens on**. They are not
 the hub's address. Use `0.0.0.0` to accept connections on every interface, or `127.0.0.1` to keep the
@@ -472,7 +472,7 @@ Python notes:
 
 ## TODO
 
-The ordered build plan is in `SPECS.md` §8, and each build item's spec and checklist is in [`docs/specs/`](docs/specs/README.md).
+The ordered build plan is in `SPECS.md` §8, and each build item's spec and checklist lives in the crate that owns it (index in `SPECS.md` §8).
 
 - [x] Device Node CLI
   - [x] List devices
@@ -484,11 +484,11 @@ The ordered build plan is in `SPECS.md` §8, and each build item's spec and chec
 - [x] `DeviceNode` support for cameras + microphones
 - [ ] Capture hardware validation (2026-10-30 single-host run, see [`docs/hardware/`](docs/hardware/); cross-host run still open)
   - [x] Exercise the v4l2 camera capture loop on real hardware (30.0 fps over 70 s through hub and client, 0 dropped)
-  - [x] Camera config selected from the advertised list, FourCC carried on the wire (`docs/specs` step 19)
-  - [x] Microphone enumeration keeps hardware hints on PipeWire hosts (`docs/specs` step 20)
+  - [x] Camera config selected from the advertised list, FourCC carried on the wire (`SPECS.md` §8 step 19)
+  - [x] Microphone enumeration keeps hardware hints on PipeWire hosts (`SPECS.md` §8 step 20)
   - [x] Exercise the ALSA microphone capture loop on real hardware (16 kHz mono over 70 s through hub and client, 0 dropped)
-  - [x] Microphone sample rate carried on the wire (`docs/specs` step 21)
-  - [x] Windows microphone: decided unsupported (Requirements; `docs/specs` step 18), empty module removed
+  - [x] Microphone sample rate carried on the wire (`SPECS.md` §8 step 21)
+  - [x] Windows microphone: decided unsupported (Requirements; `SPECS.md` §8 step 18), empty module removed
 - [ ] Control Hub
   - [x] Load bind/connect config from env and run a ZMQ proxy
   - [x] Multi-producer fan-in (`HUB_PRODUCERS`, comma-separated `ip:port` list)
