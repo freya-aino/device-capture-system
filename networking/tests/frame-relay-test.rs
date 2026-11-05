@@ -35,7 +35,6 @@ fn relay_publishes_transformed_frames_and_skips_the_rest() {
     let mut relay = FrameRelay::new(
         vec![producer_endpoint],
         output_endpoint.clone(),
-        3,
         Box::new(
             |mut packet: FramePacket| match packet.frame_info.device_info.id.as_str() {
                 "cam" => {
@@ -50,7 +49,7 @@ fn relay_publishes_transformed_frames_and_skips_the_rest() {
     );
     relay.start(&context).unwrap();
 
-    let mut receiver = Receiver::new_endpoint(output_endpoint, 10, 3);
+    let mut receiver = Receiver::new_endpoint(output_endpoint, 10, 1024);
     receiver.start(&context).unwrap();
 
     let mut received = None;
@@ -77,6 +76,62 @@ fn relay_publishes_transformed_frames_and_skips_the_rest() {
     assert_eq!(
         frame.frame_info.capture_timestamp,
         Some(SystemTime::UNIX_EPOCH + Duration::from_secs(7))
+    );
+
+    receiver.stop().unwrap();
+    relay.stop().unwrap();
+    producer.stop().unwrap();
+}
+
+#[test]
+fn a_slow_transform_skips_to_the_newest_frame_instead_of_queueing() {
+    let context = zmq::Context::new();
+    let producer_endpoint = "tcp://127.0.0.1:16523".to_string();
+    let output_endpoint = "tcp://127.0.0.1:16524".to_string();
+
+    let mut producer = Sender::new_endpoint(producer_endpoint.clone(), 100, 1024);
+    producer.start(&context).unwrap();
+
+    // Each transform takes 300 ms, far longer than the producer's frame interval.
+    let mut relay = FrameRelay::new(
+        vec![producer_endpoint],
+        output_endpoint.clone(),
+        Box::new(|packet: FramePacket| {
+            sleep(Duration::from_millis(300));
+            Ok(Some(packet))
+        }),
+    );
+    relay.start(&context).unwrap();
+
+    let mut receiver = Receiver::new_endpoint(output_endpoint, 100, 1024);
+    receiver.start(&context).unwrap();
+    sleep(Duration::from_millis(500));
+
+    // Frame 0 starts the slow transform; frames 1..=20 arrive while it runs.
+    for i in 0..=20u8 {
+        producer
+            .send(frame_packet("cam", vec![i]), zmq::DONTWAIT)
+            .unwrap();
+        sleep(Duration::from_millis(10));
+    }
+
+    let mut seen = Vec::new();
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(3) {
+        if let Some(frame) = receiver.receive(zmq::DONTWAIT).unwrap() {
+            seen.push(frame.data[0]);
+        }
+        sleep(Duration::from_millis(10));
+    }
+
+    assert_eq!(
+        seen.last(),
+        Some(&20),
+        "the newest frame is published: {seen:?}"
+    );
+    assert!(
+        seen.len() <= 4,
+        "stale frames were skipped, not queued: {seen:?}"
     );
 
     receiver.stop().unwrap();

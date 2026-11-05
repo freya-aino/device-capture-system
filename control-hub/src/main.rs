@@ -217,7 +217,6 @@ fn main() -> Result<(), Error> {
                     .map(|producer| format!("tcp://{}", producer))
                     .collect(),
                 format!("tcp://{}:{}", config.consumer_ip, pre.port),
-                config.data_chunk_size,
                 Box::new(move |packet| preprocessor.process(&packet)),
             );
             relay.start(&context)?;

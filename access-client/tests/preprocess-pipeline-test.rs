@@ -52,7 +52,6 @@ fn hub_publishes_processed_frames_beside_the_raw_stream() {
     let mut relay = FrameRelay::new(
         vec![producer.clone()],
         processed_out.clone(),
-        1024,
         Box::new(move |packet| preprocessor.process(&packet)),
     );
     relay.start(&context).unwrap();
