@@ -20,8 +20,9 @@ const INPUT_QUEUE: i32 = 256;
 /// error, which is logged and drops that frame only.
 pub type FrameTransform = Box<dyn FnMut(FramePacket) -> Result<Option<FramePacket>> + Send>;
 
-/// Hub-side per-frame processing. Subscribes to the producer endpoints, passes frames through a
-/// transform, and publishes the results on its own PUB endpoint in the normal frame format, so a
+/// Hub-side per-frame processing. Subscribes to the given endpoints (in the hub, the proxy's internal
+/// `inproc://` output, so producers send each frame once), passes frames through a transform, and
+/// publishes the results on its own PUB endpoint in the normal frame format, so a
 /// plain `Receiver` reads them. The frame's sequence part is kept, so gap counting still works. It
 /// runs beside the forwarding proxy and leaves the raw stream untouched.
 ///
@@ -30,7 +31,7 @@ pub type FrameTransform = Box<dyn FnMut(FramePacket) -> Result<Option<FramePacke
 /// rate instead of adding latency. Its output queue is short, so a slow consumer loses frames rather
 /// than making the hub buffer them. Consumers see both kinds of drop as sequence gaps.
 pub struct FrameRelay {
-    producers: Vec<String>,
+    inputs: Vec<String>,
     output_endpoint: String,
     queue: i32,
     transform: Option<FrameTransform>,
@@ -40,12 +41,12 @@ pub struct FrameRelay {
 
 impl FrameRelay {
     pub fn new(
-        producers: Vec<String>,
+        inputs: Vec<String>,
         output_endpoint: impl Into<String>,
         transform: FrameTransform,
     ) -> Self {
         FrameRelay {
-            producers,
+            inputs,
             output_endpoint: output_endpoint.into(),
             queue: DEFAULT_RELAY_QUEUE as i32,
             transform: Some(transform),
@@ -70,8 +71,8 @@ impl FrameRelay {
         input.set_subscribe(&[])?;
         input.set_linger(0)?;
         input.set_rcvhwm(INPUT_QUEUE)?;
-        for producer in &self.producers {
-            input.connect(producer)?;
+        for endpoint in &self.inputs {
+            input.connect(endpoint)?;
         }
 
         let output = context.socket(PUB)?;

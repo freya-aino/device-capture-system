@@ -29,8 +29,9 @@ fn yuyv_frame(device_id: &str) -> FramePacket {
     FramePacket::new(frame_info, data.into_boxed_slice())
 }
 
-/// The hub layout with `HUB_PREPROCESS_PORT` set: the proxy forwards raw frames and a `FrameRelay`
-/// running a `Preprocessor` publishes processed ones on a separate port.
+/// The hub layout with `HUB_PREPROCESS_PORT` set: the proxy forwards raw frames, and a `FrameRelay`
+/// running a `Preprocessor` reads the proxy's internal output (not the producer) and publishes
+/// processed frames on a separate port.
 #[test]
 fn hub_publishes_processed_frames_beside_the_raw_stream() {
     let context = zmq::Context::new();
@@ -38,7 +39,9 @@ fn hub_publishes_processed_frames_beside_the_raw_stream() {
     let raw_out = "tcp://127.0.0.1:16532".to_string();
     let processed_out = "tcp://127.0.0.1:16533".to_string();
 
+    let internal = "inproc://test-hub-frames";
     let mut hub = Proxy::new_endpoints(producer.clone(), raw_out.clone(), 10, 1024);
+    hub.add_to_endpoint(internal);
     hub.start(&context).unwrap();
     let config = PreprocessConfig::from_toml(
         r#"
@@ -50,7 +53,7 @@ fn hub_publishes_processed_frames_beside_the_raw_stream() {
     .unwrap();
     let preprocessor = Preprocessor::new(config);
     let mut relay = FrameRelay::new(
-        vec![producer.clone()],
+        vec![internal.to_string()],
         processed_out.clone(),
         Box::new(move |packet| preprocessor.process(&packet)),
     );

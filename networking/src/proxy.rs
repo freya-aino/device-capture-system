@@ -19,6 +19,7 @@ pub struct Proxy {
     from: Connection,
     to: Connection,
     extra_from_endpoints: Vec<String>,
+    extra_to_endpoints: Vec<String>,
     control_endpoint: String,
     control: Option<Socket>,
     handle: Option<JoinHandle<Result<(), Error>>>,
@@ -38,6 +39,7 @@ impl Proxy {
             from: Connection::new(from_ip, from_port, queue_size, data_chunk_size),
             to: Connection::new(to_ip, to_port, queue_size, data_chunk_size),
             extra_from_endpoints: Vec::new(),
+            extra_to_endpoints: Vec::new(),
             control_endpoint: format!("inproc://proxy-control-{}-{}", from_port, to_port),
             control: None,
             handle: None,
@@ -56,6 +58,7 @@ impl Proxy {
             from: Connection::new_endpoint(from_endpoint, queue_size, data_chunk_size),
             to: Connection::new_endpoint(to_endpoint, queue_size, data_chunk_size),
             extra_from_endpoints: Vec::new(),
+            extra_to_endpoints: Vec::new(),
             control_endpoint: format!("inproc://proxy-control-{}", id),
             control: None,
             handle: None,
@@ -66,6 +69,15 @@ impl Proxy {
     /// Connects the XSUB side to an additional producer endpoint. Must be called before `start()`.
     pub fn add_from_endpoint(&mut self, endpoint: impl Into<String>) {
         self.extra_from_endpoints.push(endpoint.into());
+    }
+
+    /// Binds the XPUB side to an additional consumer endpoint. Must be called before `start()`.
+    ///
+    /// The hub binds an `inproc://` endpoint here for its own relays (sync, pre-processing), so they
+    /// read the fanned-in stream instead of subscribing to every producer a second time. Peers on
+    /// `inproc://` endpoints are not counted in `peer_counts()`.
+    pub fn add_to_endpoint(&mut self, endpoint: impl Into<String>) {
+        self.extra_to_endpoints.push(endpoint.into());
     }
 
     /// Live counts of connected producers (XSUB side) and consumers (XPUB side). Valid after `start()`.
@@ -94,6 +106,11 @@ impl Proxy {
         if let Some(socket) = self.from.socket.as_ref() {
             for endpoint in &self.extra_from_endpoints {
                 socket.connect(endpoint)?;
+            }
+        }
+        if let Some(socket) = self.to.socket.as_ref() {
+            for endpoint in &self.extra_to_endpoints {
+                socket.bind(endpoint)?;
             }
         }
 

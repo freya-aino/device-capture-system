@@ -66,3 +66,62 @@ fn peer_counts_track_producers_and_consumers() {
     producer_b.stop().unwrap();
     hub.stop().unwrap();
 }
+
+#[test]
+fn internal_endpoint_delivers_frames_and_is_not_counted_as_a_consumer() {
+    let context = zmq::Context::new();
+    let producer_endpoint = "tcp://127.0.0.1:16411".to_string();
+    let consumer_endpoint = "tcp://127.0.0.1:16412".to_string();
+    let internal = "inproc://peer-count-test-internal";
+
+    let mut hub = Proxy::new_endpoints(producer_endpoint.clone(), consumer_endpoint, 10, 1024);
+    hub.add_to_endpoint(internal);
+    let peers = hub.peer_counts();
+    hub.start(&context).unwrap();
+
+    let reader = context.socket(zmq::SUB).unwrap();
+    reader.set_subscribe(b"").unwrap();
+    reader.connect(internal).unwrap();
+
+    let mut producer = Sender::new_endpoint(producer_endpoint, 10, 1024);
+    producer.start(&context).unwrap();
+
+    let mut received = false;
+    let start = Instant::now();
+    while !received && start.elapsed() < Duration::from_secs(3) {
+        producer
+            .send(
+                shared::FramePacket::new(
+                    shared::FramePacketInformation {
+                        device_info: shared::DeviceInformation {
+                            id: "cam".to_string(),
+                            name: "test".to_string(),
+                            device_type: shared::DeviceType::Camera,
+                            device_status: shared::DeviceStatus::Available,
+                        },
+                        rx_timestamp: None,
+                        tx_timestamp: None,
+                        frame_shape: vec![1, 1],
+                        pixel_format: None,
+                        sample_rate: None,
+                        capture_timestamp: None,
+                    },
+                    vec![1u8].into_boxed_slice(),
+                ),
+                zmq::DONTWAIT,
+            )
+            .unwrap();
+        sleep(Duration::from_millis(50));
+        received = reader.recv_multipart(zmq::DONTWAIT).is_ok();
+    }
+
+    assert!(
+        received,
+        "the internal endpoint should receive the fanned-in stream"
+    );
+    assert_eq!(peers.consumers(), 0, "internal readers are not consumers");
+
+    drop(reader);
+    producer.stop().unwrap();
+    hub.stop().unwrap();
+}

@@ -125,11 +125,12 @@ impl GroupReceiver {
     }
 }
 
-/// Hub-side sync. Subscribes to the producer endpoints, groups their frames by capture time with
-/// an `Aligner`, and publishes every aligned group on its own PUB endpoint. It runs beside the
+/// Hub-side sync. Subscribes to the given endpoints (in the hub, the proxy's internal `inproc://`
+/// output, so producers send each frame once), groups the frames by capture time with an `Aligner`,
+/// and publishes every aligned group on its own PUB endpoint. It runs beside the
 /// forwarding proxy and leaves the raw stream untouched.
 pub struct AlignedRelay {
-    producers: Vec<String>,
+    inputs: Vec<String>,
     output_endpoint: String,
     devices: Vec<String>,
     tolerance: Duration,
@@ -140,13 +141,13 @@ pub struct AlignedRelay {
 
 impl AlignedRelay {
     pub fn new(
-        producers: Vec<String>,
+        inputs: Vec<String>,
         output_endpoint: impl Into<String>,
         devices: Vec<String>,
         tolerance: Duration,
     ) -> Self {
         AlignedRelay {
-            producers,
+            inputs,
             output_endpoint: output_endpoint.into(),
             devices,
             tolerance,
@@ -171,8 +172,8 @@ impl AlignedRelay {
         let input = context.socket(SUB)?;
         input.set_subscribe(&[])?;
         input.set_linger(0)?;
-        for producer in &self.producers {
-            input.connect(producer)?;
+        for endpoint in &self.inputs {
+            input.connect(endpoint)?;
         }
 
         let output = context.socket(PUB)?;

@@ -11,6 +11,9 @@ use preprocess::{PreprocessConfig, Preprocessor};
 mod status;
 use status::DEFAULT_HUB_STATUS_ADDR;
 
+/// In-process endpoint on which the proxy republishes the fanned-in stream for the hub's relays.
+const INTERNAL_ENDPOINT: &str = "inproc://control-hub-frames";
+
 struct HubConfig {
     producers: Vec<SocketAddrV4>,
     consumer_ip: Ipv4Addr,
@@ -175,17 +178,15 @@ fn main() -> Result<(), Error> {
     for producer in rest {
         proxy.add_from_endpoint(format!("tcp://{}", producer));
     }
+    // The hub's own relays read the fanned-in stream here, so each producer sends its frames once.
+    proxy.add_to_endpoint(INTERNAL_ENDPOINT);
 
     proxy.start(&context)?;
 
     let mut sync_relay = match config.sync.as_ref() {
         Some(sync) => {
             let mut relay = AlignedRelay::new(
-                config
-                    .producers
-                    .iter()
-                    .map(|producer| format!("tcp://{}", producer))
-                    .collect(),
+                vec![INTERNAL_ENDPOINT.to_string()],
                 format!("tcp://{}:{}", config.consumer_ip, sync.port),
                 sync.devices.clone(),
                 sync.tolerance,
@@ -211,11 +212,7 @@ fn main() -> Result<(), Error> {
                 config.consumer_ip, pre.port, devices
             );
             let mut relay = FrameRelay::new(
-                config
-                    .producers
-                    .iter()
-                    .map(|producer| format!("tcp://{}", producer))
-                    .collect(),
+                vec![INTERNAL_ENDPOINT.to_string()],
                 format!("tcp://{}:{}", config.consumer_ip, pre.port),
                 Box::new(move |packet| preprocessor.process(&packet)),
             );
