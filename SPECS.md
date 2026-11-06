@@ -40,7 +40,7 @@ split across hosts (talking over the LAN) — the transport layer doesn't distin
 | **Accumulator** | Fans in frames from all connected producers into one logical stream | `control-hub` (via `networking::Proxy`'s XSUB side, one connection per `HUB_PRODUCERS` endpoint) |
 | **Syncer** | Aligns frames from different producers/devices to a common clock/reference | `control-hub` (planned — see §6) |
 | **Consumer** | Subscribes to the hub's aggregated output and does something with the frames | `access-client` bin, `calibration`, the planned `recorder` and `live-sink` bins (items 24, 25), and third-party clients (e.g. Python) |
-| **Pre-processor** | Applies configured basic image transforms per camera | `preprocess` crate, run in `control-hub` (`networking::FrameRelay`) or in a consumer (item 23) |
+| **Pre-processor** | Applies configured basic image transforms per camera. It lives with the hub, never the producer: producers publish native frames once, and the hub's relay reads its own fanned-in stream | `preprocess` crate, run in `control-hub` (`networking::FrameRelay`) or in a consumer (item 23) |
 
 There is currently no separate "syncer" crate — sync is a planned responsibility *inside*
 `control-hub`, not a standalone deployable unit. If a future requirement needs sync to scale or

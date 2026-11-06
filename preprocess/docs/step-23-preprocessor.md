@@ -75,6 +75,9 @@ shape.
 - The hub relay is live: it drains its input and processes the newest frame per device, and it sends each
   payload as one part. Both came out of the webcam run, where the first version fell 8 s behind at 1080p.
 - `HUB_PREPROCESS_PORT` alone does nothing; `PREPROCESS_CONFIG` is required with it.
+- The relay reads the proxy's internal `inproc://` output, not the producers. The first version subscribed to every
+  producer itself, which made each producer send its stream twice. The sync relay had the same problem and was
+  changed with it (2026-11-06).
 
 ## Step checklist
 

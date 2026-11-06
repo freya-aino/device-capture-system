@@ -33,6 +33,13 @@ Per-stage timing on a 1080p JPEG (`preprocess` bench) before optimising: decode 
 | 1920×1080 MJPG | 25.5 fps, 134 skipped in 30 s | 80 / 141 ms | 149 % | 29.8 fps |
 | 640×480 YUYV | 30.0 fps, 0 dropped | 13 / 22 ms | 25 % | 30.0 fps |
 
+## Relays reading the hub's stream (2026-11-06)
+
+Both relays now read the proxy's internal output instead of subscribing to the producer. 1920×1080 MJPG with
+pre-processing and sync on together: processed 22.0 fps at 84 ms mean latency (lower than 25.5 fps above, because
+the sync relay shares the CPU), aligned 29.8 groups/s, raw 30.0 fps, and `/status` reports
+`{"producers":1,"consumers":0}` with no external client connected.
+
 Consumer side (`CLIENT_PREPROCESS_CONFIG`, same pipeline, 1080p MJPG): 22 fps, latency growing to 2.7 s. The CLI
 processes every frame it receives, so a pipeline slower than the camera queues frames in its socket. Use the hub
 relay, a smaller camera mode, or an early `resize` for live use.

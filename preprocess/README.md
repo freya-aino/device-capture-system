@@ -41,7 +41,8 @@ still align with the rest of the stream. Microphone frames and devices without a
 | `access-client` CLI | `CLIENT_PREPROCESS_CONFIG` ([`access-client/README.md`](../access-client/README.md)) | passed through unchanged |
 | Your own consumer | `PreprocessConfig::load`, `Preprocessor::process` | your choice |
 
-The hub runs the pipeline in a `networking::FrameRelay`. That relay is live, not a queue: it processes the newest
+The pre-processor belongs to the hub, not to the producers: device nodes always publish the camera's native frames,
+and the hub's `networking::FrameRelay` reads the hub's own fanned-in stream, so producers send each frame once. That relay is live, not a queue: it processes the newest
 frame per device and skips the ones that arrived meanwhile, so latency stays bounded and consumers see skipped
 frames as drops. A consumer that calls `process` on every frame it receives builds up latency instead, if its
 pipeline is slower than the camera.

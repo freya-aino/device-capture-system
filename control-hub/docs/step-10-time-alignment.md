@@ -17,6 +17,9 @@ The original proposal said the consumer should read the aligned port *by default
 stream is what single-device deployments, the Python bindings and the existing tests consume, and switching the
 default would silently break them. Aligned reading is one environment variable away instead.
 
+2026-11-06: the relay reads the proxy's internal `inproc://` output instead of subscribing to every producer, so
+producers send their frames once. Re-checked on the webcam with pre-processing on: 29.8 groups/s.
+
 ## Evidence
 
 - `networking/src/aligned.rs` exists.
