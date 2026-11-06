@@ -477,7 +477,7 @@ The ordered build plan is in `SPECS.md` §8, and each build item's spec and chec
 - [x] Device Node CLI
   - [x] List devices
   - [x] Run a single device (camera/mic) and publish frames
-  - [ ] Generate / Save Config
+  - [ ] Generate / Save Config (`SPECS.md` §8 step 27)
 - [ ] Device Node HTTP Server
   - [x] Read-only `GET /status` (device and connection state)
   - [x] StartDevice / StopDevice / RestartDevice (`POST /start`, `/stop`, `/restart`)
@@ -506,10 +506,11 @@ The ordered build plan is in `SPECS.md` §8, and each build item's spec and chec
     - [x] `DeviceSystem.get_frame() -> generator`
   - [x] Package Python bindings (maturin / `pyproject.toml`)
   - [x] Automated tests for the Python bindings (`python-client/tests/test_loopback.py`)
+  - [ ] Aligned groups and pixel access for processed frames in Python (step 28)
 - [ ] Delivery to downstream applications
   - [x] Pre-processor with per-camera transforms (rotate, flip, crop, resize, brightness, contrast, gamma, grayscale), in the hub or a consumer ([`preprocess/`](preprocess/README.md), `SPECS.md` §8 step 23)
-  - [ ] Recorder: selected streams to video files with per-frame timestamps (step 24)
-  - [ ] Live output to other applications: ZMQ ports, plus a `v4l2loopback` virtual camera (step 25)
+  - [ ] Recorder: selected streams to video files with per-frame timestamps ([`recorder/`](recorder/README.md), step 24; scaffolded)
+  - [ ] Live output to other applications: ZMQ ports (done), plus a `v4l2loopback` virtual camera ([`live-sink/`](live-sink/README.md), step 25; scaffolded)
 - [ ] Multi-camera, cross-host hardware run (step 26)
 
 ## License

@@ -38,12 +38,12 @@ split across hosts (talking over the LAN) — the transport layer doesn't distin
 | **Producer** | Owns a hardware device (camera or mic), runs its capture loop, publishes `FramePacket`s | `device-node` bin + `devices` crate |
 | **Receiver** | Terminates producer connections, subscribes to their published frames | `control-hub` (via `networking::Connection`/`Proxy`'s XSUB side) |
 | **Accumulator** | Fans in frames from all connected producers into one logical stream | `control-hub` (via `networking::Proxy`'s XSUB side, one connection per `HUB_PRODUCERS` endpoint) |
-| **Syncer** | Aligns frames from different producers/devices to a common clock/reference | `control-hub` (planned — see §6) |
-| **Consumer** | Subscribes to the hub's aggregated output and does something with the frames | `access-client` bin, `calibration`, the planned `recorder` and `live-sink` bins (items 24, 25), and third-party clients (e.g. Python) |
+| **Syncer** | Aligns frames from different producers/devices by capture time | `control-hub` (opt-in `AlignedRelay`, item 10), or a consumer with `AlignedClient` |
+| **Consumer** | Subscribes to the hub's aggregated output and does something with the frames | `access-client` bin, `calibration`, the `recorder` and `live-sink` bins (items 24, 25, scaffolded), and third-party clients (e.g. Python) |
 | **Pre-processor** | Applies configured basic image transforms per camera. It lives with the hub, never the producer: producers publish native frames once, and the hub's relay reads its own fanned-in stream | `preprocess` crate, run in `control-hub` (`networking::FrameRelay`) or in a consumer (item 23) |
 
-There is currently no separate "syncer" crate — sync is a planned responsibility *inside*
-`control-hub`, not a standalone deployable unit. If a future requirement needs sync to scale or
+There is no separate "syncer" crate — sync is a responsibility *inside* `control-hub` (an opt-in relay), not a
+standalone deployable unit. If a future requirement needs sync to scale or
 fail independently of the hub's fan-in, it would become its own crate; nothing today requires
 that split.
 
@@ -92,7 +92,7 @@ Multiple producer hosts (A1, A2, …) are expected to fan in to the same hub —
 
 **Multi-producer fan-in is implemented:** the hub connects its XSUB socket to every endpoint listed in
 `HUB_PRODUCERS` (`ip:port,ip:port`), falling back to `HUB_PRODUCER_IP` / `HUB_PRODUCER_PORT` when unset
-(§8 item 13). Opt-in hub sync is partial (§8 item 10).
+(§8 item 13). Opt-in hub sync is validated on real devices (§8 item 10).
 
 ### 3.4 What's shared across all three
 In every topology the wire protocol and the per-role code are identical; only bind/connect
@@ -123,9 +123,10 @@ should **not** be replaced with WebRTC:
   on a LAN they add latency to solve a problem that doesn't exist here, and they interfere with
   the deterministic frame-interval assumption sync will rely on.
 
-ZMQ's own trade-off — PUB silently drops frames once a subscriber's high-water mark is hit, with
-no log or counter (§6, and `docs/history/CODE_REVIEW.md` §3) — is the one real cost of this choice and must be
-instrumented, not papered over by switching transports.
+ZMQ's own trade-off — PUB silently drops frames once a subscriber's high-water mark is hit — is the one real cost
+of this choice and must be instrumented, not papered over by switching transports. It is instrumented: every frame
+carries a sender sequence number, and receivers count the gaps (`dropped_frames`, the `access-client` summary,
+the recorder's `session.json`).
 
 **Conclusion:** ZMQ is architecturally correct for this system's latency goal. Forwarding, multi-producer
 fan-in, remote control, hub-side sync and hardware validation are implemented and measured (§6, `docs/hardware/`).
@@ -151,7 +152,7 @@ the fallback if consumers must avoid a Rust-built extension. It is not planned.
 
 ## 6. Current implementation state
 
-Revised 2026-10-29 against the current workspace (`e367b77`). `docs/history/CODE_REVIEW.md` is a historical review at commit
+Revised 2026-11-06. `docs/history/CODE_REVIEW.md` is a historical review at commit
 `40c8af5`; see it for line numbers and the findings it already applied (for example the `devices`
 crate's broken module re-export, §4.1 there).
 
@@ -171,7 +172,8 @@ crate's broken module re-export, §4.1 there).
 | `python-client` | ✅ PyO3 bindings (`device_system`) packaged with maturin and covered by a pytest that runs the loopback example | Consumer |
 | `calibration` | ✅ Native Rust consumer crate (`opencv`): ChArUco reference-point detection, camera intrinsics, frame decoding (MJPG/YUYV); deterministic fixture test. ❌ Multi-camera extrinsics (item 22) | Calibration |
 | `preprocess` | ✅ Per-camera transforms (rotate, flip, crop, resize, brightness, contrast, gamma, grayscale) from TOML; hub output on `HUB_PREPROCESS_PORT` via `FrameRelay`, or in `access-client`. Webcam: 640×480 at 30 fps / 13 ms, 1080p at 25.5 fps / 80 ms | Pre-processor |
-| `recorder`, `live-sink` | ❌ Not started (items 24, 25) | Consumer |
+| `recorder` | ⚠️ Scaffold: `RECORD_*` configuration, session ids, file stems, sidecar and `session.json` formats, tested; no capture or writing yet (item 24) | Consumer |
+| `live-sink` | ⚠️ Scaffold: `LIVE_*` configuration and output-format decision, tested; no V4L2 writer yet (item 25) | Consumer |
 | `DeviceStatus` | ✅ Status transitions are implemented and observable via `device-node` | Observability for Producer |
 
 ### 6.1 What already satisfies the topology requirement (§3)
@@ -181,24 +183,20 @@ are configured through arguments and environment variables only. Topologies §3.
 several producers via `HUB_PRODUCERS`) are reachable through configuration alone. Sync (§2 Syncer) is an opt-in
 `HUB_SYNC_PORT` relay, covered by tests and validated on real devices (item 10).
 
-### 6.2 What blocks it today
-Resolved: `networking::Proxy` forwards data (`proxy_steerable`) and `control-hub` runs it;
-`DeviceNode` is generic over `T: Device`, status transitions are implemented, and `/status` is served.
-`cargo test --workspace` and the Python loopback pytest pass at `3c3d183` (2026-10-30), and again after items 19,
-20 and 12 landed the same day.
+### 6.2 What is open
 
-Resolved since the last review: multi-producer fan-in (§8 item 13), covered by the two-producer proxy
-and hub pipeline tests.
+Revised 2026-11-06. `cargo test --workspace` passes; the Python loopback pytest last passed 2026-10-30.
 
-Open, in priority order:
-0. ✅ Producers on real hardware: item 19 (camera selection, FourCC on the wire, frame-rate fixes), item 20
-   (microphone enumeration on PipeWire hosts) and item 21 (sample rate on the wire) are done.
-1. ✅ Sync (item 10): the hub's opt-in `AlignedRelay` (`HUB_SYNC_PORT`) is validated on real devices; consumers read it with `CLIENT_ALIGNED_PORT`, `GroupReceiver` or align themselves with `AlignedClient`. ✅ Calibration (item 17): ChArUco detection and intrinsics in `calibration/`; extrinsics and a real-camera run remain.
-2. ✅ Hardware validation (item 12): 70 s single-host run through the full path, camera 30.0 fps and microphone
-   16 kHz with 0 dropped frames (`docs/hardware/`). A cross-host run is still outstanding.
-3. ✅ Remote control: `POST /start`, `/stop` and `/restart` are implemented on the device-node status server (`device-node/README.md`, item 14).
-4. ✅ Python packaging and tests: maturin `pyproject.toml` and a loopback pytest (§5, item 15).
-5. ✅ Windows microphone: decided unsupported and recorded in the README Requirements (item 18).
+1. **Delivery** (§1): the recorder (item 24) and the `v4l2loopback` live sink (item 25) are scaffolded: their
+   configuration is implemented and tested, capture and writing are not.
+2. **Multi-camera:** camera extrinsics (item 22) and a multi-camera, cross-host run (item 26). Both need a second
+   camera; item 26 also needs a second host.
+3. **Producers:** saving and reusing a device-node configuration (item 27).
+4. **Python:** aligned groups and pixel access for processed frames (item 28).
+
+Known limits of finished work, recorded in the owning crates: pre-processing a 1080p MJPG stream reaches 22–25 fps,
+not 30 (`preprocess/README.md`); the 1 KiB default chunk size has not been measured on the raw path at 1080p
+(item 26); the hardware runs so far are single-host.
 
 ---
 
@@ -218,13 +216,16 @@ only what spans crates.
 | Python bindings | [`python-client/README.md`](python-client/README.md) |
 | Calibration (ChArUco detection, intrinsics) | [`calibration/README.md`](calibration/README.md) |
 | Pre-processor (transforms, config, placement, performance) | [`preprocess/README.md`](preprocess/README.md) |
+| Recorder (session layout, sidecar, `RECORD_*`) | [`recorder/README.md`](recorder/README.md) |
+| Live sink (`v4l2loopback`, `LIVE_*`) | [`live-sink/README.md`](live-sink/README.md) |
 | Real-hardware results | [`docs/hardware/`](docs/hardware/) |
 | Historical review at commit `40c8af5` | [`docs/history/CODE_REVIEW.md`](docs/history/CODE_REVIEW.md) |
 
 ## 8. Build order and remaining work
 
-Items 1–21 and 23 are complete. Items 22 and 24–26 are open; they were added 2026-11-05 to deliver images to downstream
-applications (§1). Items 19–21 were added 2026-10-30 from the first hardware run. Item numbers
+Items 1–21 and 23 are complete; 24 and 25 are scaffolded; 22 and 26–28 are open. Items 22–26 were added 2026-11-05 to
+deliver images to downstream applications (§1); 27 and 28 were added 2026-11-06 from the README TODO and the
+Python gaps. Items 19–21 were added 2026-10-30 from the first hardware run. Item numbers
 are stable so older references still resolve. Each item's spec, acceptance criteria and checklist is in its
 own file, kept in the crate that owns it (cross-cutting items, and items whose crate does not exist yet, are in [`docs/steps/`](docs/steps/)). §8.1 gives the order in which to
 implement the open items.
@@ -254,16 +255,20 @@ implement the open items.
 | 21 | 2 — Producers | ✅ | [step-21](devices/docs/step-21-microphone-sample-rate-on-the-wire.md) |
 | 22 | 7 — Calibration | ❌ | [step-22](calibration/docs/step-22-camera-extrinsics.md) |
 | 23 | 9 — Delivery | ✅ | [step-23](preprocess/docs/step-23-preprocessor.md) |
-| 24 | 9 — Delivery | ❌ | [step-24](docs/steps/step-24-recorder.md) |
-| 25 | 9 — Delivery | ❌ | [step-25](docs/steps/step-25-live-output.md) |
+| 24 | 9 — Delivery | ⚠️ | [step-24](recorder/docs/step-24-recorder.md) |
+| 25 | 9 — Delivery | ⚠️ | [step-25](live-sink/docs/step-25-live-output.md) |
 | 26 | 6 — Hardware validation | ❌ | [step-26](docs/steps/step-26-multi-camera-run.md) |
+| 27 | 2 — Producers | ❌ | [step-27](device-node/docs/step-27-saved-config.md) |
+| 28 | 4 — Consumers and Python | ❌ | [step-28](python-client/docs/step-28-python-aligned-and-processed.md) |
 
 ### 8.1 Order of remaining work
 
 1. **Item 24 (recorder):** the first way to hand images over, and what training data needs.
 2. **Item 25 (live output):** the second hand-off; the ZMQ part exists, the `v4l2loopback` sink does not.
-3. **Item 22 (extrinsics):** needs a second camera; the recorder copies its result into sessions.
-4. **Item 26 (multi-camera run):** needs two hosts and cameras. It can run whenever they are available, and its
+3. **Item 28 (Python):** most downstream applications are Python; small, and independent of the above.
+4. **Item 27 (saved config):** small; makes multi-host setups repeatable before item 26.
+5. **Item 22 (extrinsics):** needs a second camera; the recorder copies its result into sessions.
+6. **Item 26 (multi-camera run):** needs two hosts and cameras. It can run whenever they are available, and its
    numbers decide whether hub-side pre-processing works across hosts.
 
 An item is done only

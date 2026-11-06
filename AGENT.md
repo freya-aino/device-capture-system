@@ -15,6 +15,8 @@ devices/        V4lCameraDevice, AlsaMicrophoneDevice — implement shared::Devi
 device-node/    bin: runs on a capture machine (lib part: DeviceNode + helpers)
 control-hub/    bin: central hub (XSUB/XPUB proxy fanning in every `HUB_PRODUCERS` endpoint; sync)
 access-client/  bin+lib: consumer client that subscribes to the hub and yields decoded frames
+recorder/       bin+lib: records selected hub streams to video/WAV files with per-frame sidecars (scaffold)
+live-sink/      bin+lib: writes one hub stream into a v4l2loopback camera (scaffold)
 preprocess/     lib: per-camera image transforms from TOML (pure Rust); run by control-hub's FrameRelay or a consumer
 calibration/    lib: ChArUco reference-point detection and intrinsics on the `opencv` crate; consumes frames, not used by the hub
 python-client/  PyO3 extension module (`device_system`): `DeviceSystem` + `Frame` for Python consumers
@@ -81,14 +83,15 @@ incompatible `libclang` build available and picked the wrong one.
 
 Worth knowing before you debug something — fix only if the task asks for it. The current status is in
 `SPECS.md` §6 and the README TODO; `docs/history/CODE_REVIEW.md` is a historical review at commit `40c8af5` and its
-line numbers may be stale. This is only the two items that still require real hardware to close out.
+line numbers may be stale.
 
 - Linux only, by decision (README Requirements, `SPECS.md` §8 step 18). There is no Windows module any more; do not
   add `cfg(target_os = "windows")` stubs.
-- Camera and microphone capture (opening a real device and reading frames) has never been exercised
-  against real hardware on this machine — it compiles and is covered by hardware-free tests
-  (enumeration, status transitions, error paths), but the actual capture loop is unverified. See
-  `SPECS.md` §8 item 12 for the hardware validation plan.
+- Capture is validated on one host only (a Framework Laptop 12 webcam and microphone, `docs/hardware/`). Several
+  cameras and several hosts are untested (item 26). Tests that need a real device are `#[ignore]`.
+- Pre-processing belongs to the hub, never to the producers: device nodes publish native frames, and the hub's
+  relays read the proxy's internal `inproc://` stream rather than subscribing to producers.
+- `recorder` and `live-sink` are scaffolds: their configuration is real, their binaries refuse to run past it.
 
 ## Working rules
 
