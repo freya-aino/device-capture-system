@@ -48,6 +48,12 @@ impl Receiver {
         self.dropped_frames
     }
 
+    /// The wire sequence number of the last frame received from `device_id`, so a consumer can
+    /// record it next to the frame `receive` just returned.
+    pub fn last_sequence(&self, device_id: &str) -> Option<u64> {
+        self.last_sequence.get(device_id).copied()
+    }
+
     pub fn start(&mut self, context: &Context) -> Result<(), Error> {
         self.connection.open(context, SUB)
     }

@@ -49,6 +49,12 @@ impl AccessClient {
         self.receiver.dropped_frames()
     }
 
+    /// The wire sequence number of the last frame received from `device_id` (the frame `next_frame`
+    /// or `run` just delivered for it).
+    pub fn last_sequence(&self, device_id: &str) -> Option<u64> {
+        self.receiver.last_sequence(device_id)
+    }
+
     /// Blocks (polling) until a frame is available or `timeout` elapses.
     pub fn next_frame(&mut self, timeout: Duration) -> Result<Option<FramePacket>, Error> {
         let start = std::time::Instant::now();

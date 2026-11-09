@@ -327,10 +327,12 @@ mod tests {
         assert!(s.flush().is_none(), "nothing recorded yet");
         s.record(&FrameGroup {
             frames: vec![packet("cam", 0, 10, 8), packet("mic", 4, 10, 8)],
+            sequences: vec![0, 0],
             skew: Duration::from_millis(4),
         });
         s.record(&FrameGroup {
             frames: vec![packet("cam", 33, 40, 8), packet("mic", 45, 50, 8)],
+            sequences: vec![0, 0],
             skew: Duration::from_millis(12),
         });
         let line = s.flush().unwrap();

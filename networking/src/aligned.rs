@@ -14,6 +14,8 @@ use shared::{AlignedGroup, Aligner, FramePacket, FramePacketInformation, Sample}
 #[derive(Debug, PartialEq, Clone)]
 pub struct FrameGroup {
     pub frames: Vec<FramePacket>,
+    /// The wire sequence number of each frame, parallel to `frames`.
+    pub sequences: Vec<u64>,
     pub skew: Duration,
 }
 
@@ -66,22 +68,32 @@ pub fn decode_group(parts: &[Vec<u8>]) -> Result<FrameGroup, Error> {
     }
 
     let mut frames = Vec::with_capacity(count);
+    let mut sequences = Vec::with_capacity(count);
     let mut offset = 0;
     for len in part_counts {
-        frames.push(decode_frame(&body[offset..offset + len])?);
+        let (frame, sequence) = decode_frame(&body[offset..offset + len])?;
+        frames.push(frame);
+        sequences.push(sequence);
         offset += len;
     }
-    Ok(FrameGroup { frames, skew })
+    Ok(FrameGroup {
+        frames,
+        sequences,
+        skew,
+    })
 }
 
-fn decode_frame(parts: &[Vec<u8>]) -> Result<FramePacket, Error> {
+fn decode_frame(parts: &[Vec<u8>]) -> Result<(FramePacket, u64), Error> {
     if parts.len() < 3 {
         return Err(anyhow!("frame needs at least 3 parts, got {}", parts.len()));
     }
     let mut frame_info = FramePacketInformation::deserialize(&parts[0])?;
+    let sequence = <[u8; 8]>::try_from(parts[1].as_slice())
+        .map(u64::from_le_bytes)
+        .map_err(|_| anyhow!("frame has a malformed sequence number"))?;
     frame_info.rx_timestamp = Some(SystemTime::now());
     let data = parts[2..].concat().into_boxed_slice();
-    Ok(FramePacket::new(frame_info, data))
+    Ok((FramePacket::new(frame_info, data), sequence))
 }
 
 /// Consumer side of an `AlignedRelay`: receives aligned groups from the relay's PUB endpoint.
@@ -301,6 +313,7 @@ mod tests {
             4,
         ));
         let decoded = decode_group(&encoded).unwrap();
+        assert_eq!(decoded.sequences, vec![0; decoded.frames.len()]);
 
         assert_eq!(decoded.skew, Duration::from_millis(4));
         assert_eq!(decoded.frames.len(), 2);
