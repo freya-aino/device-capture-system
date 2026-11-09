@@ -204,10 +204,11 @@ the same-named devices out of the same sync group.
 
 ```bash
 curl http://127.0.0.1:8080/status   # on each producer host: {"device":"Running","connection":"Active"}
-curl http://127.0.0.1:8081/status   # on the hub host: {"producers":1,"consumers":1}
+curl http://127.0.0.1:8081/status   # on the hub host: {"producers":1,"consumers":1,"uptime_s":...,"frames_per_s":30.0,"mbit_per_s":105.0,"cpu_percent":12.3,...}
 ```
 
-`producers` and `consumers` count the live connections, so a missing peer shows up as a lower number.
+`producers` and `consumers` count the live connections, so a missing peer shows up as a lower number. The rest is
+the hub's own throughput and CPU over the last second (see the `control-hub` guide below).
 
 To also publish time-aligned groups from the hub, see the `control-hub` component guide below.
 
@@ -230,14 +231,13 @@ Environment variables read by the binaries:
 | `HUB_SYNC_TOLERANCE_MS` | `control-hub` | `20` | Maximum capture-time distance between samples in one group |
 | `HUB_SYNC_MAX_WAIT_MS` | `control-hub` | `200` | How long a frame waits for partners from the other devices before it is dropped. Must cover the transport-latency difference between devices, not the pairing tolerance |
 | `HUB_DATA_CHUNK_SIZE` | `control-hub` | `1024` | Data chunk size passed to the proxy |
+| `DEVICE_NODE_QUEUE_SIZE` / `DEVICE_NODE_DATA_CHUNK_SIZE` | `device-node` | `128` / `1024` | PUB queue size and payload part size; read in both `run` modes, not stored in a saved config |
 | `HUB_IP` / `HUB_PORT` | `access-client` | `127.0.0.1` / `5556` | Hub XPUB endpoint the CLI **connects** to |
 | `CLIENT_QUEUE_SIZE` | `access-client` | `128` | Queue size for the client's SUB socket |
 | `CLIENT_DATA_CHUNK_SIZE` | `access-client` | `1024` | Data chunk size expected by the client |
 | `CLIENT_SUMMARY_SECS` | `access-client` | `0` | When > 0, print one `summary:` line per device every N seconds (rate, Mbit/s, latency mean/max, dropped frames) instead of a line per frame |
 | `CLIENT_RUN_SECS` | `access-client` | `0` | When > 0, exit after N seconds with a final per-device total (used by the hardware validation run) |
 | `CLIENT_ALIGNED_PORT` | `access-client` | `0` | When > 0, read aligned groups from the hub's `HUB_SYNC_PORT` on this port instead of the raw stream, and print one `aligned:` summary line per window (groups/s, skew, latency, frames per device) |
-
-`device-node` uses a queue size of `128` and a chunk size of `1024` (fixed in `device-node/src/main.rs`).
 
 ### Status endpoint
 
@@ -256,10 +256,13 @@ The control hub serves a read-only endpoint on `HUB_STATUS_ADDR`:
 
 ```bash
 curl http://127.0.0.1:8081/status
-# {"producers":2,"consumers":1}
+# {"producers":2,"consumers":1,"uptime_s":61.3,"frames_per_s":30.0,"mbit_per_s":105.0,"cpu_percent":12.3,"frames":1800,"bytes":787500000}
 ```
 
-`producers` counts the producer connections on the hub's XSUB side, and `consumers` counts the consumer connections on its XPUB side.
+`producers` counts the producer connections on the hub's XSUB side, and `consumers` counts the consumer connections
+on its XPUB side. `frames_per_s`, `mbit_per_s` and `cpu_percent` (of one core, all hub threads) are over the last
+completed second; `frames` and `bytes` are totals since start. `scripts/multi-camera-run.sh` polls this endpoint
+for the multi-camera run (step 26).
 
 ## Tests
 
@@ -518,6 +521,8 @@ The ordered build plan is in `SPECS.md` §8, and each build item's spec and chec
   - [x] Recorder: selected streams to video files with per-frame timestamps ([`recorder/`](recorder/README.md), step 24; 30 s webcam recording 2026-11-09)
   - [ ] Live output to other applications: ZMQ ports (done), plus a `v4l2loopback` virtual camera ([`live-sink/`](live-sink/README.md), step 25; implemented and tested against a loopback hub, hardware run needs a host with the module)
 - [ ] Multi-camera, cross-host hardware run (step 26)
+  - [x] Tooling: hub throughput and CPU on `/status`, `DEVICE_NODE_DATA_CHUNK_SIZE`, `scripts/multi-camera-run.sh` writes the results note
+  - [ ] The run itself (two cameras, two hosts)
 
 ## License
 

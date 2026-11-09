@@ -18,11 +18,18 @@ change.
 
 ## Status endpoint
 
-`GET /status` on `HUB_STATUS_ADDR` returns live producer and consumer counts:
+`GET /status` on `HUB_STATUS_ADDR` returns live producer and consumer counts, the forwarded stream's rate and
+the hub's CPU use:
 
 ```json
-{"producers":2,"consumers":1}
+{"producers":2,"consumers":1,"uptime_s":61.3,"frames_per_s":30.0,"mbit_per_s":105.0,"cpu_percent":12.3,"frames":1800,"bytes":787500000}
 ```
+
+`frames_per_s`, `mbit_per_s` and `cpu_percent` (of one core, all threads, `null` where the process clock is
+unavailable) cover the last completed second; `frames` and `bytes` are totals since start. The throughput is
+counted by a subscriber on the internal endpoint (`src/metrics.rs`), so it is the stream as forwarded, header and
+payload parts included, independent of how many consumers read it. The multi-camera run (step 26) polls it with
+`scripts/multi-camera-run.sh`.
 
 ## Sync (opt-in)
 

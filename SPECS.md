@@ -166,7 +166,7 @@ crate's broken module re-export, §4.1 there).
 | `devices::microphone_windows` | ✅ Removed; Windows is unsupported by decision (item 18) | n/a |
 | `devices::manager` | ✅ Deleted | n/a |
 | `device-node::DeviceNode` | ✅ Works: generic over `T: Device`, can publish one camera/mic stream, serves `GET /status` and remote `POST /start`, `/stop`, `/restart` with transition checks. `config save` / `run --config` start a host the same way every time, by device id and resolved mode (item 27) | Producer |
-| `control-hub` | ✅ Works as XSUB/XPUB proxy fanning in every `HUB_PRODUCERS` endpoint (or the single `HUB_PRODUCER_*` pair), configured by `HUB_*` env vars; serves `GET /status` with live producer and consumer counts; opt-in `HUB_SYNC_PORT` runs an `AlignedRelay` that publishes aligned groups on a separate PUB port while the raw forwarding stays unchanged. Validated on real devices 2026-10-30: one group per camera frame at 30/s, skew ≤ 18 ms | Syncer |
+| `control-hub` | ✅ Works as XSUB/XPUB proxy fanning in every `HUB_PRODUCERS` endpoint (or the single `HUB_PRODUCER_*` pair), configured by `HUB_*` env vars; serves `GET /status` with live producer and consumer counts plus forwarded frames/s, Mbit/s and hub CPU (item 26 tooling); opt-in `HUB_SYNC_PORT` runs an `AlignedRelay` that publishes aligned groups on a separate PUB port while the raw forwarding stays unchanged. Validated on real devices 2026-10-30: one group per camera frame at 30/s, skew ≤ 18 ms | Syncer |
 | `shared::Aligner` | ✅ Generic over a payload; groups frames from several devices by capture time, reports skew, and counts dropped samples. Pairing tolerance and wait window (`max_wait`) are separate; an anchor is dropped as soon as every other device has moved past it. Used by the hub's `AlignedRelay` and by `AlignedClient` | Syncer |
 | `access-client` | ✅ `AccessClient` (`connect`, `next_frame`, `run`, `disconnect`, `dropped_frames`) plus a CLI binary with a per-device summary mode (`CLIENT_SUMMARY_SECS`, `CLIENT_RUN_SECS`: rate, bandwidth, latency, drops); `AlignedClient` wraps it to yield aligned groups of frame packets, covered by end-to-end tests. Used by Python bindings | Consumer |
 | `python-client` | ✅ PyO3 bindings (`device_system`) packaged with maturin and covered by a pytest that runs the loopback example: `DeviceSystem` (raw and processed ports), `AlignedSystem` (sync port) and `Frame.image()` pixels through the `preprocess` decoder (item 28) | Consumer |
@@ -190,8 +190,9 @@ Revised 2026-11-09. `cargo test --workspace` and the Python loopback pytest pass
 1. **Live sink on hardware** (item 25): the code is done and tested against a loopback hub; the `v4l2loopback`
    round trip and the webcam run need a host whose kernel ships the module.
 2. **Multi-camera on hardware:** the extrinsics solver (item 22) is done and meets its synthetic acceptance
-   criterion but has not seen real cameras; the multi-camera, cross-host run (item 26) is open. Both need a second
-   camera; item 26 also needs a second host.
+   criterion but has not seen real cameras; the multi-camera, cross-host run (item 26) is open. Its tooling is done
+   (hub throughput and CPU on `/status`, `DEVICE_NODE_DATA_CHUNK_SIZE`, `scripts/multi-camera-run.sh` writing the
+   results note). Both need a second camera; item 26 also needs a second host.
 
 Known limits of finished work, recorded in the owning crates: pre-processing a 1080p MJPG stream reaches 22–25 fps,
 not 30 (`preprocess/README.md`); the 1 KiB default chunk size has not been measured on the raw path at 1080p
@@ -223,7 +224,7 @@ only what spans crates.
 
 ## 8. Build order and remaining work
 
-Items 1–21, 23, 24, 27 and 28 are complete; 22 and 25 are implemented but await their hardware runs; 26 is open. Items 22–26 were added 2026-11-05 to
+Items 1–21, 23, 24, 27 and 28 are complete; 22, 25 and 26 are implemented (26: its measurement tooling) but await their hardware runs. Items 22–26 were added 2026-11-05 to
 deliver images to downstream applications (§1); 27 and 28 were added 2026-11-06 from the README TODO and the
 Python gaps. Items 19–21 were added 2026-10-30 from the first hardware run. Item numbers
 are stable so older references still resolve. Each item's spec, acceptance criteria and checklist is in its
@@ -257,7 +258,7 @@ implement the open items.
 | 23 | 9 — Delivery | ✅ | [step-23](preprocess/docs/step-23-preprocessor.md) |
 | 24 | 9 — Delivery | ✅ | [step-24](recorder/docs/step-24-recorder.md) |
 | 25 | 9 — Delivery | ⚠️ | [step-25](live-sink/docs/step-25-live-output.md) |
-| 26 | 6 — Hardware validation | ❌ | [step-26](docs/steps/step-26-multi-camera-run.md) |
+| 26 | 6 — Hardware validation | ⚠️ | [step-26](docs/steps/step-26-multi-camera-run.md) |
 | 27 | 2 — Producers | ✅ | [step-27](device-node/docs/step-27-saved-config.md) |
 | 28 | 4 — Consumers and Python | ✅ | [step-28](python-client/docs/step-28-python-aligned-and-processed.md) |
 
@@ -267,7 +268,7 @@ implement the open items.
    on a host with the module.
 2. **Item 22 (extrinsics), hardware run:** two real cameras and a printed board; the recorder copies the result
    into sessions.
-3. **Item 26 (multi-camera run):** needs two hosts and cameras. It can run whenever they are available, and its
+3. **Item 26 (multi-camera run):** needs two hosts and cameras; `scripts/multi-camera-run.sh` collects the numbers. It can run whenever they are available, and its
    numbers decide whether hub-side pre-processing works across hosts. Re-measure the raw path there too: the
    2026-10-30 bandwidth figure predates the MJPG payload fix.
 

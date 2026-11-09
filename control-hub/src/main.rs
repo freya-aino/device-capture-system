@@ -8,7 +8,9 @@ use anyhow::{Error, Result, anyhow};
 use networking::{AlignedRelay, FrameRelay, Proxy};
 use preprocess::{PreprocessConfig, Preprocessor};
 
+mod metrics;
 mod status;
+use metrics::HubMetrics;
 use status::DEFAULT_HUB_STATUS_ADDR;
 
 /// In-process endpoint on which the proxy republishes the fanned-in stream for the hub's relays.
@@ -183,6 +185,11 @@ fn main() -> Result<(), Error> {
 
     proxy.start(&context)?;
 
+    // Throughput and CPU for `/status`: count the internal stream, sample once a second.
+    let metrics = HubMetrics::new();
+    metrics.count_stream(&context, INTERNAL_ENDPOINT)?;
+    let _sampler = metrics.start_sampler(Duration::from_secs(1));
+
     let mut sync_relay = match config.sync.as_ref() {
         Some(sync) => {
             let mut relay = AlignedRelay::new(
@@ -223,7 +230,8 @@ fn main() -> Result<(), Error> {
     };
 
     let status_server = status::bind_status_server(&config.status_addr)?;
-    let _status_thread = status::start_status_server(status_server, proxy.peer_counts());
+    let _status_thread =
+        status::start_status_server(status_server, proxy.peer_counts(), metrics.clone());
     println!(
         "control-hub: proxy running, status on http://{}/status, press Ctrl+C to stop",
         config.status_addr

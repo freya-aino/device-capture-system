@@ -34,6 +34,46 @@ fn print_usage() {
     );
     println!("`config save` resolves the arguments as `run` would and writes them by device id;");
     println!("`run --config` starts from the file and ignores the DEVICE_NODE_* variables.");
+    println!("Transport tuning (read in both modes, not part of the saved config):");
+    println!(
+        "  DEVICE_NODE_QUEUE_SIZE / DEVICE_NODE_DATA_CHUNK_SIZE   PUB queue and payload part size (default {DEFAULT_QUEUE_SIZE} / {DEFAULT_DATA_CHUNK_SIZE})"
+    );
+}
+
+const DEFAULT_QUEUE_SIZE: u32 = 128;
+const DEFAULT_DATA_CHUNK_SIZE: u32 = 1024;
+
+/// PUB queue size and payload part size, from `DEVICE_NODE_QUEUE_SIZE` and
+/// `DEVICE_NODE_DATA_CHUNK_SIZE`. They tune the transport, not the device, so a saved config does not
+/// carry them and they apply to `run --config` too (the multi-camera run varies the part size per
+/// host, `docs/steps/step-26-multi-camera-run.md`). Unset means the default; set but not a positive
+/// integer is an error, so a typo cannot silently fall back to the default.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Transport {
+    queue_size: u32,
+    data_chunk_size: u32,
+}
+
+impl Transport {
+    fn from_env() -> Result<Self> {
+        Self::from_lookup(|name| std::env::var(name).ok())
+    }
+
+    fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Result<Self> {
+        let parse = |name: &str, default: u32| -> Result<u32> {
+            match lookup(name) {
+                None => Ok(default),
+                Some(raw) => match raw.trim().parse::<u32>() {
+                    Ok(value) if value > 0 => Ok(value),
+                    _ => bail!("{} must be a positive integer, got {:?}", name, raw),
+                },
+            }
+        };
+        Ok(Transport {
+            queue_size: parse("DEVICE_NODE_QUEUE_SIZE", DEFAULT_QUEUE_SIZE)?,
+            data_chunk_size: parse("DEVICE_NODE_DATA_CHUNK_SIZE", DEFAULT_DATA_CHUNK_SIZE)?,
+        })
+    }
 }
 
 /// A device and the mode it will stream, resolved from CLI arguments or a saved config.
@@ -201,14 +241,28 @@ fn plan_from_config(path: &Path) -> Result<Plan> {
 
 fn run(plan: Plan) -> Result<()> {
     let context = zmq::Context::new();
-    println!("Publishing on tcp://{}", plan.bind);
+    let transport = Transport::from_env()?;
+    println!(
+        "Publishing on tcp://{} (queue {}, {}-byte parts)",
+        plan.bind, transport.queue_size, transport.data_chunk_size
+    );
     match plan.resolved {
-        Resolved::Camera(cam, config) => {
-            run_node(cam, config, plan.bind, &context, &plan.status_addr)
-        }
-        Resolved::Microphone(mic, config) => {
-            run_node(mic, config, plan.bind, &context, &plan.status_addr)
-        }
+        Resolved::Camera(cam, config) => run_node(
+            cam,
+            config,
+            plan.bind,
+            transport,
+            &context,
+            &plan.status_addr,
+        ),
+        Resolved::Microphone(mic, config) => run_node(
+            mic,
+            config,
+            plan.bind,
+            transport,
+            &context,
+            &plan.status_addr,
+        ),
     }
 }
 
@@ -216,6 +270,7 @@ fn run_node<T>(
     device: T,
     config: T::Config,
     bind: SocketAddrV4,
+    transport: Transport,
     context: &zmq::Context,
     status_addr: &str,
 ) -> Result<(), Error>
@@ -224,7 +279,13 @@ where
     T::Config: Clone + Send + 'static,
 {
     let server = bind_status_server(status_addr)?;
-    let mut node = DeviceNode::new(device, *bind.ip(), bind.port(), 128, 1024);
+    let mut node = DeviceNode::new(
+        device,
+        *bind.ip(),
+        bind.port(),
+        transport.queue_size,
+        transport.data_chunk_size,
+    );
     node.start(config, context)?;
 
     let node = Arc::new(Mutex::new(node));
@@ -239,5 +300,53 @@ fn wait_forever() {
     println!("Publishing... press Ctrl+C to stop.");
     loop {
         std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lookup<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+        move |name| {
+            pairs
+                .iter()
+                .find(|(key, _)| *key == name)
+                .map(|(_, value)| value.to_string())
+        }
+    }
+
+    #[test]
+    fn transport_defaults_when_unset() {
+        let transport = Transport::from_lookup(lookup(&[])).unwrap();
+        assert_eq!(
+            transport,
+            Transport {
+                queue_size: 128,
+                data_chunk_size: 1024
+            }
+        );
+    }
+
+    #[test]
+    fn transport_reads_both_variables() {
+        let transport = Transport::from_lookup(lookup(&[
+            ("DEVICE_NODE_QUEUE_SIZE", "16"),
+            ("DEVICE_NODE_DATA_CHUNK_SIZE", " 4194304 "),
+        ]))
+        .unwrap();
+        assert_eq!(
+            transport,
+            Transport {
+                queue_size: 16,
+                data_chunk_size: 4 * 1024 * 1024
+            }
+        );
+    }
+
+    #[test]
+    fn transport_rejects_zero_and_garbage() {
+        assert!(Transport::from_lookup(lookup(&[("DEVICE_NODE_DATA_CHUNK_SIZE", "0")])).is_err());
+        assert!(Transport::from_lookup(lookup(&[("DEVICE_NODE_QUEUE_SIZE", "many")])).is_err());
     }
 }

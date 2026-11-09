@@ -57,7 +57,7 @@ device-node run --config node.toml                            # start from the f
 The file names the device by id (`/dev/video0`, `sysdefault:CARD=PCH`), not by index, and stores the resolved
 camera mode (`[camera]`: `width`, `height`, `fps`, `pixel_format`) or microphone settings (`[microphone]`), plus
 `bind` and `status_addr`. `run --config` refuses to start when the device is missing or no longer advertises the
-saved mode, never substitutes another, and ignores the `DEVICE_NODE_*` variables. Unknown keys are errors.
+saved mode, never substitutes another, and ignores the device-selection `DEVICE_NODE_*` variables (the transport ones below still apply). Unknown keys are errors.
 
 ## Configuration
 
@@ -66,6 +66,7 @@ saved mode, never substitutes another, and ignores the `DEVICE_NODE_*` variables
 | `DEVICE_NODE_STATUS_ADDR` | `127.0.0.1:8080` |
 | `DEVICE_NODE_CAMERA_POLICY` | `nearest` |
 | `DEVICE_NODE_CAMERA_WIDTH` / `_HEIGHT` / `_FPS` | `1920` / `1080` / `30`, used by `nearest` |
+| `DEVICE_NODE_QUEUE_SIZE` / `DEVICE_NODE_DATA_CHUNK_SIZE` | `128` / `1024`: PUB queue size and payload part size. Transport tuning, so read in both `run` modes and not stored in a saved config; a set but invalid value is an error |
 
 Microphone default: 16 kHz, 1 channel, 512-sample buffer, `S16LE` (`src/helper.rs`).
 
