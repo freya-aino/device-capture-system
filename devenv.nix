@@ -11,6 +11,11 @@
     pkgs.zeromq
     pkgs.libv4l
     pkgs.opencv
+    # Runtime dependency of the recorder (item 24), and the ffprobe its test uses.
+    pkgs.ffmpeg
+    # Python bindings: build with maturin, test with pytest (items 15, 28).
+    pkgs.maturin
+    (pkgs.python3.withPackages (ps: [ ps.pytest ]))
   ];
 
   languages.rust.enable = true;

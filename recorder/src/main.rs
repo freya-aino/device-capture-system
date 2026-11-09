@@ -1,22 +1,56 @@
-use std::time::SystemTime;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use anyhow::{Result, bail};
-use recorder::{RecorderConfig, StemAllocator, session_dir};
+use anyhow::Result;
+use recorder::{RecorderConfig, record};
 
 fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
     let config = RecorderConfig::from_env()?;
 
-    let mut stems = StemAllocator::default();
-    println!(
-        "recorder: {} source from {} into {}",
-        config.source.name(),
-        config.hub_endpoint(),
-        session_dir(&config.dir, SystemTime::now()).display()
-    );
-    for device in &config.devices {
-        println!("recorder:   {device} -> {}.*", stems.stem(device));
+    let stop = Arc::new(AtomicBool::new(false));
+    let flag = stop.clone();
+    ctrlc::set_handler(move || {
+        eprintln!("recorder: stopping");
+        flag.store(true, Ordering::SeqCst);
+    })?;
+
+    match config.duration {
+        Some(d) => println!(
+            "recorder: {} source from {} for {} s (Ctrl+C stops early)",
+            config.source.name(),
+            config.hub_endpoint(),
+            d.as_secs()
+        ),
+        None => println!(
+            "recorder: {} source from {} until Ctrl+C",
+            config.source.name(),
+            config.hub_endpoint()
+        ),
     }
 
-    bail!("recording is not implemented yet (SPECS.md §8 item 24; this binary is a scaffold)")
+    let recording = record(&config, &stop)?;
+    println!("recorder: session {}", recording.dir.display());
+    for device in &recording.info.devices {
+        println!(
+            "recorder:   {} -> {}.* ({}): {} written, {} dropped, {} gaps{}",
+            device.device_id,
+            device.file_stem,
+            device.codec,
+            device.frames_written,
+            device.frames_dropped,
+            device.sequence_gaps,
+            device
+                .error
+                .as_ref()
+                .map(|e| format!(", stopped early: {e}"))
+                .unwrap_or_default()
+        );
+    }
+    Ok(())
 }

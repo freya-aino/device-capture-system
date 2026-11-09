@@ -80,6 +80,9 @@ pub struct SessionInfo {
     pub hub: String,
     pub started: String,
     pub stopped: Option<String>,
+    /// Aligned groups that lacked a recorded device and were skipped (`aligned` source only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub incomplete_groups: Option<u64>,
     pub devices: Vec<DeviceRecord>,
 }
 
@@ -148,6 +151,7 @@ mod tests {
             hub: "tcp://127.0.0.1:5557".into(),
             started: "2026-11-06T10:15:00.000000Z".into(),
             stopped: None,
+            incomplete_groups: None,
             devices: vec![DeviceRecord {
                 device_id: "/dev/video0".into(),
                 file_stem: "dev_video0".into(),

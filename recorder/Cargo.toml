@@ -2,10 +2,19 @@
 name = "recorder"
 version = "0.1.0"
 edition = "2024"
+build = "build.rs"
 
 [dependencies]
 shared = { path = "../shared" }
+networking = { path = "../networking" }
+access-client = { path = "../access-client" }
 anyhow = "1.0.98"
+ctrlc = "3.4.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+zmq = "0.10.0"
+
+[dev-dependencies]
+serde_json = "1.0"

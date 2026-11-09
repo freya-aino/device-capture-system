@@ -301,8 +301,10 @@ dependencies = [
  "anyhow",
  "devices",
  "networking",
+ "serde",
  "shared",
  "tiny_http",
+ "toml",
  "tracing",
  "tracing-subscriber",
  "zmq",
@@ -315,6 +317,7 @@ dependencies = [
  "access-client",
  "anyhow",
  "networking",
+ "preprocess",
  "pyo3",
  "shared",
  "zmq",
@@ -560,8 +563,16 @@ checksum = "d26c52dbd32dccf2d10cac7725f8eae5296885fb5703b261f7d0a0739ec807ab"
 name = "live-sink"
 version = "0.1.0"
 dependencies = [
+ "access-client",
  "anyhow",
+ "ctrlc",
+ "networking",
+ "preprocess",
+ "shared",
+ "tracing",
  "tracing-subscriber",
+ "v4l",
+ "zmq",
 ]
 
 [[package]]
@@ -873,11 +884,16 @@ dependencies = [
 name = "recorder"
 version = "0.1.0"
 dependencies = [
+ "access-client",
  "anyhow",
+ "ctrlc",
+ "networking",
  "serde",
  "serde_json",
  "shared",
+ "tracing",
  "tracing-subscriber",
+ "zmq",
 ]
 
 [[package]]

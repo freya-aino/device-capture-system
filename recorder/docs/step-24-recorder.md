@@ -1,7 +1,7 @@
 # Step 24: Recorder: selected streams to video files
 
-- **Status:** ⚠️ Scaffolded (2026-11-06): configuration, file naming and the sidecar format are implemented and
-  tested; capture and writing are not
+- **Status:** ✅ Done (2026-11-09): loopback integration tests for the raw and aligned sources, and a 30 s webcam
+  and microphone recording ([results](../../docs/hardware/2026-11-09-recorder-saved-config.md))
 - **Stage:** 9 — Delivery
 - **Spec item:** [`SPECS.md`](../../SPECS.md) §8 item 24
 
@@ -89,8 +89,14 @@ number, timestamps are microseconds since the Unix epoch (`null` when the header
 - Microphone: a WAV writer, `S16LE`, at the frame's `sample_rate` and channel count.
 - A change of `frame_shape` or `pixel_format` mid-session stops that device's writer with an error recorded in
   `session.json`; the other devices continue.
-- `ffmpeg` is a runtime dependency of the recorder only, checked at start; the recorder refuses to start without
-  it when a camera is selected.
+- `ffmpeg` is a runtime dependency of the recorder only, checked at start. The recorder refuses to start without
+  it: device types are only known once frames arrive, so it cannot tell a microphone-only session apart in
+  advance (decided 2026-11-09; the alternative, failing on the first camera frame, would leave the session
+  incomplete).
+- `session.json` carries one extra field beyond the example above, `incomplete_groups`, only for the `aligned`
+  source and only when it is non-zero: the number of groups skipped because a recorded device was missing.
+- A device in `RECORD_DEVICES` that never sends keeps `device_type` and `codec` as `"unknown"`, empty
+  `frame_shape`, and an empty sidecar; no media file is created for it.
 
 ## Acceptance
 
@@ -105,10 +111,20 @@ number, timestamps are microseconds since the Unix epoch (`null` when the header
 - [x] Crate scaffold with `RECORD_*` configuration, validated at start
 - [x] File stems and session ids
 - [x] Sidecar line and `session.json` types with their JSON format tested
-- [ ] `Receiver` / `AccessClient` expose each frame's wire sequence number (they read it for gap counting but
-      do not return it; the sidecar's `sequence` needs it)
-- [ ] Hub input for the three sources, including aligned-group recording
-- [ ] Per-device writer threads with bounded queues and drop counting
-- [ ] `ffmpeg` writer: MJPG stream copy; `ffv1` / `h264` encode for uncompressed input
-- [ ] WAV writer
-- [ ] Integration test; webcam recording noted
+- [x] `Receiver::last_sequence`, `AccessClient::last_sequence` and `FrameGroup::sequences` expose each frame's wire
+      sequence number
+- [x] Hub input for the three sources, including aligned-group recording (`src/input.rs`)
+- [x] Per-device writer threads with bounded queues and drop counting (`src/writer.rs`)
+- [x] `ffmpeg` writer: MJPG stream copy; `ffv1` / `h264` encode for uncompressed input (`src/ffmpeg.rs`)
+- [x] WAV writer (`src/wav.rs`)
+- [x] Integration tests (`tests/record-test.rs`: raw camera + microphone, aligned two-camera with an incomplete
+      group skipped); webcam recording noted in
+      [`docs/hardware/2026-11-09-recorder-saved-config.md`](../../docs/hardware/2026-11-09-recorder-saved-config.md)
+
+## Evidence
+
+- `cargo test -p recorder`: 18 unit tests, 2 integration tests (skipped with a message without `ffmpeg`).
+- Webcam, 30 s, raw source: 901 MJPG frames stream-copied (`ffprobe -count_frames` 901, sidecar 901 lines, 0
+  dropped, 0 gaps) and 935 microphone packets (478 720 samples, 16 kHz WAV). Details in the hardware note.
+- The webcam run found that the camera published its whole mmap buffer (~4.1 MB per MJPG frame instead of ~440 KB);
+  fixed in `devices` the same day (`bytesused`).
