@@ -4,5 +4,15 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+shared = { path = "../shared" }
+access-client = { path = "../access-client" }
 anyhow = "1.0.98"
+ctrlc = "3.4.5"
+tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+v4l = "0.14.0"
+
+[dev-dependencies]
+networking = { path = "../networking" }
+preprocess = { path = "../preprocess" }
+zmq = "0.10.0"

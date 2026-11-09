@@ -1,7 +1,9 @@
 # Step 25: Live output for other applications
 
-- **Status:** ⚠️ Scaffolded (2026-11-06): configuration and the output-format decision are implemented and tested;
-  the V4L2 writer is not
+- **Status:** ⚠️ Implemented (2026-11-09), hardware run open: conversion, the V4L2 writer and the forwarding loop
+  are done and tested against a loopback hub; the `v4l2loopback` round trip and the webcam run need the kernel
+  module, which the development laptop's NixOS kernel does not ship (`modinfo v4l2loopback` fails). Run them on a
+  host with the module (see the crate README)
 - **Stage:** 9 — Delivery
 - **Spec item:** [`SPECS.md`](../../SPECS.md) §8 item 25
 
@@ -64,6 +66,9 @@ Network video protocols for third-party players (RTSP, HLS, WebRTC) are out of s
 - [x] Hub ports documented as the live interface for client-based applications
 - [x] Crate scaffold with `LIVE_*` configuration, validated at start
 - [x] Output-format decision per input format
-- [ ] RGB3/GREY → YUYV conversion
-- [ ] V4L2 output writer with newest-frame policy
-- [ ] Ignored round-trip test, README setup, webcam run noted
+- [x] RGB3/GREY → YUYV conversion (`src/convert.rs`; exact pixels and a ±2 round trip through `preprocess`)
+- [x] V4L2 output writer (`src/sink.rs`, `VIDIOC_S_FMT` once, `write()` per frame) with the newest-frame policy
+      (`src/forward.rs`; loopback tests in `tests/forward-test.rs` cover device selection, format fixing from the
+      first frame, skipping and the stream-change error)
+- [x] Ignored round-trip test (`frames_round_trip_through_a_v4l2loopback_device`), README setup
+- [ ] Webcam run into `v4l2loopback` noted in `docs/hardware/` (needs a host with the module)
