@@ -41,7 +41,11 @@ each `device-node` serves `GET /status` and `POST /start`, `/stop` and `/restart
 | [`device-node`](device-node/README.md) | bin+lib  | Runs on each capture machine: lists devices and publishes one camera or microphone stream to a hub. Serves `GET /status` and `POST /start`, `/stop`, `/restart` (`DEVICE_NODE_STATUS_ADDR`). |
 | [`control-hub`](control-hub/README.md) | bin  | Central process: runs the XSUB/XPUB ZMQ proxy, fanning in the producer endpoints from `HUB_PRODUCERS` (or the single `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT`), configured by `HUB_*` environment variables. Serves `GET /status` with producer and consumer counts. Opt-in sync (`HUB_SYNC_PORT`) publishes aligned groups. |
 | [`access-client`](access-client/README.md) | bin+lib  | Consumer-side client that subscribes to the hub's XPUB stream. The CLI prints received frames; the library provides `AccessClient` (decoded frames) and `AlignedClient` (groups frames from several devices by capture time). Configured by `HUB_IP`/`HUB_PORT` and `CLIENT_*` environment variables. |
-| [`python-client`](python-client/README.md) | lib  | Python bindings via PyO3 (`device_system` extension module) that wrap `access-client` to receive frames from a hub. Installable with maturin (`pip install ./python-client`); see [`python-client/README.md`](python-client/README.md). |
+| [`python-client`](python-client/README.md) | lib  | Python bindings via PyO3 (`device_system` extension module) that wrap `access-client` to receive frames from a hub, read aligned groups and decode pixels. Installable with maturin (`pip install ./python-client`); see [`python-client/README.md`](python-client/README.md). |
+| [`calibration`](calibration/README.md) | lib  | Consumer crate: ChArUco reference-point detection and camera intrinsics (`opencv`); multi-camera extrinsics open (step 22). |
+| [`preprocess`](preprocess/README.md) | lib  | Per-camera image transforms from TOML (rotate, flip, crop, resize, brightness, contrast, gamma, grayscale), run in the hub (`HUB_PREPROCESS_PORT`) or a consumer. |
+| [`recorder`](recorder/README.md) | bin+lib  | Consumer: records selected hub streams to a session directory (one `ffmpeg`-written video per camera, one WAV per microphone, per-frame JSON-lines sidecar, `session.json`). Needs `ffmpeg`. |
+| [`live-sink`](live-sink/README.md) | bin+lib  | Consumer: forwards one selected stream into a `v4l2loopback` device (newest frame, RGB3/GREY converted to YUYV) so camera-only applications can read it. |
 
 ### Frame transport
 
@@ -346,6 +350,8 @@ cargo run -p device-node -- run camera 0 0.0.0.0 5555   # publish camera 0 on :5
 DEVICE_NODE_CAMERA_WIDTH=640 DEVICE_NODE_CAMERA_HEIGHT=480 cargo run -p device-node -- run camera 0 0.0.0.0 5555  # uncompressed YUYV on most webcams
 DEVICE_NODE_CAMERA_POLICY=best-fps cargo run -p device-node -- run camera 0 0.0.0.0 5555
 DEVICE_NODE_STATUS_ADDR=127.0.0.1:8080 cargo run -p device-node -- run mic 0 0.0.0.0 5555
+cargo run -p device-node -- config save node.toml run camera 0 0.0.0.0 5555   # resolve and save by device id, do not start
+cargo run -p device-node -- run --config node.toml                            # start from the file; env vars are not read
 ```
 
 While it runs, control it over HTTP. `POST` requests change state and return the new status:
@@ -467,7 +473,7 @@ for frame in ds.get_frame():
 Python notes:
 
 - `DeviceSystem` uses a fixed receive queue of `10` and chunk size `1024`; it does not read `CLIENT_*` variables.
-- The bindings do not expose aligned groups. Frames from several producers arrive interleaved, so use `device_id` to separate them, or use the Rust `AlignedClient` for sync.
+- `AlignedSystem("127.0.0.1", 5557)` iterates the hub's aligned groups (`group.frames`, `group.skew_s`), and `frame.image()` returns `(width, height, channels, bytes)` of a camera frame through the same decoder as the pre-processor. `DeviceSystem` frames from several producers arrive interleaved; use `device_id` to separate them.
 - Build with `pip install ./python-client` (maturin backend, needs a Rust toolchain). For a manual `.so` copy, see [`python-client/README.md`](python-client/README.md).
 
 ## TODO
@@ -477,7 +483,7 @@ The ordered build plan is in `SPECS.md` §8, and each build item's spec and chec
 - [x] Device Node CLI
   - [x] List devices
   - [x] Run a single device (camera/mic) and publish frames
-  - [ ] Generate / Save Config (`SPECS.md` §8 step 27)
+  - [x] Generate / Save Config: `device-node config save node.toml run …`, `device-node run --config node.toml` (`SPECS.md` §8 step 27)
 - [ ] Device Node HTTP Server
   - [x] Read-only `GET /status` (device and connection state)
   - [x] StartDevice / StopDevice / RestartDevice (`POST /start`, `/stop`, `/restart`)
@@ -506,11 +512,11 @@ The ordered build plan is in `SPECS.md` §8, and each build item's spec and chec
     - [x] `DeviceSystem.get_frame() -> generator`
   - [x] Package Python bindings (maturin / `pyproject.toml`)
   - [x] Automated tests for the Python bindings (`python-client/tests/test_loopback.py`)
-  - [ ] Aligned groups and pixel access for processed frames in Python (step 28)
+  - [x] Aligned groups (`AlignedSystem`, `Group`) and pixel access (`Frame.image()`) in Python (step 28)
 - [ ] Delivery to downstream applications
   - [x] Pre-processor with per-camera transforms (rotate, flip, crop, resize, brightness, contrast, gamma, grayscale), in the hub or a consumer ([`preprocess/`](preprocess/README.md), `SPECS.md` §8 step 23)
-  - [ ] Recorder: selected streams to video files with per-frame timestamps ([`recorder/`](recorder/README.md), step 24; scaffolded)
-  - [ ] Live output to other applications: ZMQ ports (done), plus a `v4l2loopback` virtual camera ([`live-sink/`](live-sink/README.md), step 25; scaffolded)
+  - [x] Recorder: selected streams to video files with per-frame timestamps ([`recorder/`](recorder/README.md), step 24; 30 s webcam recording 2026-11-09)
+  - [ ] Live output to other applications: ZMQ ports (done), plus a `v4l2loopback` virtual camera ([`live-sink/`](live-sink/README.md), step 25; implemented and tested against a loopback hub, hardware run needs a host with the module)
 - [ ] Multi-camera, cross-host hardware run (step 26)
 
 ## License

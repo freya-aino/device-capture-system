@@ -152,7 +152,7 @@ the fallback if consumers must avoid a Rust-built extension. It is not planned.
 
 ## 6. Current implementation state
 
-Revised 2026-11-06. `docs/history/CODE_REVIEW.md` is a historical review at commit
+Revised 2026-11-09. `docs/history/CODE_REVIEW.md` is a historical review at commit
 `40c8af5`; see it for line numbers and the findings it already applied (for example the `devices`
 crate's broken module re-export, §4.1 there).
 
@@ -161,19 +161,19 @@ crate's broken module re-export, §4.1 there).
 | `shared` (data model) | ✅ Works: `ConnectionStats` uses `Instant` for interval math and records per-frame latency | Observability for all roles |
 | `networking::Connection`/`Sender`/`Receiver` | ✅ Works: receive path validates peer input and drops malformed frames; a sequence part enables gap-based dropped-frame counts | Producer, Consumer |
 | `networking::Proxy` | ✅ Works: `start()` runs `zmq::proxy_steerable` on a forwarding thread; `stop()` terminates it cleanly through a control socket. Covered by `proxy-test.rs` and the hub pipeline test | Receiver + Accumulator |
-| `devices::V4lCameraDevice` | ✅ Streams on a real webcam at the granted rate in every advertised mode (2026-10-30 survey, `docs/hardware/`): `start()` disables exposure auto-priority, sets format before interval and reads both back; `device-node` selects the mode from `get_configs()` ([`device-node/README.md`](device-node/README.md)). End-to-end 60 s run still open (item 12) | Producer (camera) |
+| `devices::V4lCameraDevice` | ✅ Streams on a real webcam at the granted rate in every advertised mode (2026-10-30 survey, `docs/hardware/`): `start()` disables exposure auto-priority, sets format before interval and reads both back; `device-node` selects the mode from `get_configs()` ([`device-node/README.md`](device-node/README.md)). Publishes the driver's `bytesused`, not the whole mmap buffer (fixed 2026-11-09: 1080p MJPG went from ~995 to ~105 Mbit/s) | Producer (camera) |
 | `devices::AlsaMicrophoneDevice` | ✅ Enumerates one converting PCM per card plus sound-server PCMs (`select_capture_hints`, item 20), captures 16 kHz mono from both on real hardware (2026-10-30, `docs/hardware/`), and stamps the granted sample rate on every frame (item 21) | Producer (mic) |
 | `devices::microphone_windows` | ✅ Removed; Windows is unsupported by decision (item 18) | n/a |
 | `devices::manager` | ✅ Deleted | n/a |
-| `device-node::DeviceNode` | ✅ Works: generic over `T: Device`, can publish one camera/mic stream, serves `GET /status` and remote `POST /start`, `/stop`, `/restart` with transition checks | Producer |
+| `device-node::DeviceNode` | ✅ Works: generic over `T: Device`, can publish one camera/mic stream, serves `GET /status` and remote `POST /start`, `/stop`, `/restart` with transition checks. `config save` / `run --config` start a host the same way every time, by device id and resolved mode (item 27) | Producer |
 | `control-hub` | ✅ Works as XSUB/XPUB proxy fanning in every `HUB_PRODUCERS` endpoint (or the single `HUB_PRODUCER_*` pair), configured by `HUB_*` env vars; serves `GET /status` with live producer and consumer counts; opt-in `HUB_SYNC_PORT` runs an `AlignedRelay` that publishes aligned groups on a separate PUB port while the raw forwarding stays unchanged. Validated on real devices 2026-10-30: one group per camera frame at 30/s, skew ≤ 18 ms | Syncer |
 | `shared::Aligner` | ✅ Generic over a payload; groups frames from several devices by capture time, reports skew, and counts dropped samples. Pairing tolerance and wait window (`max_wait`) are separate; an anchor is dropped as soon as every other device has moved past it. Used by the hub's `AlignedRelay` and by `AlignedClient` | Syncer |
 | `access-client` | ✅ `AccessClient` (`connect`, `next_frame`, `run`, `disconnect`, `dropped_frames`) plus a CLI binary with a per-device summary mode (`CLIENT_SUMMARY_SECS`, `CLIENT_RUN_SECS`: rate, bandwidth, latency, drops); `AlignedClient` wraps it to yield aligned groups of frame packets, covered by end-to-end tests. Used by Python bindings | Consumer |
-| `python-client` | ✅ PyO3 bindings (`device_system`) packaged with maturin and covered by a pytest that runs the loopback example | Consumer |
+| `python-client` | ✅ PyO3 bindings (`device_system`) packaged with maturin and covered by a pytest that runs the loopback example: `DeviceSystem` (raw and processed ports), `AlignedSystem` (sync port) and `Frame.image()` pixels through the `preprocess` decoder (item 28) | Consumer |
 | `calibration` | ✅ Native Rust consumer crate (`opencv`): ChArUco reference-point detection, camera intrinsics, frame decoding (MJPG/YUYV); deterministic fixture test. ❌ Multi-camera extrinsics (item 22) | Calibration |
 | `preprocess` | ✅ Per-camera transforms (rotate, flip, crop, resize, brightness, contrast, gamma, grayscale) from TOML; hub output on `HUB_PREPROCESS_PORT` via `FrameRelay`, or in `access-client`. Webcam: 640×480 at 30 fps / 13 ms, 1080p at 25.5 fps / 80 ms | Pre-processor |
-| `recorder` | ⚠️ Scaffold: `RECORD_*` configuration, session ids, file stems, sidecar and `session.json` formats, tested; no capture or writing yet (item 24) | Consumer |
-| `live-sink` | ⚠️ Scaffold: `LIVE_*` configuration and output-format decision, tested; no V4L2 writer yet (item 25) | Consumer |
+| `recorder` | ✅ Records the raw, processed or aligned hub output: one `ffmpeg`-written video per camera (MJPG stream-copied, uncompressed input encoded), one WAV per microphone, a per-frame sidecar with wire timestamps and sequence numbers, `session.json` with drop and gap counts. Loopback integration tests; 30 s webcam recording with 0 drops (item 24, `docs/hardware/`) | Consumer |
+| `live-sink` | ⚠️ Implemented, hardware run open: RGB3/GREY→YUYV conversion, V4L2 output writer, newest-frame forwarding loop, all tested against a loopback hub. The `v4l2loopback` round trip is an `#[ignore]` test; it and the webcam run need a host whose kernel ships the module (item 25) | Consumer |
 | `DeviceStatus` | ✅ Status transitions are implemented and observable via `device-node` | Observability for Producer |
 
 ### 6.1 What already satisfies the topology requirement (§3)
@@ -185,18 +185,17 @@ several producers via `HUB_PRODUCERS`) are reachable through configuration alone
 
 ### 6.2 What is open
 
-Revised 2026-11-06. `cargo test --workspace` passes; the Python loopback pytest last passed 2026-10-30.
+Revised 2026-11-09. `cargo test --workspace` and the Python loopback pytest pass.
 
-1. **Delivery** (§1): the recorder (item 24) and the `v4l2loopback` live sink (item 25) are scaffolded: their
-   configuration is implemented and tested, capture and writing are not.
+1. **Live sink on hardware** (item 25): the code is done and tested against a loopback hub; the `v4l2loopback`
+   round trip and the webcam run need a host whose kernel ships the module.
 2. **Multi-camera:** camera extrinsics (item 22) and a multi-camera, cross-host run (item 26). Both need a second
    camera; item 26 also needs a second host.
-3. **Producers:** saving and reusing a device-node configuration (item 27).
-4. **Python:** aligned groups and pixel access for processed frames (item 28).
 
 Known limits of finished work, recorded in the owning crates: pre-processing a 1080p MJPG stream reaches 22–25 fps,
 not 30 (`preprocess/README.md`); the 1 KiB default chunk size has not been measured on the raw path at 1080p
-(item 26); the hardware runs so far are single-host.
+(item 26); the hardware runs so far are single-host. The 2026-10-30 bandwidth and latency figures for 1080p MJPG
+include the padding bug fixed 2026-11-09 (`docs/hardware/2026-11-09-recorder-saved-config.md`).
 
 ---
 
@@ -223,7 +222,7 @@ only what spans crates.
 
 ## 8. Build order and remaining work
 
-Items 1–21 and 23 are complete; 24 and 25 are scaffolded; 22 and 26–28 are open. Items 22–26 were added 2026-11-05 to
+Items 1–21, 23, 24, 27 and 28 are complete; 25 is implemented but awaits its hardware run; 22 and 26 are open. Items 22–26 were added 2026-11-05 to
 deliver images to downstream applications (§1); 27 and 28 were added 2026-11-06 from the README TODO and the
 Python gaps. Items 19–21 were added 2026-10-30 from the first hardware run. Item numbers
 are stable so older references still resolve. Each item's spec, acceptance criteria and checklist is in its
@@ -255,21 +254,20 @@ implement the open items.
 | 21 | 2 — Producers | ✅ | [step-21](devices/docs/step-21-microphone-sample-rate-on-the-wire.md) |
 | 22 | 7 — Calibration | ❌ | [step-22](calibration/docs/step-22-camera-extrinsics.md) |
 | 23 | 9 — Delivery | ✅ | [step-23](preprocess/docs/step-23-preprocessor.md) |
-| 24 | 9 — Delivery | ⚠️ | [step-24](recorder/docs/step-24-recorder.md) |
+| 24 | 9 — Delivery | ✅ | [step-24](recorder/docs/step-24-recorder.md) |
 | 25 | 9 — Delivery | ⚠️ | [step-25](live-sink/docs/step-25-live-output.md) |
 | 26 | 6 — Hardware validation | ❌ | [step-26](docs/steps/step-26-multi-camera-run.md) |
-| 27 | 2 — Producers | ❌ | [step-27](device-node/docs/step-27-saved-config.md) |
-| 28 | 4 — Consumers and Python | ❌ | [step-28](python-client/docs/step-28-python-aligned-and-processed.md) |
+| 27 | 2 — Producers | ✅ | [step-27](device-node/docs/step-27-saved-config.md) |
+| 28 | 4 — Consumers and Python | ✅ | [step-28](python-client/docs/step-28-python-aligned-and-processed.md) |
 
 ### 8.1 Order of remaining work
 
-1. **Item 24 (recorder):** the first way to hand images over, and what training data needs.
-2. **Item 25 (live output):** the second hand-off; the ZMQ part exists, the `v4l2loopback` sink does not.
-3. **Item 28 (Python):** most downstream applications are Python; small, and independent of the above.
-4. **Item 27 (saved config):** small; makes multi-host setups repeatable before item 26.
-5. **Item 22 (extrinsics):** needs a second camera; the recorder copies its result into sessions.
-6. **Item 26 (multi-camera run):** needs two hosts and cameras. It can run whenever they are available, and its
-   numbers decide whether hub-side pre-processing works across hosts.
+1. **Item 25 (live output), hardware run:** the `#[ignore]` round-trip test and a webcam run into `v4l2loopback`
+   on a host with the module.
+2. **Item 22 (extrinsics):** needs a second camera; the recorder copies its result into sessions.
+3. **Item 26 (multi-camera run):** needs two hosts and cameras. It can run whenever they are available, and its
+   numbers decide whether hub-side pre-processing works across hosts. Re-measure the raw path there too: the
+   2026-10-30 bandwidth figure predates the MJPG payload fix.
 
 An item is done only
 when its acceptance check passes with `cargo test --workspace` (plus the hardware run for item 12), and
