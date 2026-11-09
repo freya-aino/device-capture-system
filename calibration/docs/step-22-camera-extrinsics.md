@@ -1,6 +1,7 @@
 # Step 22: Camera extrinsics in a shared world frame
 
-- **Status:** ❌ Open
+- **Status:** ⚠️ Implemented (2026-11-09), hardware run open: the solver and the calibration file are done and meet
+  the synthetic acceptance criterion; the real two-camera run needs a second camera
 - **Stage:** 7 — Calibration
 - **Spec item:** [`SPECS.md`](../../SPECS.md) §8 item 22
 
@@ -47,11 +48,29 @@ calibration. `format` is bumped on any incompatible change.
 Acceptance: on synthetic views of the board projected through two or more known camera poses, the recovered
 relative poses match within 1 mm and 0.1°. A real two-camera run is recorded in `docs/hardware/`.
 
+### Implementation notes (2026-11-09)
+
+- `board_pose` uses `solvePnP` with `SOLVEPNP_IPPE` (the board is planar). Views with fewer than
+  `ExtrinsicsOptions::min_points` (default 6) are ignored.
+- Pairwise relative poses are averaged over all groups in which both cameras saw the board (quaternion mean for the
+  rotation), then chained to the reference camera breadth-first. A camera that no chain of co-visible groups
+  connects to the reference is an error naming it; nothing is guessed.
+- The joint refinement is a dense Levenberg–Marquardt over all camera poses (reference fixed) and one board pose per
+  group, with central-difference Jacobians and the intrinsics held fixed. The projection model is OpenCV's
+  pinhole with `k1 k2 p1 p2 k3`; more coefficients are rejected. Problems here are small (hundreds of parameters),
+  so no sparse solver is needed.
+- `extrinsics_rms_px` per camera is the RMS reprojection error of the refined model over that camera's points.
+- Intrinsics come in as `CameraModel` (plain numbers, built from `Intrinsics` with
+  `CameraModel::from_intrinsics`), one per camera and image size.
+
 ## Step checklist
 
-- [ ] Per-group board pose per camera
-- [ ] Pose chaining to a reference camera and joint refinement
+- [x] Per-group board pose per camera (`board_pose`)
+- [x] Pose chaining to a reference camera and joint refinement (`calibrate_extrinsics`)
 - [x] Calibration file format defined (above)
-- [ ] Calibration file written by the crate, and documented in `calibration/README.md`
-- [ ] Synthetic multi-camera test recovers known poses
-- [ ] Real two-camera run recorded in `docs/hardware/`
+- [x] Calibration file written by the crate (`Calibration::save` / `load`, `format` checked), documented in
+      `calibration/README.md`
+- [x] Synthetic multi-camera test recovers known poses (`tests/extrinsics-test.rs`: three cameras, the third
+      only ever seen together with the second, partial views; exact projections recover the poses to ~0.1 mm
+      and < 0.01°, 0.3 px noise to < 5 mm and 0.5° with the reported RMS near 0.3 px)
+- [ ] Real two-camera run recorded in `docs/hardware/` (needs a second camera)

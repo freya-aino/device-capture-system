@@ -140,6 +140,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "opencv",
+ "serde",
+ "serde_json",
  "shared",
 ]
 

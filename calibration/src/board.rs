@@ -10,6 +10,8 @@ pub const SQUARES_Y: i32 = 5;
 pub const SQUARE_LENGTH: f32 = 0.04;
 /// Metres.
 pub const MARKER_LENGTH: f32 = 0.03;
+/// Name of the ArUco dictionary, as written in calibration files.
+pub const DICTIONARY_NAME: &str = "DICT_5X5_100";
 
 /// Inner chessboard corners are the reference points: `(SQUARES_X - 1) * (SQUARES_Y - 1)` of them.
 pub const CORNER_COUNT: usize = ((SQUARES_X - 1) * (SQUARES_Y - 1)) as usize;

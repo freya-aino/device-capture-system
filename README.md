@@ -13,7 +13,7 @@ streams, keep them in sync, and expose them to clients.
 > endpoints to any number of consumers (XSUB/XPUB proxy) and serves `GET /status` with live producer and
 > consumer counts, an `access-client` (CLI and library, including client-side aligned groups), and
 > installable Python bindings. Hub-side sync is opt-in (`HUB_SYNC_PORT`) and was validated on real
-> devices. Calibration is a Rust consumer crate (`calibration/`: ChArUco detection and intrinsics); multi-camera extrinsics are not done. Windows is unsupported by decision. See [TODO](#todo).
+> devices. Calibration is a Rust consumer crate (`calibration/`: ChArUco detection, intrinsics and multi-camera extrinsics, not yet run on real cameras). Windows is unsupported by decision. See [TODO](#todo).
 
 ## Architecture
 
@@ -42,7 +42,7 @@ each `device-node` serves `GET /status` and `POST /start`, `/stop` and `/restart
 | [`control-hub`](control-hub/README.md) | bin  | Central process: runs the XSUB/XPUB ZMQ proxy, fanning in the producer endpoints from `HUB_PRODUCERS` (or the single `HUB_PRODUCER_IP`/`HUB_PRODUCER_PORT`), configured by `HUB_*` environment variables. Serves `GET /status` with producer and consumer counts. Opt-in sync (`HUB_SYNC_PORT`) publishes aligned groups. |
 | [`access-client`](access-client/README.md) | bin+lib  | Consumer-side client that subscribes to the hub's XPUB stream. The CLI prints received frames; the library provides `AccessClient` (decoded frames) and `AlignedClient` (groups frames from several devices by capture time). Configured by `HUB_IP`/`HUB_PORT` and `CLIENT_*` environment variables. |
 | [`python-client`](python-client/README.md) | lib  | Python bindings via PyO3 (`device_system` extension module) that wrap `access-client` to receive frames from a hub, read aligned groups and decode pixels. Installable with maturin (`pip install ./python-client`); see [`python-client/README.md`](python-client/README.md). |
-| [`calibration`](calibration/README.md) | lib  | Consumer crate: ChArUco reference-point detection and camera intrinsics (`opencv`); multi-camera extrinsics open (step 22). |
+| [`calibration`](calibration/README.md) | lib  | Consumer crate: ChArUco reference-point detection, camera intrinsics and multi-camera extrinsics with a JSON calibration file (`opencv`). |
 | [`preprocess`](preprocess/README.md) | lib  | Per-camera image transforms from TOML (rotate, flip, crop, resize, brightness, contrast, gamma, grayscale), run in the hub (`HUB_PREPROCESS_PORT`) or a consumer. |
 | [`recorder`](recorder/README.md) | bin+lib  | Consumer: records selected hub streams to a session directory (one `ffmpeg`-written video per camera, one WAV per microphone, per-frame JSON-lines sidecar, `session.json`). Needs `ffmpeg`. |
 | [`live-sink`](live-sink/README.md) | bin+lib  | Consumer: forwards one selected stream into a `v4l2loopback` device (newest frame, RGB3/GREY converted to YUYV) so camera-only applications can read it. |
@@ -502,8 +502,8 @@ The ordered build plan is in `SPECS.md` §8, and each build item's spec and chec
   - [x] Calibrate: runs as a consumer in [`calibration/`](calibration/README.md), not in the hub
     - [x] general reference point detection model: ChArUco corners, deterministic fixture test
     - [x] camera intrinsics from detected views (no python-opencv code existed to port, so written from scratch in Rust)
-    - [ ] multi-camera extrinsics from aligned groups (`SPECS.md` §8 step 22)
-    - [ ] run against a real camera and board
+    - [x] multi-camera extrinsics from aligned groups: `calibrate_extrinsics`, JSON calibration file, synthetic three-camera test (`SPECS.md` §8 step 22)
+    - [ ] run against real cameras and a printed board (intrinsics; extrinsics with two cameras)
   - [x] `GET /status` with live producer and consumer counts (`HUB_STATUS_ADDR`)
 - [ ] Client
   - [x] Minimal Rust access client (`access-client`) that receives frames from the hub
