@@ -4,17 +4,13 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-alsa = "0.9.1"
-v4l = "0.14.0"
 anyhow = "1.0.98"
-bincode = "2.0.1"
-zmq = "0.10.0"
-glob = "0.3.2"
-
-tokio = { version = "1.49.0", features = ["full"] }
-warp = { version = "0.4.2", features = ["server"] }
-
-networking = { path = "../networking" }
 devices = { path = "../devices" }
+networking = { path = "../networking" }
 shared = { path = "../shared" }
-
+serde = { version = "1.0", features = ["derive"] }
+tiny_http = "0.12.0"
+toml = "0.8"
+zmq = "0.10.0"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }

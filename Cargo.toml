@@ -1,6 +1,15 @@
 [workspace]
 members = [
-  "access-client", 
-  "control-hub",
-  "device-node"
+    "shared",
+    "devices",
+    "networking",
+    "device-node",
+    "control-hub",
+    "access-client",
+    "python-client",
+    "calibration",
+    "preprocess",
+    "recorder",
+    "live-sink",
 ]
+resolver = "3"

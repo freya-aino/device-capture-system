@@ -8,7 +8,6 @@ use flume::{Sender, TryRecvError};
 use std::{
     io::{Read, Write},
     thread::{JoinHandle, spawn},
-    time::Instant,
 };
 
 use shared::{
@@ -34,64 +33,102 @@ impl AlsaMicrophoneDevice {
         }
     }
 
-    // fn get_devices_for_card(card: Card) -> Result<Vec<AlsaMicrophoneDevice>, Error> {
-    //     let card_ctl = Ctl::from_card(&card, false)?;
-
-    //     let card_info = card_ctl.card_info()?;
-    //     let card_id = card_info.get_id()?;
-    //     let card_name = card_info.get_name()?;
-
-    //     let mut out_devices = Vec::<AlsaMicrophoneDevice>::new();
-
-    //     for device in DeviceIter::new(&card_ctl) {
-    //         let pcm_info = card_ctl.pcm_info(device as u32, 0, Direction::Capture);
-
-    //         match pcm_info {
-    //             Ok(info) => {
-    //                 for subdev_id in 0..info.get_subdevices_count() {
-    //                     let subdev_info =
-    //                         card_ctl.pcm_info(device as u32, subdev_id, Direction::Capture)?;
-
-    //                     let device_name = subdev_info.get_name()?;
-
-    //                     out_devices.push(AlsaMicrophoneDevice::new(
-    //                         device_name.to_string(),
-    //                         card_name.to_string(),
-    //                     ));
-    //                 }
-    //             }
-    //             Err(_) => continue,
-    //         }
-    //     }
-
-    //     Ok(out_devices)
-    // }
-
     pub fn get_all_alsa_microphones() -> Result<Vec<AlsaMicrophoneDevice>, Error> {
-        let hints = HintIter::new_str(None, "pcm")?;
+        let hints = HintIter::new_str(None, "pcm")?
+            .map(|hint| PcmHint {
+                name: hint.name,
+                desc: hint.desc,
+                direction: hint.direction,
+            })
+            .collect::<Vec<_>>();
 
-        let mut out_devices = Vec::<AlsaMicrophoneDevice>::new();
-        for hint in hints {
-            if !hint.direction.is_none() || hint.direction == Some(Direction::Playback) {
-                continue;
-            }
-
-            let id = hint.name.unwrap();
-            let name = hint.desc.unwrap();
-
-            if id == "default" || id == "null" || id == "pipewire" || id == "sysdefault" {
-                continue;
-            }
-
-            if id.contains("DEV") {
-                continue;
-            }
-
-            out_devices.push(AlsaMicrophoneDevice::new(id, name));
-        }
-
-        Ok(out_devices)
+        Ok(select_capture_hints(hints)
+            .into_iter()
+            .map(|(id, name)| AlsaMicrophoneDevice::new(id, name))
+            .collect())
     }
+}
+
+/// The three fields of an ALSA PCM hint that enumeration looks at. Mirrors `alsa::device_name::Hint`
+/// so the selection rule can be tested without a sound card.
+#[derive(Debug, Clone)]
+pub struct PcmHint {
+    pub name: Option<String>,
+    pub desc: Option<String>,
+    pub direction: Option<Direction>,
+}
+
+/// Picks the PCM hints worth offering as microphones, as `(id, display name)` pairs, in hint order.
+///
+/// Rules, in order:
+/// 1. Playback-only hints and hints without a name are skipped.
+/// 2. `null` and the bare `default`/`sysdefault` aliases are skipped: they duplicate another entry.
+/// 3. Sound-server PCMs (`pipewire`, `pulse`, `jack`) are kept as they are. On a desktop the server owns the
+///    sound card, so these are usually the only PCMs that can actually be opened for capture.
+/// 4. Of the hints that name a card (`…:CARD=<card>…`), one per card is kept. The preferred plugin is the
+///    one that converts formats for us: `sysdefault` > `plughw` > `front` > `hw` > anything else. The
+///    earlier `DEV` substring filter removed `front:CARD=…,DEV=0`, the only hardware hint PipeWire hosts
+///    expose, which left the list empty (`docs/hardware/2026-10-30-framework-12-webcam.md`).
+pub fn select_capture_hints(hints: Vec<PcmHint>) -> Vec<(String, String)> {
+    const SOUND_SERVERS: [&str; 3] = ["pipewire", "pulse", "jack"];
+    const CARD_PLUGIN_PREFERENCE: [&str; 4] = ["sysdefault", "plughw", "front", "hw"];
+
+    let display_name = |id: &str, desc: Option<String>| -> String {
+        desc.map(|d| d.lines().next().unwrap_or("").trim().to_string())
+            .filter(|d| !d.is_empty())
+            .unwrap_or_else(|| id.to_string())
+    };
+    let plugin_rank = |base: &str| {
+        CARD_PLUGIN_PREFERENCE
+            .iter()
+            .position(|p| *p == base)
+            .unwrap_or(CARD_PLUGIN_PREFERENCE.len())
+    };
+
+    let mut servers: Vec<(String, String)> = Vec::new();
+    // card -> (rank, hint index, id, name); lower rank wins, earlier hint breaks ties
+    let mut per_card: Vec<(String, usize, usize, String, String)> = Vec::new();
+
+    for (index, hint) in hints.into_iter().enumerate() {
+        if hint.direction == Some(Direction::Playback) {
+            continue;
+        }
+        let Some(id) = hint.name else {
+            continue;
+        };
+        let base = id.split(':').next().unwrap_or(&id).to_string();
+        let card = id
+            .split(':')
+            .nth(1)
+            .and_then(|args| args.split(',').find_map(|kv| kv.strip_prefix("CARD=")))
+            .map(str::to_string);
+
+        match (base.as_str(), card) {
+            ("null", _) => {}
+            ("default" | "sysdefault", None) => {}
+            (b, _) if SOUND_SERVERS.contains(&b) => {
+                let name = display_name(&id, hint.desc);
+                servers.push((id, name));
+            }
+            (_, None) => {}
+            (b, Some(card)) => {
+                let rank = plugin_rank(b);
+                let name = display_name(&id, hint.desc);
+                match per_card.iter_mut().find(|entry| entry.0 == card) {
+                    Some(entry) if rank < entry.1 => *entry = (card, rank, index, id, name),
+                    Some(_) => {}
+                    None => per_card.push((card, rank, index, id, name)),
+                }
+            }
+        }
+    }
+
+    per_card.sort_by_key(|entry| entry.2);
+    per_card
+        .into_iter()
+        .map(|(_, _, _, id, name)| (id, name))
+        .chain(servers)
+        .collect()
 }
 
 impl Device for AlsaMicrophoneDevice {
@@ -120,8 +157,8 @@ impl Device for AlsaMicrophoneDevice {
         callback: Box<dyn Fn(FramePacket) -> Result<(), Error> + Send + 'static>,
     ) -> Result<JoinHandle<Result<(), Error>>, Error> {
         assert!(
-            self.device_status() == &DeviceStatus::Available,
-            "Camera is not in available status"
+            self.device_status() != &DeviceStatus::Running,
+            "Microphone is already running"
         );
 
         let device_info = self.device_info.clone();
@@ -139,62 +176,84 @@ impl Device for AlsaMicrophoneDevice {
             params.set_format(Format::S16LE)?;
             params.set_access(Access::RWInterleaved)?;
 
-            println!("Desired microphone configurations {:?}", params);
+            tracing::debug!("Desired microphone configurations {:?}", params);
 
             // start pcm
             pcm.hw_params(&params)?;
+            // The `plug` layer usually hides a card that cannot do the requested rate, but a direct
+            // `hw:` PCM may have been granted the nearest rate instead. Whatever was granted goes
+            // on the wire so consumers never have to guess.
+            let granted_rate = pcm.hw_params_current()?.get_rate()?;
+            if granted_rate != config.sample_rate {
+                tracing::warn!(
+                    "microphone {:?} granted {} Hz instead of the requested {} Hz; frames carry the granted rate",
+                    device_info.name,
+                    granted_rate,
+                    config.sample_rate
+                );
+            }
             pcm.start()?;
             let mut io = pcm.io_i16()?;
 
-            println!("Config used by Microphone: {:?}", pcm.get_params());
-            println!("Microphone started");
+            tracing::debug!("Config used by Microphone: {:?}", pcm.get_params());
+            tracing::info!("Microphone started");
 
             loop {
-                let timing = Instant::now();
-
                 match rx.try_recv() {
                     Err(err) => match err {
                         TryRecvError::Disconnected => break,
                         TryRecvError::Empty => {}
                     },
-                    c => match c.unwrap() {
-                        DeviceCommand::Stop => {
-                            break;
-                        }
-                        _ => {}
-                    },
+                    Ok(DeviceCommand::Stop) => break,
+                    Ok(_) => {}
                 }
 
                 // capture buffer (i16 little-endian --> u8 byte level representation)
                 let mut buffer = Vec::<u8>::new();
-                buffer.resize(config.buffer_size as usize * 2, 0);
+                buffer.resize(
+                    config.buffer_size as usize * config.channels as usize * 2,
+                    0,
+                );
                 io.read_exact(&mut buffer)?;
+                // Frames still queued in ALSA were captured after this buffer, so the buffer
+                // ended `avail / rate` ago. Without this, every packet of a 128 ms PipeWire
+                // quantum would carry the same send time and only one could ever align.
+                let queued = pcm.avail().unwrap_or(0).max(0) as u64;
+                let captured = std::time::SystemTime::now()
+                    - std::time::Duration::from_nanos(queued * 1_000_000_000 / granted_rate as u64);
 
                 let fp = FramePacket::new(
                     FramePacketInformation {
                         device_info: device_info.clone(),
                         rx_timestamp: None,
                         tx_timestamp: None,
-                        frame_shape: vec![config.buffer_size, 2],
+                        frame_shape: vec![config.buffer_size, config.channels as u32],
+                        pixel_format: None,
+                        sample_rate: Some(granted_rate),
+                        capture_timestamp: Some(captured),
                     },
                     buffer.into_boxed_slice(),
                 );
 
                 callback(fp)?;
-
-                let elapsed = timing.elapsed();
-                println!("Frame capture took: {:?}", elapsed);
             }
             io.flush()?;
             Ok(())
         });
+        self.device_info.device_status = DeviceStatus::Running;
         Ok(handle)
     }
 
     fn stop(&mut self) -> Result<(), Error> {
         match self.command_tx.take() {
             Some(tx) => {
-                tx.send(DeviceCommand::Stop).unwrap();
+                // A failed send means the capture thread has already exited (it dropped the
+                // receiver, e.g. after a read error). The device is stopped either way, so the
+                // status must say so or the node could never restart it.
+                if tx.send(DeviceCommand::Stop).is_err() {
+                    tracing::warn!("capture thread had already exited before stop()");
+                }
+                self.device_info.device_status = DeviceStatus::Stopped;
                 Ok(())
             }
             None => Err(anyhow!(
@@ -204,175 +263,123 @@ impl Device for AlsaMicrophoneDevice {
     }
 }
 
-// pub struct CpalMicrophoneDevice {
-//     pub device_info: DeviceInformation,
-//     pub microphone: cpal::Device,
-//     pub stream: Option<cpal::Stream>,
-// }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-// fn config_ranges_to_configs(
-//     config_ranges: Vec<SupportedStreamConfigRange>,
-// ) -> Result<Vec<MicrophoneConfig>, Error> {
-//     let standard_channels: Vec<u16> = vec![1, 2];
-//     let standard_sample_rates: Vec<u32> = vec![8000, 16000, 22050, 44100, 48000, 96000];
-//     let standard_buffer_sizes: Vec<u32> = vec![128, 256, 512, 1024, 2048, 4096];
+    fn hint(name: &str, desc: &str, direction: Option<Direction>) -> PcmHint {
+        PcmHint {
+            name: Some(name.to_string()),
+            desc: Some(desc.to_string()),
+            direction,
+        }
+    }
 
-//     let mut out: Vec<MicrophoneConfig> = Vec::new();
+    /// `arecord -L` on the Framework Laptop 12 with PipeWire (docs/hardware/2026-10-30-framework-12-webcam.md).
+    fn framework_pipewire_hints() -> Vec<PcmHint> {
+        vec![
+            hint(
+                "null",
+                "Discard all samples (playback) or generate zero samples (capture)",
+                None,
+            ),
+            hint("pipewire", "PipeWire Sound Server", None),
+            hint(
+                "default",
+                "Default ALSA Output (currently PipeWire Media Server)",
+                None,
+            ),
+            hint(
+                "sysdefault:CARD=PCH",
+                "HDA Intel PCH, ALC285 Analog\nDefault Audio Device",
+                None,
+            ),
+            hint(
+                "front:CARD=PCH,DEV=0",
+                "HDA Intel PCH, ALC285 Analog\nFront output / input",
+                None,
+            ),
+            hint(
+                "hdmi:CARD=PCH,DEV=0",
+                "HDA Intel PCH, HDMI 0\nHDMI Audio Output",
+                Some(Direction::Playback),
+            ),
+        ]
+    }
 
-//     for cr in config_ranges.iter() {
-//         if !standard_channels.contains(&cr.channels()) {
-//             continue;
-//         }
-//         if cr.sample_format() != SampleFormat::I16 {
-//             continue;
-//         }
+    #[test]
+    fn pipewire_host_keeps_one_hardware_pcm_per_card_and_the_sound_server() {
+        let picked = select_capture_hints(framework_pipewire_hints());
+        assert_eq!(
+            picked,
+            vec![
+                (
+                    "sysdefault:CARD=PCH".to_string(),
+                    "HDA Intel PCH, ALC285 Analog".to_string()
+                ),
+                ("pipewire".to_string(), "PipeWire Sound Server".to_string()),
+            ]
+        );
+    }
 
-//         for sample_rate in standard_sample_rates.iter() {
-//             if sample_rate < &cr.min_sample_rate().0 && sample_rate > &cr.max_sample_rate().0 {
-//                 continue;
-//             }
+    #[test]
+    fn front_hint_survives_when_it_is_the_only_hardware_hint() {
+        let hints = vec![
+            hint("default", "Default ALSA Output", None),
+            hint(
+                "front:CARD=PCH,DEV=0",
+                "HDA Intel PCH, ALC285 Analog\nFront output / input",
+                None,
+            ),
+        ];
+        let picked = select_capture_hints(hints);
+        assert_eq!(picked.len(), 1);
+        assert_eq!(picked[0].0, "front:CARD=PCH,DEV=0");
+    }
 
-//             for buffer_size in standard_buffer_sizes.iter() {
-//                 let buffer_size_range = cr.buffer_size();
+    #[test]
+    fn classic_alsa_host_prefers_the_converting_plugin_and_skips_playback_only() {
+        let hints = vec![
+            hint(
+                "hw:CARD=USB,DEV=0",
+                "USB Audio\nDirect hardware device without any conversions",
+                None,
+            ),
+            hint(
+                "plughw:CARD=USB,DEV=0",
+                "USB Audio\nHardware device with all software conversions",
+                None,
+            ),
+            hint(
+                "dmix:CARD=USB,DEV=0",
+                "USB Audio\nDirect sample mixing device",
+                Some(Direction::Playback),
+            ),
+            hint(
+                "hw:CARD=Mic2,DEV=0",
+                "Second Mic\nDirect hardware device",
+                None,
+            ),
+            hint("sysdefault", "Default Audio Device", None),
+        ];
+        let picked = select_capture_hints(hints);
+        assert_eq!(
+            picked.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>(),
+            vec!["plughw:CARD=USB,DEV=0", "hw:CARD=Mic2,DEV=0"]
+        );
+        assert_eq!(picked[0].1, "USB Audio");
+    }
 
-//                 match buffer_size_range {
-//                     SupportedBufferSize::Range { min, max } => {
-//                         if buffer_size >= min && buffer_size <= max {
-//                             out.push(MicrophoneConfig {
-//                                 sample_rate: *sample_rate,
-//                                 channels: cr.channels(),
-//                                 buffer_size: *buffer_size,
-//                             });
-//                         }
-//                     }
-//                     _ => {}
-//                 }
-//             }
-//         }
-//     }
-
-//     Ok(out)
-// }
-
-// impl CpalMicrophoneDevice {
-//     pub fn new(mic: CpalDevice, id: String) -> Self {
-//         let device_info = DeviceInformation {
-//             id: id,
-//             name: mic.name().unwrap(),
-//             device_type: DeviceType::Microphone,
-//         };
-
-//         CpalMicrophoneDevice {
-//             device_info: device_info,
-//             microphone: mic,
-//             stream: None,
-//         }
-//     }
-
-//     pub fn build_stream_configs(
-//         &self,
-//         mic_config: &MicrophoneConfig,
-//     ) -> Result<StreamConfig, Error> {
-//         let stream_config = StreamConfig {
-//             channels: mic_config.channels,
-//             sample_rate: cpal::SampleRate(mic_config.sample_rate),
-//             buffer_size: cpal::BufferSize::Fixed(mic_config.buffer_size),
-//         };
-//         return Ok(stream_config);
-//     }
-// }
-
-// impl Device for CpalMicrophoneDevice {
-//     type Config = MicrophoneConfig;
-
-//     fn id(&self) -> &str {
-//         &self.device_info.id
-//     }
-
-//     fn name(&self) -> &str {
-//         &self.device_info.name
-//     }
-
-//     fn device_type(&self) -> &DeviceType {
-//         &self.device_info.device_type
-//     }
-
-//     fn get_configs(&self) -> Result<Vec<MicrophoneConfig>, Error> {
-//         let conf_ranges = self
-//             .microphone
-//             .supported_input_configs()
-//             .unwrap()
-//             .collect::<Vec<SupportedStreamConfigRange>>();
-
-//         Ok(config_ranges_to_configs(conf_ranges).unwrap())
-//     }
-
-//     fn open(
-//         &mut self,
-//         config: MicrophoneConfig,
-//         callback: Box<dyn Fn(FramePacket) + Send + 'static>,
-//         timeout: Option<Duration>,
-//     ) -> Result<(), Error> {
-//         assert!(
-//             self.stream.is_none(),
-//             "Microphone is already open (stream is not None)"
-//         );
-
-//         let stream_config = self.build_stream_configs(&config).unwrap();
-
-//         println!(
-//             "Config used for microphone - {:?} - {:?}",
-//             self.device_info.name, stream_config
-//         );
-
-//         let di = self.device_info.clone();
-
-//         let stream = self
-//             .microphone
-//             .build_input_stream_raw(
-//                 &stream_config,
-//                 SampleFormat::I16,
-//                 move |data, _| {
-//                     // process audio data
-//                     let frame_shape: Vec<u32> = vec![
-//                         config.sample_rate,
-//                         config.channels as u32,
-//                         config.buffer_size,
-//                     ];
-
-//                     let frame_packet = FramePacket::new(
-//                         FramePacketInformation {
-//                             device_info: di.clone(),
-//                             rx_timestamp: None,
-//                             tx_timestamp: None,
-//                             frame_shape: frame_shape,
-//                         },
-//                         data.bytes().to_vec().into_boxed_slice(),
-//                     );
-
-//                     callback(frame_packet);
-//                 },
-//                 |err| {
-//                     println!("Error from audio stream: {}", err);
-//                 },
-//                 timeout,
-//             )
-//             .unwrap();
-
-//         stream.play().unwrap();
-
-//         self.stream = Some(stream);
-
-//         // TODO: listen to control signal here or persist stream
-
-//         Ok(())
-//     }
-
-//     fn close(&mut self) -> Result<(), Error> {
-//         if let Some(stream) = self.stream.take() {
-//             stream.pause()?;
-//         }
-//         self.stream = None;
-//         Ok(())
-//     }
-// }
+    #[test]
+    fn hints_without_a_name_or_only_null_yield_nothing() {
+        let hints = vec![
+            PcmHint {
+                name: None,
+                desc: Some("x".into()),
+                direction: None,
+            },
+            hint("null", "Discard all samples", None),
+        ];
+        assert!(select_capture_hints(hints).is_empty());
+    }
+}

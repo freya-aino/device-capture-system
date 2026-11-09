@@ -6,4 +6,3 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.98"
 bincode = "2.0.1"
-tiny_http = "0.12.0"

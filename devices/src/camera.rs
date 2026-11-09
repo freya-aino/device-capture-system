@@ -1,6 +1,6 @@
 use std::ffi::OsString;
 use std::thread::{JoinHandle, spawn};
-use std::time::Instant;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Error, Result, anyhow};
 use flume::Sender;
@@ -10,11 +10,44 @@ use shared::{
     FramePacketInformation,
 };
 use v4l::buffer::Type;
+use v4l::capability::Flags;
+use v4l::control::{Control, Value};
 use v4l::frameinterval::FrameIntervalEnum;
 use v4l::{FourCC, Fraction};
 // use v4l::video::capture::Parameters;
 // use v4l::io::traits::{CaptureStream, OutputStream};
 use v4l::video::Capture;
+
+/// `V4L2_CID_EXPOSURE_AUTO_PRIORITY` (`exposure_dynamic_framerate` in `v4l2-ctl`). When set, a UVC
+/// camera in auto-exposure mode may lengthen the exposure past the frame interval and deliver fewer
+/// frames than granted (the Framework 12 webcam fell to 20 fps in indoor light with every mode,
+/// `docs/hardware/`). The capture path turns it off so the granted interval is honoured.
+const V4L2_CID_EXPOSURE_AUTO_PRIORITY: u32 = 0x009a0903;
+
+/// `CLOCK_MONOTONIC` as a duration, the clock UVC drivers stamp buffers with.
+fn monotonic_now() -> Duration {
+    let mut ts = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    // SAFETY: clock_gettime only writes the provided timespec.
+    unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) };
+    Duration::new(ts.tv_sec as u64, ts.tv_nsec as u32)
+}
+
+/// Converts a driver buffer timestamp to wall-clock time. `mono_to_wall` is the offset between
+/// `CLOCK_MONOTONIC` and `SystemTime` measured once at stream start; `None` when the driver did
+/// not flag the stamp as monotonic, in which case callers fall back to "now".
+fn capture_time_of(meta: &v4l::buffer::Metadata, mono_to_wall: Duration) -> Option<SystemTime> {
+    if !meta.flags.contains(v4l::buffer::Flags::TIMESTAMP_MONOTONIC) {
+        return None;
+    }
+    let stamp = Duration::new(
+        meta.timestamp.sec as u64,
+        (meta.timestamp.usec as u32) * 1000,
+    );
+    Some(UNIX_EPOCH + mono_to_wall + stamp)
+}
 
 pub struct V4lCameraDevice {
     pub device_info: DeviceInformation,
@@ -24,8 +57,11 @@ pub struct V4lCameraDevice {
 
 impl V4lCameraDevice {
     pub fn new(system_path: String) -> Result<Self, Error> {
-        let dev = v4l::Device::with_path(&system_path).unwrap();
-        let caps = dev.query_caps().unwrap();
+        let dev = v4l::Device::with_path(&system_path)?;
+        let caps = dev.query_caps()?;
+        if !caps.capabilities.contains(Flags::VIDEO_CAPTURE) {
+            return Err(anyhow!("{} is not a video capture device", system_path));
+        }
         Ok(V4lCameraDevice {
             device_info: DeviceInformation {
                 id: system_path,
@@ -46,10 +82,11 @@ impl V4lCameraDevice {
 
         let mut devices = Vec::<V4lCameraDevice>::new();
         for dp in device_paths.iter() {
-            devices.push(match dp.clone().into_string() {
-                Ok(str_path) => V4lCameraDevice::new(str_path)?,
-                Err(os_path) => V4lCameraDevice::new(os_path.to_string_lossy().to_string())?,
-            })
+            let path = dp.to_string_lossy().to_string();
+            match V4lCameraDevice::new(path.clone()) {
+                Ok(device) => devices.push(device),
+                Err(e) => tracing::warn!("Skipping {}: {}", path, e),
+            }
         }
         Ok(devices)
     }
@@ -72,7 +109,7 @@ impl Device for V4lCameraDevice {
     }
 
     fn get_configs(&self) -> Result<Vec<CameraConfig>, Error> {
-        let formats = self.device.enum_formats().unwrap();
+        let formats = self.device.enum_formats()?;
 
         let mut out_configs = Vec::<CameraConfig>::new();
 
@@ -88,16 +125,18 @@ impl Device for V4lCameraDevice {
             // continue;
             // }
 
-            let frame_sizes = self.device.enum_framesizes(fourcc).unwrap();
+            let frame_sizes = self.device.enum_framesizes(fourcc)?;
             for fs in frame_sizes {
-                let size = fs.size.to_discrete().into_iter().nth(0).unwrap();
+                let size = fs
+                    .size
+                    .to_discrete()
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| anyhow!("frame size has no discrete values"))?;
                 let width = size.width;
                 let height = size.height;
 
-                let frame_intervals = self
-                    .device
-                    .enum_frameintervals(fourcc, width, height)
-                    .unwrap();
+                let frame_intervals = self.device.enum_frameintervals(fourcc, width, height)?;
                 for fi in frame_intervals {
                     let (num, denom) = match fi.interval {
                         FrameIntervalEnum::Discrete(frac) => {
@@ -128,32 +167,70 @@ impl Device for V4lCameraDevice {
         callback: Box<dyn Fn(FramePacket) -> Result<(), Error> + Send + 'static>,
     ) -> Result<JoinHandle<Result<(), Error>>, Error> {
         assert!(
-            self.device_status() == &DeviceStatus::Available,
-            "Camera is not in available status"
+            self.device_status() != &DeviceStatus::Running,
+            "Camera is already running"
         );
 
-        let mut format = self.device.format().expect("Failed to get device format");
+        let mut format = self.device.format()?;
         format.width = config.width;
         format.height = config.height;
         format.fourcc = FourCC::new(&config.fourcc.map(|a| a as u8));
 
-        let mut params = self.device.params().expect("Failed to get device params");
+        // Best effort: not every driver exposes this control, and a missing control must not stop
+        // capture. A camera that keeps it on may deliver fewer frames than the granted interval.
+        match self.device.set_control(Control {
+            id: V4L2_CID_EXPOSURE_AUTO_PRIORITY,
+            value: Value::Boolean(false),
+        }) {
+            Ok(()) => tracing::debug!("disabled exposure auto-priority (dynamic frame rate)"),
+            Err(e) => tracing::warn!(
+                "could not disable exposure auto-priority on {:?}: {e}; the delivered frame rate may fall below the granted interval in low light",
+                self.device_info.name
+            ),
+        }
+
+        // Order matters: VIDIOC_S_FMT resets the streaming parameters, so the format goes first
+        // and the frame interval second. Both are read back and compared, because drivers may
+        // silently substitute the nearest supported value.
+        let negotiated = self.device.set_format(&format)?;
+        if negotiated.width != format.width
+            || negotiated.height != format.height
+            || negotiated.fourcc != format.fourcc
+        {
+            return Err(anyhow!(
+                "Camera negotiated {}x{} {} instead of requested {}x{} {}",
+                negotiated.width,
+                negotiated.height,
+                negotiated.fourcc,
+                format.width,
+                format.height,
+                format.fourcc
+            ));
+        }
+
+        let mut params = self.device.params()?;
         params.interval = Fraction::new(config.fps.0, config.fps.1);
-
-        println!(
-            "Desired camera configurations - {:?}\n{:?}\n{:?}\n",
-            self.device_info.name, params, format
+        tracing::debug!(
+            "Desired camera configuration - {:?}\n{:?}\n{:?}\n",
+            self.device_info.name,
+            params,
+            format
         );
+        self.device.set_params(&params)?;
+        let granted_interval = self.device.params()?.interval;
+        if granted_interval.numerator as u64 * config.fps.1 as u64
+            != config.fps.0 as u64 * granted_interval.denominator as u64
+        {
+            return Err(anyhow!(
+                "Camera granted frame interval {}/{} instead of requested {}/{}",
+                granted_interval.numerator,
+                granted_interval.denominator,
+                config.fps.0,
+                config.fps.1
+            ));
+        }
 
-        self.device
-            .set_params(&params)
-            .expect("Failed to set device params");
-
-        self.device
-            .set_format(&format)
-            .expect("Failed to set device format");
-
-        println!(
+        tracing::debug!(
             "Config used by camera - {:?}\n{:?}\n{:?}\n",
             self.device_info.name,
             self.device.format(),
@@ -161,24 +238,24 @@ impl Device for V4lCameraDevice {
         );
 
         let mut stream =
-            v4l::io::mmap::Stream::with_buffers(&mut self.device, Type::VideoCapture, 128)
-                .expect("Failde to create Stream");
+            v4l::io::mmap::Stream::with_buffers(&mut self.device, Type::VideoCapture, 4)?;
 
         // if let Some(timeout) = timeout {
         //     stream.set_timeout(timeout);
         // }
 
-        println!("Camera device started");
+        tracing::info!("Camera device started");
 
         let device_information = self.device_info.clone();
+        let mono_to_wall = SystemTime::now()
+            .duration_since(UNIX_EPOCH)?
+            .saturating_sub(monotonic_now());
 
         let (tx, rx) = flume::unbounded::<DeviceCommand>();
         self.command_tx = Some(tx);
 
         let handle = spawn(move || -> Result<(), Error> {
             loop {
-                let timing = Instant::now();
-
                 match rx.try_recv() {
                     Err(err) => match err {
                         flume::TryRecvError::Empty => {}
@@ -190,40 +267,58 @@ impl Device for V4lCameraDevice {
                     },
                 }
 
-                let (buf, _) = v4l::io::traits::CaptureStream::next(&mut stream)
-                    .expect("Unable to read frame");
+                let (buf, meta) = v4l::io::traits::CaptureStream::next(&mut stream)
+                    .map_err(|e| anyhow!("Unable to read frame: {}", e))?;
                 let frame_shape = vec![config.width, config.height];
+                // The mmap buffer is sized for the largest possible frame; the driver reports how
+                // much of it this frame uses. Compressed formats (MJPG) fill only a fraction, and
+                // the rest is stale data from earlier frames.
+                let used = meta.bytesused as usize;
+                let data = if used > 0 && used <= buf.len() {
+                    &buf[..used]
+                } else {
+                    buf
+                };
 
                 let frame_packet = FramePacket::new(
                     FramePacketInformation {
                         device_info: device_information.clone(),
                         rx_timestamp: None,
                         tx_timestamp: None,
-                        frame_shape: frame_shape,
+                        frame_shape,
+                        pixel_format: Some(config.fourcc_string()),
+                        sample_rate: None,
+                        capture_timestamp: Some(
+                            capture_time_of(meta, mono_to_wall).unwrap_or_else(SystemTime::now),
+                        ),
                     },
-                    buf.to_vec().into_boxed_slice(),
+                    data.to_vec().into_boxed_slice(),
                 );
 
                 callback(frame_packet)?;
-
-                let elapsed = timing.elapsed();
-                println!("Frame capture took: {:?}", elapsed);
             }
 
             v4l::io::traits::Stream::stop(&mut stream)?;
             Ok(())
         });
 
+        self.device_info.device_status = DeviceStatus::Running;
         Ok(handle)
     }
 
     fn stop(&mut self) -> Result<(), Error> {
         match self.command_tx.take() {
             Some(tx) => {
-                tx.send(DeviceCommand::Stop).unwrap();
+                // A failed send means the capture thread has already exited (it dropped the
+                // receiver, e.g. after a read error). The device is stopped either way, so the
+                // status must say so or the node could never restart it.
+                if tx.send(DeviceCommand::Stop).is_err() {
+                    tracing::warn!("capture thread had already exited before stop()");
+                }
+                self.device_info.device_status = DeviceStatus::Stopped;
                 Ok(())
             }
-            None => Err(anyhow!("tryed closing without tx initialized")),
+            None => Err(anyhow!("tried closing without tx initialized")),
         }
     }
 }

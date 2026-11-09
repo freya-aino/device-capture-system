@@ -16,6 +16,9 @@ fn generate_dummy_frame_packet_info(size: usize) -> FramePacketInformation {
         rx_timestamp: None,
         tx_timestamp: None,
         frame_shape: vec![size as u32],
+        pixel_format: None,
+        sample_rate: None,
+        capture_timestamp: None,
     }
 }
 
@@ -27,28 +30,29 @@ fn generate_dummy_frame_packet() -> FramePacket {
 
 #[cfg(test)]
 mod tests {
-    use std::{net::Ipv4Addr, thread::sleep, time::Duration};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::{thread::sleep, time::Duration};
 
     use networking::{Receiver, Sender};
-    use portpicker::pick_unused_port;
 
     use crate::generate_dummy_frame_packet;
+
+    static ENDPOINT_ID: AtomicUsize = AtomicUsize::new(0);
 
     #[test]
     fn send_and_receive() {
         let context = zmq::Context::new();
 
-        let port = pick_unused_port().unwrap();
-        let mut sender = Sender::new(Ipv4Addr::new(127, 0, 0, 1), port, 10, 1024);
-        let mut receiver = Receiver::new(Ipv4Addr::new(127, 0, 0, 1), port, 10, 1024);
+        let id = ENDPOINT_ID.fetch_add(1, Ordering::SeqCst);
+        let endpoint = format!("inproc://send-and-receive-{}", id);
+        let mut sender = Sender::new_endpoint(endpoint.clone(), 10, 1024);
+        let mut receiver = Receiver::new_endpoint(endpoint, 10, 1024);
 
         sender.start(&context).unwrap();
         receiver.start(&context).unwrap();
 
         let in_fp = generate_dummy_frame_packet();
-        sender
-            .send(in_fp.clone(), zmq::DONTWAIT, 1024 * 100)
-            .unwrap();
+        sender.send(in_fp.clone(), zmq::DONTWAIT).unwrap();
 
         sleep(Duration::from_millis(500));
 
