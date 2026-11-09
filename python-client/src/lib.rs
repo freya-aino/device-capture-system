@@ -3,6 +3,7 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use access_client::AccessClient;
 use anyhow::Error;
+use networking::{FrameGroup, GroupReceiver};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
@@ -19,6 +20,7 @@ fn timestamp_secs(t: Option<std::time::SystemTime>) -> Option<f64> {
 
 /// One frame received through the hub. Timestamps are seconds since the Unix epoch.
 #[pyclass(module = "device_system")]
+#[derive(Clone)]
 pub struct Frame {
     device_id: String,
     device_name: String,
@@ -110,6 +112,31 @@ impl Frame {
         PyBytes::new(py, &self.data)
     }
 
+    /// Pixels of a camera frame as `(width, height, channels, bytes)`, rows top to bottom:
+    /// `RGB3` and `GREY` as they are, `YUYV` converted to RGB, `MJPG` decoded. Uses the same
+    /// decoder as the hub's pre-processor. Raises `ValueError` for microphone frames and for
+    /// payloads that do not decode.
+    fn image<'py>(&self, py: Python<'py>) -> PyResult<(u32, u32, u32, Bound<'py, PyBytes>)> {
+        if self.device_type != "camera" {
+            return Err(PyValueError::new_err(format!(
+                "image() needs a camera frame, this is a {} frame",
+                self.device_type
+            )));
+        }
+        let format = self
+            .pixel_format
+            .as_deref()
+            .ok_or_else(|| PyValueError::new_err("camera frame has no pixel_format"))?;
+        let image = preprocess::decode_payload(&self.data, format, &self.frame_shape)
+            .map_err(|e| PyValueError::new_err(format!("{e:#}")))?;
+        Ok((
+            image.width,
+            image.height,
+            image.format.channels() as u32,
+            PyBytes::new(py, &image.data),
+        ))
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "Frame(device_id={:?}, device_type={:?}, frame_shape={:?}, pixel_format={:?}, bytes={})",
@@ -176,9 +203,114 @@ impl DeviceSystem {
     }
 }
 
+/// One aligned set of frames from the hub's sync port: one `Frame` per device, and the spread
+/// of their capture times in seconds.
+#[pyclass(module = "device_system")]
+pub struct Group {
+    frames: Vec<Frame>,
+    skew_s: f64,
+}
+
+impl From<FrameGroup> for Group {
+    fn from(group: FrameGroup) -> Self {
+        Group {
+            frames: group.frames.into_iter().map(Frame::from).collect(),
+            skew_s: group.skew.as_secs_f64(),
+        }
+    }
+}
+
+#[pymethods]
+impl Group {
+    #[getter]
+    fn frames(&self) -> Vec<Frame> {
+        self.frames.clone()
+    }
+
+    #[getter]
+    fn skew_s(&self) -> f64 {
+        self.skew_s
+    }
+
+    fn __len__(&self) -> usize {
+        self.frames.len()
+    }
+
+    fn __repr__(&self) -> String {
+        let ids: Vec<&str> = self.frames.iter().map(|f| f.device_id.as_str()).collect();
+        format!("Group(devices={ids:?}, skew_s={:.6})", self.skew_s)
+    }
+}
+
+/// Consumer-side handle onto a `control-hub`'s sync port (`HUB_SYNC_PORT`), yielding aligned
+/// groups. `for group in AlignedSystem(hub_ip, sync_port):` blocks for each group.
+#[pyclass(module = "device_system", unsendable)]
+pub struct AlignedSystem {
+    receiver: GroupReceiver,
+    _context: zmq::Context,
+}
+
+#[pymethods]
+impl AlignedSystem {
+    #[new]
+    fn new(hub_ip: &str, sync_port: u16) -> PyResult<Self> {
+        let ip: Ipv4Addr = hub_ip
+            .parse()
+            .map_err(|e| PyValueError::new_err(format!("invalid hub_ip {hub_ip:?}: {e}")))?;
+        let context = zmq::Context::new();
+        let mut receiver = GroupReceiver::new_endpoint(format!("tcp://{ip}:{sync_port}"), 10, 1024);
+        receiver.start(&context).map_err(to_py_err)?;
+        Ok(AlignedSystem {
+            receiver,
+            _context: context,
+        })
+    }
+
+    /// Returns the next aligned group, or `None` if none arrives within `timeout_ms`.
+    #[pyo3(signature = (timeout_ms = 1000))]
+    fn next_group(&mut self, py: Python<'_>, timeout_ms: u64) -> PyResult<Option<Group>> {
+        let receiver = &mut self.receiver;
+        let group = py
+            .detach(|| -> Result<Option<FrameGroup>, Error> {
+                let start = std::time::Instant::now();
+                let timeout = Duration::from_millis(timeout_ms);
+                loop {
+                    if let Some(group) = receiver.receive(zmq::DONTWAIT)? {
+                        return Ok(Some(group));
+                    }
+                    if start.elapsed() >= timeout {
+                        return Ok(None);
+                    }
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+            })
+            .map_err(to_py_err)?;
+        Ok(group.map(Group::from))
+    }
+
+    fn __iter__(slf: Py<Self>) -> Py<Self> {
+        slf
+    }
+
+    fn __next__(&mut self, py: Python<'_>) -> PyResult<Group> {
+        loop {
+            if let Some(group) = self.next_group(py, 100)? {
+                return Ok(group);
+            }
+            py.check_signals()?;
+        }
+    }
+
+    fn close(&mut self) -> PyResult<()> {
+        self.receiver.stop().map_err(to_py_err)
+    }
+}
+
 #[pymodule]
 fn device_system(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<DeviceSystem>()?;
+    m.add_class::<AlignedSystem>()?;
     m.add_class::<Frame>()?;
+    m.add_class::<Group>()?;
     Ok(())
 }

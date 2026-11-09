@@ -5,7 +5,9 @@ PyO3 bindings that let Python consumers receive frames from a `control-hub`. The
 wrap `access-client::AccessClient`, so Python uses the same wire decoder as the Rust client.
 
 > **Status:** the bindings are implemented, packaged with maturin (`pyproject.toml`), and covered by
-> a pytest that runs the loopback example. See `SPECS.md` §5 and §8, and [`docs/`](docs/) for the build items.
+> a pytest that runs the loopback example. They read the raw and processed ports (`DeviceSystem`), the sync
+> port (`AlignedSystem`, item 28) and decode camera frames to pixels (`Frame.image()`). See `SPECS.md` §5 and
+> §8, and [`docs/`](docs/) for the build items.
 
 ## Build
 
@@ -37,7 +39,20 @@ for frame in ds.get_frame():
 ```
 
 `DeviceSystem(hub_ip, hub_port)` connects to the hub's XPUB endpoint and raises `ValueError` for an
-invalid IPv4 address and `RuntimeError` if the connection fails.
+invalid IPv4 address and `RuntimeError` if the connection fails. Port 5558 (`HUB_PREPROCESS_PORT`) gives
+the pre-processed stream through the same class.
+
+Aligned groups from the hub's sync port, and pixels:
+
+```python
+from device_system import AlignedSystem
+
+for group in AlignedSystem("127.0.0.1", 5557):
+    for frame in group.frames:
+        width, height, channels, pixels = frame.image()
+        # numpy.frombuffer(pixels, numpy.uint8).reshape(height, width, channels)
+    print(group.skew_s)
+```
 
 ## API
 
@@ -66,6 +81,25 @@ invalid IPv4 address and `RuntimeError` if the connection fails.
 | `rx_timestamp` | `float \| None` | Receive time, seconds since the Unix epoch. |
 | `tx_timestamp` | `float \| None` | Send time set by the producer, seconds since the Unix epoch. |
 | `data` | `bytes` | Raw payload. Cameras use the negotiated FourCC (default `YUYV`); microphones use interleaved `S16LE`. |
+| `image()` | `(int, int, int, bytes)` | `(width, height, channels, pixels)` of a camera frame, rows top to bottom: `RGB3` and `GREY` as they are, `YUYV` converted to RGB, `MJPG` decoded (the hub's `preprocess` decoder, so Python and Rust agree). Raises `ValueError` for microphone frames and undecodable payloads. No numpy dependency: `numpy.frombuffer(pixels, numpy.uint8).reshape(height, width, channels)`. |
+
+### `AlignedSystem(hub_ip: str, sync_port: int)`
+
+Reads the hub's `HUB_SYNC_PORT` (`networking::GroupReceiver`), one aligned group at a time.
+
+| Member | Behaviour |
+|---|---|
+| `next_group(timeout_ms=1000)` | Returns a `Group`, or `None` if none arrives within the timeout. |
+| `__iter__` / `__next__` | Blocks until the next group; checks for Ctrl+C about every 100 ms. |
+| `close()` | Disconnects from the hub. |
+
+### `Group`
+
+| Attribute | Type | Meaning |
+|---|---|---|
+| `frames` | `list[Frame]` | One frame per device the hub aligns (`HUB_SYNC_DEVICES`). |
+| `skew_s` | `float` | Spread of the frames' capture times, in seconds. |
+| `len(group)` | `int` | Number of frames. |
 
 Microphone `data` is interleaved little-endian signed 16-bit samples, which `array('h')` or
 `struct` can decode.
@@ -74,5 +108,5 @@ Microphone `data` is interleaved little-endian signed 16-bit samples, which `arr
 
 - The package is built from source with maturin; no prebuilt wheels are published yet.
 - The pytest needs `cargo` on the path and runs the loopback example, so it is a local integration test.
-- Frames from several producers arrive interleaved. Use `device_id` to tell them apart; the bindings
-  do not sync them.
+- `DeviceSystem` frames from several producers arrive interleaved; use `device_id` to tell them apart, or read
+  `AlignedSystem` for groups the hub has synchronised.

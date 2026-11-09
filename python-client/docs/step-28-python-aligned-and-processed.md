@@ -1,6 +1,6 @@
 # Step 28: Python access to aligned groups and processed frames
 
-- **Status:** ❌ Open
+- **Status:** ✅ Done (2026-11-09; pytest 3 passed against the loopback example)
 - **Stage:** 4 — Consumers and Python
 - **Spec item:** [`SPECS.md`](../../SPECS.md) §8 item 28
 
@@ -24,6 +24,9 @@ two hub outputs:
 
 ## Step checklist
 
-- [ ] `AlignedSystem` and `Group`
-- [ ] `Frame.image()`
-- [ ] pytest extended; README API tables updated
+- [x] `AlignedSystem(hub_ip, sync_port)` with `next_group(timeout_ms)`, iteration and `close()`; `Group.frames`,
+      `Group.skew_s`, `len(group)`
+- [x] `Frame.image()` -> `(width, height, channels, bytes)` via `preprocess::decode_payload`; `ValueError` for
+      microphone frames and undecodable payloads
+- [x] pytest extended (the loopback example now runs an `AlignedRelay` on 5557 with two cameras sharing a capture
+      time; a YUYV black/white pair decodes to the expected RGB bytes); README API tables updated
