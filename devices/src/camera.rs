@@ -270,6 +270,15 @@ impl Device for V4lCameraDevice {
                 let (buf, meta) = v4l::io::traits::CaptureStream::next(&mut stream)
                     .map_err(|e| anyhow!("Unable to read frame: {}", e))?;
                 let frame_shape = vec![config.width, config.height];
+                // The mmap buffer is sized for the largest possible frame; the driver reports how
+                // much of it this frame uses. Compressed formats (MJPG) fill only a fraction, and
+                // the rest is stale data from earlier frames.
+                let used = meta.bytesused as usize;
+                let data = if used > 0 && used <= buf.len() {
+                    &buf[..used]
+                } else {
+                    buf
+                };
 
                 let frame_packet = FramePacket::new(
                     FramePacketInformation {
@@ -283,7 +292,7 @@ impl Device for V4lCameraDevice {
                             capture_time_of(meta, mono_to_wall).unwrap_or_else(SystemTime::now),
                         ),
                     },
-                    buf.to_vec().into_boxed_slice(),
+                    data.to_vec().into_boxed_slice(),
                 );
 
                 callback(frame_packet)?;

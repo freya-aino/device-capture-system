@@ -9,7 +9,10 @@ Linux only, by decision. There is no Windows module and no `cfg(target_os = "win
 - `start()` disables exposure auto-priority, sets the format before the interval, and reads both back. It
   refuses to run if the driver negotiates anything other than the requested config, so a mismatch is an
   error, never a silent change.
-- Frames are the v4l2 buffer exactly as delivered, in the FourCC named by `pixel_format`.
+- Frames are the bytes the driver filled (`bytesused`) of the v4l2 buffer, in the FourCC named by `pixel_format`.
+  Until 2026-11-09 the whole mmap buffer was sent, which padded every 1080p MJPG frame to ~4.1 MB with stale data
+  (~995 Mbit/s on the wire instead of ~105); see
+  [`docs/hardware/2026-11-09-recorder-saved-config.md`](../docs/hardware/2026-11-09-recorder-saved-config.md).
 - `get_configs()` lists the advertised modes; `device-node` picks one (see
   [`device-node/README.md`](../device-node/README.md)).
 - Streams at the granted rate in every advertised mode on the 2026-10-30 survey

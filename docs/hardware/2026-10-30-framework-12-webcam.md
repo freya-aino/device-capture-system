@@ -137,8 +137,10 @@ sequence gaps across all devices) stayed at 0 for the whole run.
 
 Notes:
 
-- This camera's MJPG at 1080p is close to 1 Gbit/s (~415 KB per frame), so a real LAN deployment at this mode needs
-  gigabit links or a smaller mode (`DEVICE_NODE_CAMERA_WIDTH=1280 …`).
+- ~~This camera's MJPG at 1080p is close to 1 Gbit/s~~ **Corrected 2026-11-09:** the ~995 Mbit/s was the camera
+  publishing its whole 4.1 MB mmap buffer per frame; the JPEG itself is ~440 KB. With the `bytesused` fix the same
+  stream is ~105 Mbit/s and the mean latency 7 ms
+  ([2026-11-09 note](2026-11-09-recorder-saved-config.md)). The latency numbers in this note include that padding.
 - A first attempt failed because `DEVICE_NODE_STATUS_ADDR`'s default `127.0.0.1:8080` was already taken by an unrelated
   service on this host; the node exits with `failed to bind status server … Address already in use`, as intended.
 - The 60 s acceptance criterion for step 12 is met for both devices. Latency numbers are single-host and say nothing
