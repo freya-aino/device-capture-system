@@ -44,6 +44,21 @@ The node prints the selection and the chosen config at start. A camera that only
 streamed as MJPG with `pixel_format = "MJPG"`; the node never transcodes (`SPECS.md` §9). To get uncompressed
 frames, ask for a mode the camera offers uncompressed (`DEVICE_NODE_CAMERA_WIDTH=640 …`).
 
+## Saved configuration
+
+A capture host is set up once and started the same way afterwards
+([step 27](docs/step-27-saved-config.md)):
+
+```bash
+device-node config save node.toml run camera 0 0.0.0.0 5555   # resolve as `run` would, write, do not start
+device-node run --config node.toml                            # start from the file
+```
+
+The file names the device by id (`/dev/video0`, `sysdefault:CARD=PCH`), not by index, and stores the resolved
+camera mode (`[camera]`: `width`, `height`, `fps`, `pixel_format`) or microphone settings (`[microphone]`), plus
+`bind` and `status_addr`. `run --config` refuses to start when the device is missing or no longer advertises the
+saved mode, never substitutes another, and ignores the `DEVICE_NODE_*` variables. Unknown keys are errors.
+
 ## Configuration
 
 | Variable | Default |
@@ -59,4 +74,5 @@ Microphone default: 16 kHz, 1 channel, 512-sample buffer, `S16LE` (`src/helper.r
 [Step 6 (status endpoint)](docs/step-06-device-status-endpoint.md),
 [Step 7 (generic node)](docs/step-07-generic-device-node.md),
 [Step 14 (remote control)](docs/step-14-remote-control.md),
-[Step 19 (camera config negotiation)](docs/step-19-camera-config-negotiation.md).
+[Step 19 (camera config negotiation)](docs/step-19-camera-config-negotiation.md),
+[Step 27 (saved configuration)](docs/step-27-saved-config.md).

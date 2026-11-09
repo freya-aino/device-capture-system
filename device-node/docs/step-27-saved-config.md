@@ -1,6 +1,6 @@
 # Step 27: Generate and save a device-node configuration
 
-- **Status:** ❌ Open
+- **Status:** ✅ Done (2026-11-09; unit tests and a webcam check, see Evidence)
 - **Stage:** 2 — Producers
 - **Spec item:** [`SPECS.md`](../../SPECS.md) §8 item 27
 
@@ -48,7 +48,19 @@ config file; a value in the file is the value used.
 
 ## Step checklist
 
-- [ ] `config save` writes the resolved configuration
-- [ ] `run --config` starts from it, by device id
-- [ ] Missing device or mode is an error
-- [ ] Unit tests; webcam check; README usage
+- [x] `config save <path> run …` writes the resolved configuration (`src/config.rs`, `NodeConfig`)
+- [x] `run --config <path>` starts from it, by device id (`take_device_by_id`, `resolve_camera_mode`)
+- [x] Missing device or mode is an error; environment variables are not consulted
+- [x] Unit tests (TOML round trip, unknown keys, missing or doubled sections, lookup by id, unadvertised mode);
+      webcam check; README usage
+
+## Evidence
+
+- `cargo test -p device-node`: 13 unit tests in the lib, including the five for `config.rs`.
+- Webcam, 2026-11-09 ([note](../../docs/hardware/2026-11-09-recorder-saved-config.md)): `config save node.toml run
+  camera 0 127.0.0.1 5555` wrote `/dev/video0`, 1920×1080 @ 30 fps `MJPG`; `run --config node.toml` streamed that
+  mode for the 30 s recording. A copy with `fps = 25.0` was refused with "the camera no longer advertises 1920x1080 @
+  25 fps MJPG (10 modes advertised)", and one naming `/dev/video7` with "device \"/dev/video7\" is not present;
+  available: /dev/video0".
+- `fps` is written as a float (`30.0`); integers in a hand-written file are accepted, and modes match within
+  0.01 fps so `30000/1001` and `29.97` agree.
